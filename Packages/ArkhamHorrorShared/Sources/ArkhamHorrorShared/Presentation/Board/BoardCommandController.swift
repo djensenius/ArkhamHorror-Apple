@@ -464,7 +464,7 @@ final class BoardCommandController {
             return true
         }
         guard prompt?.canSubmit == true,
-              let choice = prompt?.displayOrderedChoices().first(where: {
+              let choice = prompt?.displayOrderedChoices(in: projection).first(where: {
                   prompt?.isChoiceActionable($0, in: projection) == true
               })
         else {

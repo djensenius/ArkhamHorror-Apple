@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import SwiftUI
 
 /// The reusable, read-only native Arkham Horror board: a fixture/snapshot-backed
@@ -381,11 +382,18 @@ struct BoardRegularLayoutView: View {
                 onOutcome: { controller.handle(focusID: $0, $1) }
             )
             HStack(alignment: .top, spacing: 20) {
+                let choiceLinks = BoardPromptChoiceLinker.links(
+                    prompt: controller.prompt, projection: controller.projection
+                )
                 BoardChaosBagView(
                     chaosBag: controller.projection.chaosBag,
+                    visibleChaosTokens: controller.projection.targetableChaosTokens,
+                    choiceLinks: choiceLinks,
+                    focusedID: controller.coordinator.currentFocus,
                     isFocused: controller.coordinator.currentFocus == BoardFocusID.chaosBagSummary,
                     focusBinding: focusBinding,
-                    onOutcome: { controller.handle(focusID: $0, $1) }
+                    onOutcome: { controller.handle(focusID: $0, $1) },
+                    onLinkedChoice: { controller.activatePromptChoice($0) }
                 )
                 BoardZoomControlsView(controller: controller)
             }

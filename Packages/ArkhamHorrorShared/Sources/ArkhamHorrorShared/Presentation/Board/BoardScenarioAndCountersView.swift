@@ -76,9 +76,13 @@ struct BoardScenarioHeaderView: View {
 /// The scenario's chaos bag summary — the board's single "board.chaosBag" zone entity.
 struct BoardChaosBagView: View {
     let chaosBag: BoardChaosBagState
+    let visibleChaosTokens: [BoardChaosTokenNode]
+    let choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    let focusedID: SemanticFocusID?
     let isFocused: Bool
     let focusBinding: FocusState<SemanticFocusID?>.Binding
     let onOutcome: (SemanticFocusID, SemanticDispatchOutcome) -> Void
+    let onLinkedChoice: (Int) -> Void
 
     var body: some View {
         BoardEntityTile(
@@ -91,6 +95,7 @@ struct BoardChaosBagView: View {
             VStack(alignment: .leading, spacing: 6) {
                 BoardSectionHeading(title: "Chaos bag")
                 chaosBagContent
+                linkedChaosTokenTargets
             }
         }
     }
@@ -129,6 +134,49 @@ struct BoardChaosBagView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+    }
+
+    @ViewBuilder private var linkedChaosTokenTargets: some View {
+        let tokens = visibleChaosTokens.filter { token in
+            choiceLinks[.chaosToken(token.id)]?.isEmpty == false
+        }
+        if !tokens.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(tokens) { token in
+                        chaosTokenTarget(token)
+                    }
+                }
+            }
+        }
+    }
+
+    private func chaosTokenTarget(_ token: BoardChaosTokenNode) -> some View {
+        let elementID = BoardPromptElementID.chaosToken(token.id)
+        let focusID = BoardFocusID.promptElement(elementID)
+        let linkedChoices = choiceLinks[elementID] ?? []
+        let accessibilityLabel = BoardLocalization.format(
+            "board.chaosToken.accessibility",
+            "Chaos token %@",
+            token.displayTitle
+        )
+        return BoardLinkedChoiceFace(
+            accessibilityLabel: accessibilityLabel,
+            linkedChoices: linkedChoices,
+            focusID: focusID,
+            isFocused: focusedID == focusID,
+            focusBinding: focusBinding,
+            onLinkedChoice: onLinkedChoice,
+            onOutcome: onOutcome,
+            content: {
+                HStack(spacing: 6) {
+                    Image(systemName: "circle.hexagongrid.fill")
+                    Text(token.displayTitle)
+                }
+                .font(.caption)
+                .foregroundStyle(token.cancelled ? .secondary : ArkhamTheme.bone)
+            }
+        )
     }
 
     private func faceCountsRow(_ counts: [BoardChaosFaceCount]) -> some View {

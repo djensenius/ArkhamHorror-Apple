@@ -153,12 +153,20 @@ struct BoardCompactLayoutView: View {
         )
     }
 
-    private var chaosBagZoneContent: some View {
+    @ViewBuilder private var chaosBagZoneContent: some View {
+        let choiceLinks = BoardPromptChoiceLinker.links(
+            prompt: controller.prompt,
+            projection: controller.projection
+        )
         BoardChaosBagView(
             chaosBag: controller.projection.chaosBag,
+            visibleChaosTokens: controller.projection.targetableChaosTokens,
+            choiceLinks: choiceLinks,
+            focusedID: controller.coordinator.currentFocus,
             isFocused: controller.coordinator.currentFocus == BoardFocusID.chaosBagSummary,
             focusBinding: focusBinding,
-            onOutcome: { controller.handle(focusID: $0, $1) }
+            onOutcome: { controller.handle(focusID: $0, $1) },
+            onLinkedChoice: { controller.activatePromptChoice($0) }
         )
     }
 }

@@ -76,6 +76,7 @@ extension AppModelLiveChooseDeckTests {
             enemiesByLocationID: projection.enemiesByLocationID,
             engagedEnemiesByInvestigatorID: projection.engagedEnemiesByInvestigatorID,
             chaosBag: projection.chaosBag,
+            focusedChaosTokens: projection.focusedChaosTokens,
             counters: projection.counters,
             skillTest: projection.skillTest,
             questions: questions
