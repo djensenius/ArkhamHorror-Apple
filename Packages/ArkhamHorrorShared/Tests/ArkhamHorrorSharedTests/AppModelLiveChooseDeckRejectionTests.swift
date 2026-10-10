@@ -816,6 +816,13 @@ extension AppModelLiveChooseDeckTests {
         await service.resumeLoad(at: 0)
         await firstRefresh.value
 
+        guard case let .requiresInvestigator(requirement)? =
+            model.liveChooseDeckRestrictionChecks[gameID]
+        else {
+            Issue.record("Expected the newer side-story requirement to remain cached")
+            return
+        }
+        #expect(requirement.scenarioID == "90004")
         #expect(model.liveChooseDeckRestrictionDeckError(for: deck, in: gameID) == nil)
     }
 
