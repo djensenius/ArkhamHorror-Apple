@@ -1253,6 +1253,25 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
+    @Test("Live bot strategy avoids explicit game-over story choices")
+    func botStrategyAvoidsGameOverStoryChoice() {
+        let prompt = Self.storyChoiceStrategyPrompt(
+            choices: [
+                (index: 0, label: "$theDrownedCity.anOfferYouCantRefuse.label.refuse", messageTag: "GameOver"),
+                (index: 1, label: "$theDrownedCity.anOfferYouCantRefuse.label.accept", messageTag: "NextCampaignStep"),
+            ]
+        )
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            seed: 0
+        ) == 1)
+    }
+
     @Test("Live bot strategy is seedable for equal-ranked choices")
     func botStrategyUsesSeedForTies() {
         let projection = Self.strategyProjection()
@@ -2263,6 +2282,34 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 questionKind: .chooseOne,
                 choiceCount: choices.count,
                 choices: choices
+            )
+        )
+    }
+
+    private static func storyChoiceStrategyPrompt(
+        choices: [(index: Int, label: String, messageTag: String)]
+    ) -> BasicChoicePromptPresentation {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array(choices.map { choice in
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string(choice.label),
+                    "messages": .array([.object(["tag": .string(choice.messageTag)])]),
+                ])
+            }),
+        ])
+        return prompt(
+            questionVersion: 42,
+            rawQuestion: rawQuestion,
+            questionPresentation: QuestionPresentation(
+                protocolVersion: QuestionPresentation.supportedProtocolVersion,
+                questionVersion: 42,
+                questionKind: .chooseOne,
+                choiceCount: choices.count,
+                choices: choices.map { choice in
+                    QuestionPresentation.Choice(sourceIndex: choice.index, kind: .localizedLabel)
+                }
             )
         )
     }
@@ -5112,6 +5159,39 @@ private func containsPickSupplyMessage(_ value: JSONValue) -> Bool {
     return false
 }
 
+private func rawChoiceValue(
+    for choice: QuestionPresentation.Choice,
+    in prompt: BasicChoicePromptPresentation
+) -> JSONValue? {
+    if let rawValue = prompt.choices.first(where: { $0.index == choice.sourceIndex })?.rawValue {
+        return rawValue
+    }
+    let object = prompt.identity.rawQuestion.objectValue
+    if let choices = object?["choices"]?.arrayValue, choices.indices.contains(choice.sourceIndex) {
+        return choices[choice.sourceIndex]
+    }
+    if let readChoices = object?["readChoices"]?.objectValue,
+       let contents = readChoices["contents"]?.arrayValue,
+       contents.indices.contains(choice.sourceIndex)
+    {
+        return contents[choice.sourceIndex]
+    }
+    return nil
+}
+
+private func containsGameOverMessage(_ value: JSONValue) -> Bool {
+    if value.objectValue?["tag"]?.stringValue == "GameOver" {
+        return true
+    }
+    if let object = value.objectValue {
+        return object.values.contains(where: containsGameOverMessage)
+    }
+    if let array = value.arrayValue {
+        return array.contains(where: containsGameOverMessage)
+    }
+    return false
+}
+
 private struct BotChoiceRank: Sendable, Equatable {
     let sourceIndex: Int
     let score: Int
@@ -5217,7 +5297,7 @@ private struct BotStrategyContext {
         default:
             score = 1000
         }
-        if isResign(choice) {
+        if isResign(choice) || isGameOverChoice(choice) {
             score -= 9000
         }
         if choice.completesSelection == true {
@@ -5440,6 +5520,10 @@ private struct BotStrategyContext {
 
     private func isResign(_ choice: QuestionPresentation.Choice) -> Bool {
         choice.ability?.actions.contains(.resign) == true
+    }
+
+    private func isGameOverChoice(_ choice: QuestionPresentation.Choice) -> Bool {
+        rawChoiceValue(for: choice, in: prompt).map(containsGameOverMessage) == true
     }
 
     private func objectiveAction(_ action: QuestionPresentation.Action) -> Bool {
