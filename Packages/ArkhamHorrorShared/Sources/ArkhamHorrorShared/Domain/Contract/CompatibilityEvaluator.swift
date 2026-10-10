@@ -78,7 +78,8 @@ struct CompatibilityEvaluator: Sendable {
         let catalog = serverCapabilities.schemaRevision >= Self.localeCatalogSchemaRevision
             ? serverCapabilities.localeCatalog
             : nil
-        let campaignCatalog = serverCapabilities.schemaRevision >= Self.campaignCatalogSchemaRevision
+        let campaignCatalog = serverCapabilities.schemaRevision >=
+            Self.campaignCatalogSchemaRevision
             ? serverCapabilities.campaignCatalog
             : nil
         return .compatible(

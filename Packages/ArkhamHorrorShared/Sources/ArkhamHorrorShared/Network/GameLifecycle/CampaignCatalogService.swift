@@ -129,7 +129,10 @@ struct CampaignCatalogService: Sendable {
             }
             let document: CampaignCatalogDocument
             do {
-                document = try ContractJSON.decode(CampaignCatalogDocument.self, from: response.data)
+                document = try ContractJSON.decode(
+                    CampaignCatalogDocument.self,
+                    from: response.data
+                )
             } catch {
                 try Task.checkCancellation()
                 throw CampaignCatalogLoadFailure.malformedCatalog
