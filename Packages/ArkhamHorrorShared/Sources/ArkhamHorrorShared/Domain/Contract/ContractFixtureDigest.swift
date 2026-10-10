@@ -440,7 +440,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "557c031387c22314bd7c98b6200293b3ba3e6d746b6842687eb04829f5820144"
+            sha256Hex: "9530d53a5426c821913d78bff9c1d80e67a42e7dc4460916605df033cb92491f"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",

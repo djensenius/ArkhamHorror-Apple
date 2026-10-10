@@ -20,7 +20,7 @@ struct CreateGameViewModelTests {
         let request = try viewModel.makeRequest()
         #expect(request.campaignOrScenario.campaignId == "01")
         #expect(request.campaignOrScenario.scenarioId == nil)
-        #expect(request.deckIds == [nil])
+        #expect(request.deckIds == [nil, nil, nil, nil])
         #expect(request.multiplayerVariant == .withFriends)
         #expect(request.includeTarotReadings == false)
         #expect(request.options.isEmpty)

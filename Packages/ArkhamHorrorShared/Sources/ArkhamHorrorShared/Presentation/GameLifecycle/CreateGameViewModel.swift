@@ -229,7 +229,7 @@ final class CreateGameViewModel {
         )
 
         return CreateGameRequest(
-            deckIds: Array(repeating: nil, count: playerCount),
+            deckIds: Array(repeating: nil, count: 4),
             playerCount: playerCount,
             campaignOrScenario: campaignOrScenario,
             difficulty: difficulty,
@@ -239,7 +239,7 @@ final class CreateGameViewModel {
             options: selectedCampaignOptions(),
             strictAsIfAt: .value(strictAsIfAt),
             asIfRuling: .value(strictAsIfAt ? .chapter2 : .chapter1),
-            ultimatumsAndBoons: .absent,
+            ultimatumsAndBoons: .value([]),
             achievementsEnabled: .value(effectiveCampaignID != nil)
         )
     }

@@ -20,9 +20,11 @@ struct CreateGameRequestEncodingTests {
         #expect(json["multiplayerVariant"] as? String == "WithFriends")
         #expect(json["includeTarotReadings"] as? Bool == false)
         #expect(json["achievementsEnabled"] as? Bool == true)
+        #expect(json["strictAsIfAt"] as? Bool == false)
+        #expect(json["asIfRuling"] as? String == "chapter1")
         #expect(try #require(json["options"] as? [Any]).isEmpty)
-        try expectNullDeckSlots(json, count: 2)
-        expectDefaultableKeysOmitted(json)
+        try expectNullDeckSlots(json, count: 4)
+        try expectWebDefaultArrays(json)
     }
 
     @Test("Each standalone scenario option encodes its server scenario id and null campaign id")
@@ -37,8 +39,10 @@ struct CreateGameRequestEncodingTests {
             #expect(json["campaignId"] is NSNull)
             #expect(json["scenarioId"] as? String == scenario.id)
             #expect(json["campaignName"] as? String == scenario.title)
-            #expect(json["achievementsEnabled"] as? Bool == true)
-            try expectNullDeckSlots(json, count: 1)
+            #expect(json["achievementsEnabled"] as? Bool == false)
+            #expect(json["strictAsIfAt"] as? Bool == false)
+            #expect(json["asIfRuling"] as? String == "chapter1")
+            try expectNullDeckSlots(json, count: 4)
         }
     }
 
@@ -59,7 +63,7 @@ struct CreateGameRequestEncodingTests {
         }
     }
 
-    @Test("One-player requests encode one null deck slot and the web-default variant")
+    @Test("One-player requests encode the web's four null deck slots and default variant")
     func onePlayerEncoding() throws {
         let viewModel = CreateGameViewModel()
         viewModel.playerCount = 1
@@ -67,7 +71,7 @@ struct CreateGameRequestEncodingTests {
 
         #expect(json["playerCount"] as? Int == 1)
         #expect(json["multiplayerVariant"] as? String == "WithFriends")
-        try expectNullDeckSlots(json, count: 1)
+        try expectNullDeckSlots(json, count: 4)
     }
 
     @Test("Multiplayer requests encode the selected variant for With Friends and multi-handed solo")
@@ -77,7 +81,7 @@ struct CreateGameRequestEncodingTests {
         var json = try encodedJSONObject(for: withFriends.makeRequest())
         #expect(json["playerCount"] as? Int == 3)
         #expect(json["multiplayerVariant"] as? String == "WithFriends")
-        try expectNullDeckSlots(json, count: 3)
+        try expectNullDeckSlots(json, count: 4)
 
         let multiHandedSolo = CreateGameViewModel()
         multiHandedSolo.playerCount = 3
@@ -85,7 +89,7 @@ struct CreateGameRequestEncodingTests {
         json = try encodedJSONObject(for: multiHandedSolo.makeRequest())
         #expect(json["playerCount"] as? Int == 3)
         #expect(json["multiplayerVariant"] as? String == "Solo")
-        try expectNullDeckSlots(json, count: 3)
+        try expectNullDeckSlots(json, count: 4)
     }
 
     private func encodedJSONObject(for request: CreateGameRequest) throws -> [String: Any] {
@@ -101,9 +105,7 @@ struct CreateGameRequestEncodingTests {
         }
     }
 
-    private func expectDefaultableKeysOmitted(_ json: [String: Any]) {
-        for key in ["strictAsIfAt", "asIfRuling", "ultimatumsAndBoons"] {
-            #expect(json[key] == nil)
-        }
+    private func expectWebDefaultArrays(_ json: [String: Any]) throws {
+        #expect(try #require(json["ultimatumsAndBoons"] as? [Any]).isEmpty)
     }
 }
