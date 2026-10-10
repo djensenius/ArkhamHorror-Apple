@@ -71,13 +71,21 @@ private enum BeginnersLuckFixtures {
         )
     }
 
-    static func projection() throws -> BoardProjection {
+    static func projection(focusesChaosTokens: Bool = true) throws -> BoardProjection {
         let tokens = try chaosTokens()
+        let focusedTokens = focusesChaosTokens ? try chaosTokenValues(tokens) : []
         return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             mode: .scenarioOnly(BoardTestFixtures.scenario(
                 chaosBag: BoardTestFixtures.chaosBag(chaosTokens: tokens)
-            ))
+            )),
+            focusedChaosTokens: focusedTokens
         ))
+    }
+
+    static func chaosTokenValues(_ tokens: [ChaosToken]) throws -> [JSONValue] {
+        try tokens.map { token in
+            try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(token))
+        }
     }
 
     static func catalogDocumentsWithOpaqueChoice() throws -> SyntheticLocaleCatalogDocuments {
@@ -123,7 +131,7 @@ struct LiveDunwichSemanticChoiceTests {
         #expect(links[firstElement] == [
             BoardLinkedChoice(
                 choiceIndex: 0,
-                title: firstToken.displayTitle,
+                title: "Continue",
                 isActionable: true
             ),
         ])
@@ -141,6 +149,21 @@ struct LiveDunwichSemanticChoiceTests {
         #expect(submitted == [0])
     }
 
+    @Test("Captured Beginner's Luck tokens only in the bag keep their list buttons")
+    @MainActor
+    func capturedBeginnersLuckBagOnlyTokensStayInPromptList() throws {
+        let prompt = try BeginnersLuckFixtures.prompt(
+            choiceLabelResolutions: Dictionary(uniqueKeysWithValues: (0 ..< 16).map {
+                ($0, BasicChoiceLabelResolution.resolved("Continue"))
+            })
+        )
+        let projection = try BeginnersLuckFixtures.projection(focusesChaosTokens: false)
+
+        #expect(projection.targetableChaosTokens.isEmpty)
+        #expect(prompt.displayOrderedChoices(in: projection).map(\.index) == Array(0 ..< 16))
+        #expect(BoardPromptChoiceLinker.links(prompt: prompt, projection: projection).isEmpty)
+    }
+
     @Test("Captured Beginner's Luck unresolved opaque labels remain unpressable on tokens")
     @MainActor
     func capturedBeginnersLuckUnresolvedOpaqueLabelsFailClosedOnTargets() throws {
@@ -153,7 +176,7 @@ struct LiveDunwichSemanticChoiceTests {
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
         let link = try #require(links[firstElement]?.first)
         #expect(link.choiceIndex == 0)
-        #expect(link.title == firstToken.displayTitle)
+        #expect(link.title == prompt.displayTitle(for: prompt.choices[0], in: projection))
         #expect(!link.isActionable)
 
         let controller = BoardCommandController(projection: projection, prompt: prompt)
@@ -215,7 +238,7 @@ extension AppModelLiveGameTests {
         #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
         #expect(links[.chaosToken(firstToken.id)]?.first == BoardLinkedChoice(
             choiceIndex: 0,
-            title: firstToken.displayTitle,
+            title: "Continue",
             isActionable: true
         ))
         #expect(
@@ -252,7 +275,7 @@ extension AppModelLiveGameTests {
         #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
         #expect(links[.chaosToken(firstToken.id)]?.first == BoardLinkedChoice(
             choiceIndex: 0,
-            title: firstToken.displayTitle,
+            title: prompt.displayTitle(for: prompt.choices[0], in: projection),
             isActionable: false
         ))
         #expect(

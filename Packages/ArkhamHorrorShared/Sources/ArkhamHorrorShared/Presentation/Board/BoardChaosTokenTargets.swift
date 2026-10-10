@@ -14,18 +14,6 @@ struct BoardChaosTokenNode: Sendable, Equatable, Identifiable {
 
 extension BoardProjection {
     var targetableChaosTokens: [BoardChaosTokenNode] {
-        var seen: Set<ChaosTokenID> = []
-        var result: [BoardChaosTokenNode] = []
-        func append(_ tokens: [BoardChaosTokenNode]) {
-            for token in tokens where !seen.contains(token.id) {
-                seen.insert(token.id)
-                result.append(token)
-            }
-        }
-        if case let .scenario(summary) = chaosBag {
-            append(summary.tokens)
-        }
-        append(focusedChaosTokens)
-        return result
+        focusedChaosTokens
     }
 }
