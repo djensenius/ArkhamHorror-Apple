@@ -4,23 +4,40 @@ extension AppModel {
     func canAnswerLiveChooseDeck(for gameID: GameID) -> LiveChooseDeckAnswerability {
         guard let prompt = basicChoicePresentation(for: gameID),
               LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
-        else { return .readOnly("This game is not currently asking you to choose a deck.") }
+        else {
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.notChoosingDeck",
+                "This game is not currently asking you to choose a deck."
+            ))
+        }
         guard case let .participant(playerID) = liveGameParticipantIdentities[gameID] else {
-            return .readOnly("Spectators cannot choose decks for this game.")
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.spectator",
+                "Spectators cannot choose decks for this game."
+            ))
         }
         guard playerID == prompt.ownerID else {
-            return .readOnly("This deck choice belongs to another player.")
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.otherPlayer",
+                "This deck choice belongs to another player."
+            ))
         }
         guard case let .signedIn(_, compatibility, _) = sessionState,
               case .modern = compatibility
         else {
-            return .readOnly(
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.incompatibleServer",
                 "Update or reconnect to a contract-compatible server to choose a deck."
-            )
+            ))
         }
         guard let connection = liveGameConnections[gameID],
               liveGameSessions[gameID]?.attemptID == connection.attemptID
-        else { return .readOnly("Reconnect to choose a deck.") }
+        else {
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.reconnect",
+                "Reconnect to choose a deck."
+            ))
+        }
         return .canAnswer(promptKey: prompt.identity.promptKey)
     }
 

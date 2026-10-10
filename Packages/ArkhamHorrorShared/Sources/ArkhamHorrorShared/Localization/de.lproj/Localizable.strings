@@ -214,7 +214,13 @@
 "liveChooseDeck.error.requiresInvestigator" = "Dieses Szenario erfordert %@";
 "liveChooseDeck.error.requiresSpecificInvestigator" = "Dieses Szenario erfordert einen bestimmten Ermittler";
 "liveChooseDeck.restriction.checking" = "Anforderungen an Ermittlerdecks für Nebengeschichten werden geprüft …";
+"liveChooseDeck.restriction.multiplayerUnavailable" = "Anforderungen an Ermittlerdecks für Nebengeschichten können anhand des aktuellen Tischzustands nicht vollständig geprüft werden. Stelle sicher, dass ein Spieler den für das Szenario erforderlichen Ermittler verwendet.";
 "liveChooseDeck.restriction.unavailable" = "Anforderungen an Ermittlerdecks für Nebengeschichten können derzeit nicht geprüft werden. Stelle sicher, dass dieses Deck den für das Szenario erforderlichen Ermittler verwendet.";
+"liveChooseDeck.readOnly.notChoosingDeck" = "Dieses Spiel fordert dich derzeit nicht auf, ein Deck zu wählen.";
+"liveChooseDeck.readOnly.spectator" = "Zuschauer können für dieses Spiel keine Decks wählen.";
+"liveChooseDeck.readOnly.otherPlayer" = "Diese Deckwahl gehört einem anderen Spieler.";
+"liveChooseDeck.readOnly.incompatibleServer" = "Aktualisiere die Verbindung oder verbinde dich erneut mit einem vertragskompatiblen Server, um ein Deck zu wählen.";
+"liveChooseDeck.readOnly.reconnect" = "Verbinde dich erneut, um ein Deck zu wählen.";
 "liveChooseDeck.sendFailure" = "Dieses Deck konnte nicht gesendet werden. Stelle die Verbindung wieder her und versuche es erneut.";
 "liveChooseDeck.loadingSavedDecks" = "Gespeicherte Decks werden geladen …";
 "liveChooseDeck.retrySavedDecks" = "Gespeicherte Decks erneut laden";
