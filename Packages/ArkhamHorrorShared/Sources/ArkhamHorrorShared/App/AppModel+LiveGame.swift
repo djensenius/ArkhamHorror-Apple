@@ -141,7 +141,10 @@ extension AppModel {
         basicChoiceActions = [:]
         liveChooseDeckRestrictionChecks = [:]
         liveChooseDeckRestrictionCacheKeys = [:]
-        liveChooseDeckRestrictionRefreshIDs = [:]
+        for refresh in liveChooseDeckRestrictionRefreshes.values {
+            refresh.task.cancel()
+        }
+        liveChooseDeckRestrictionRefreshes = [:]
         for submission in campaignDeckSubmissions.values {
             submission.task?.cancel()
         }

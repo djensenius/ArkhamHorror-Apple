@@ -6,10 +6,20 @@ struct LiveChooseDeckRequiredInvestigator: Sendable, Equatable {
     let investigatorCodes: Set<String>
 }
 
-struct LiveChooseDeckRestrictionCacheKey: Sendable, Equatable {
+struct LiveChooseDeckRestrictionCacheKey: Sendable, Hashable {
     let scenarioID: String?
     let isSideStory: Bool?
     let catalogRevision: String?
+}
+
+struct LiveChooseDeckRestrictionRefreshKey: Sendable, Hashable {
+    let gameID: GameID
+    let cacheKey: LiveChooseDeckRestrictionCacheKey
+}
+
+struct LiveChooseDeckRestrictionRefresh: Sendable {
+    let id: UUID
+    let task: Task<LiveChooseDeckRestrictionCheck, Error>
 }
 
 struct LiveChooseDeckRestrictionTableState: Sendable, Equatable {

@@ -328,8 +328,10 @@ final class AppModel {
     /// Cache identity for live `ChooseDeck` restriction checks so view reappearance does
     /// not refetch.
     var liveChooseDeckRestrictionCacheKeys: [GameID: LiveChooseDeckRestrictionCacheKey] = [:]
-    /// In-flight refresh identities for live `ChooseDeck` restriction checks.
-    var liveChooseDeckRestrictionRefreshIDs: [GameID: UUID] = [:]
+    /// In-flight shared refresh tasks for live `ChooseDeck` restriction checks.
+    @ObservationIgnored var liveChooseDeckRestrictionRefreshes: [
+        LiveChooseDeckRestrictionRefreshKey: LiveChooseDeckRestrictionRefresh
+    ] = [:]
     /// REST deck-upgrade submissions claimed for the live game currently being answered.
     ///
     /// Each claim carries an attempt identity so a stale task's cleanup cannot clear a

@@ -50,42 +50,69 @@ extension AppModel {
             liveChooseDeckRestrictionChecks[gameID] == .loading
         else { return }
 
-        let refreshID = UUID()
-        liveChooseDeckRestrictionRefreshIDs[gameID] = refreshID
-
         guard context.shouldCheckCatalog else {
             liveChooseDeckRestrictionChecks[gameID] = .unrestricted(scenarioID: context.scenarioID)
             liveChooseDeckRestrictionCacheKeys[gameID] = cacheKey
             return
         }
 
+        let refreshKey = LiveChooseDeckRestrictionRefreshKey(gameID: gameID, cacheKey: cacheKey)
+        let refresh: LiveChooseDeckRestrictionRefresh
+        if let currentRefresh = liveChooseDeckRestrictionRefreshes[refreshKey] {
+            refresh = currentRefresh
+        } else {
+            refresh = LiveChooseDeckRestrictionRefresh(
+                id: UUID(),
+                task: Task { try await self.loadLiveChooseDeckRestriction(for: context) }
+            )
+            liveChooseDeckRestrictionRefreshes[refreshKey] = refresh
+        }
+        defer {
+            if liveChooseDeckRestrictionRefreshes[refreshKey]?.id == refresh.id {
+                liveChooseDeckRestrictionRefreshes[refreshKey] = nil
+            }
+        }
+
         liveChooseDeckRestrictionChecks[gameID] = .loading
         do {
-            let check = try await loadLiveChooseDeckRestriction(for: context)
+            let check = try await refresh.task.value
             try Task.checkCancellation()
-            guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
             guard liveChooseDeckRestrictionCacheKey(
                 for: liveChooseDeckRestrictionContext(for: gameID)
             ) == cacheKey else {
-                liveChooseDeckRestrictionChecks[gameID] = nil
-                liveChooseDeckRestrictionCacheKeys[gameID] = nil
+                clearUnownedStaleLiveChooseDeckRestrictionLoading(
+                    for: gameID,
+                    staleCacheKey: cacheKey
+                )
                 return
             }
             liveChooseDeckRestrictionChecks[gameID] = check
             liveChooseDeckRestrictionCacheKeys[gameID] = cacheKey
         } catch is CancellationError {
-            guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
-            liveChooseDeckRestrictionChecks[gameID] = nil
-            liveChooseDeckRestrictionCacheKeys[gameID] = nil
-        } catch {
-            guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
-            liveChooseDeckRestrictionCacheKeys[gameID] = nil
+            guard !Task.isCancelled else { return }
+            guard liveChooseDeckRestrictionRefreshes[refreshKey]?.id == refresh.id else { return }
             guard liveChooseDeckRestrictionCacheKey(
                 for: liveChooseDeckRestrictionContext(for: gameID)
             ) == cacheKey else {
-                liveChooseDeckRestrictionChecks[gameID] = nil
+                clearUnownedStaleLiveChooseDeckRestrictionLoading(
+                    for: gameID,
+                    staleCacheKey: cacheKey
+                )
                 return
             }
+            liveChooseDeckRestrictionChecks[gameID] = nil
+            liveChooseDeckRestrictionCacheKeys[gameID] = nil
+        } catch {
+            guard liveChooseDeckRestrictionCacheKey(
+                for: liveChooseDeckRestrictionContext(for: gameID)
+            ) == cacheKey else {
+                clearUnownedStaleLiveChooseDeckRestrictionLoading(
+                    for: gameID,
+                    staleCacheKey: cacheKey
+                )
+                return
+            }
+            liveChooseDeckRestrictionCacheKeys[gameID] = nil
             liveChooseDeckRestrictionChecks[gameID] = .unavailable(
                 message: liveChooseDeckRestrictionUnavailableMessage(),
                 scenarioID: context.scenarioID
@@ -233,6 +260,28 @@ extension AppModel {
             actionAttemptID: actionAttemptID,
             connectionID: connection.connectionID
         )
+    }
+
+    private func clearUnownedStaleLiveChooseDeckRestrictionLoading(
+        for gameID: GameID,
+        staleCacheKey: LiveChooseDeckRestrictionCacheKey
+    ) {
+        let currentCacheKey = liveChooseDeckRestrictionCacheKey(
+            for: liveChooseDeckRestrictionContext(for: gameID)
+        )
+        let currentRefreshKey = LiveChooseDeckRestrictionRefreshKey(
+            gameID: gameID,
+            cacheKey: currentCacheKey
+        )
+        guard currentCacheKey != staleCacheKey else { return }
+        if liveChooseDeckRestrictionCacheKeys[gameID] == staleCacheKey {
+            liveChooseDeckRestrictionCacheKeys[gameID] = nil
+        }
+        guard liveChooseDeckRestrictionRefreshes[currentRefreshKey] == nil,
+              liveChooseDeckRestrictionCacheKeys[gameID] == nil,
+              liveChooseDeckRestrictionChecks[gameID] == .loading
+        else { return }
+        liveChooseDeckRestrictionChecks[gameID] = nil
     }
 
     private func loadLiveChooseDeckRestriction(

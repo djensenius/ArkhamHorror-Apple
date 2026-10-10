@@ -1122,6 +1122,57 @@ extension AppModelLiveChooseDeckTests {
         #expect(model.liveChooseDeckRestrictionChecks[gameID] == nil)
     }
 
+    @Test("Same-key cancellation does not discard a shared restriction refresh")
+    func sameKeyCancellationDoesNotDiscardSharedRestrictionRefresh() async throws {
+        let catalog = try loadLiveCampaignCatalog()
+        let service = SuspendedCatalogService(document: catalog)
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: catalog.catalogRevision)
+            ),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
+        )
+        let firstRefresh = Task { await model.refreshLiveChooseDeckRestriction(for: gameID) }
+        await service.waitForLoadCount(1)
+        #expect(model.liveChooseDeckRestrictionChecks[gameID] == .loading)
+
+        let secondRefresh = Task { await model.refreshLiveChooseDeckRestriction(for: gameID) }
+        await Task.yield()
+        #expect(await service.loadCount() == 1)
+        secondRefresh.cancel()
+
+        await service.resumeLoad(at: 0)
+        await firstRefresh.value
+        await secondRefresh.value
+
+        guard case let .requiresInvestigator(requirement)? =
+            model.liveChooseDeckRestrictionChecks[gameID]
+        else {
+            Issue.record("Expected the shared side-story requirement to be cached")
+            return
+        }
+        #expect(requirement.scenarioID == "90020")
+        #expect(model.liveChooseDeckRestrictionChecks[gameID] != .loading)
+        #expect(model.liveChooseDeckRestrictionCacheKeys[gameID] != nil)
+    }
+
     @Test("Cancellation leaves live deck restriction unavailable notice unset")
     func cancellationDoesNotBecomeUnavailableRestriction() async throws {
         let service = try SuspendedCatalogService(
@@ -1357,18 +1408,24 @@ extension AppModelLiveChooseDeckTests {
         let model = await makeSignedInRejectionModel()
         let gameID = GameID(UUID())
         model.liveChooseDeckRestrictionChecks[gameID] = .loading
-        model.liveChooseDeckRestrictionCacheKeys[gameID] = LiveChooseDeckRestrictionCacheKey(
+        let cacheKey = LiveChooseDeckRestrictionCacheKey(
             scenarioID: "90020",
             isSideStory: true,
             catalogRevision: "test"
         )
-        model.liveChooseDeckRestrictionRefreshIDs[gameID] = UUID()
+        model.liveChooseDeckRestrictionCacheKeys[gameID] = cacheKey
+        model.liveChooseDeckRestrictionRefreshes[
+            LiveChooseDeckRestrictionRefreshKey(gameID: gameID, cacheKey: cacheKey)
+        ] = LiveChooseDeckRestrictionRefresh(
+            id: UUID(),
+            task: Task<LiveChooseDeckRestrictionCheck, Error> { .loading }
+        )
 
         model.resetLiveGameState()
 
         #expect(model.liveChooseDeckRestrictionChecks.isEmpty)
         #expect(model.liveChooseDeckRestrictionCacheKeys.isEmpty)
-        #expect(model.liveChooseDeckRestrictionRefreshIDs.isEmpty)
+        #expect(model.liveChooseDeckRestrictionRefreshes.isEmpty)
     }
 
     private func scenarioWithoutRequiredInvestigatorName() -> CampaignCatalogScenario {
@@ -1562,6 +1619,10 @@ private actor SuspendedCatalogService: CampaignCatalogServicing {
         while startedLoadCount < count {
             await Task.yield()
         }
+    }
+
+    func loadCount() -> Int {
+        startedLoadCount
     }
 
     func resumeLoad(at id: Int) {
