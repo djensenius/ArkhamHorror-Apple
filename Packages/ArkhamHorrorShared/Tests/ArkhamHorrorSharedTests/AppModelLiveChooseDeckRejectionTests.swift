@@ -132,19 +132,17 @@ extension AppModelLiveChooseDeckTests {
             state: .updateRequired(tag: "ChooseDeck")
         )
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
-        let scenario: BoardScenarioSummary?
-        if includesScenario {
-            scenario = scenarioID.map {
+        let scenario: BoardScenarioSummary? = if includesScenario {
+            scenarioID.map {
                 replacementScenarioSummary(from: projection, id: $0, isSideStory: isSideStory)
             } ?? projection.scenario
         } else {
-            scenario = nil
+            nil
         }
-        let resolvedChooseDeckPlayerIDs: [PlayerID]?
-        if defaultChooseDeckPlayerIDs {
-            resolvedChooseDeckPlayerIDs = chooseDeckPlayerIDs ?? [ownerID]
+        let resolvedChooseDeckPlayerIDs: [PlayerID]? = if defaultChooseDeckPlayerIDs {
+            chooseDeckPlayerIDs ?? [ownerID]
         } else {
-            resolvedChooseDeckPlayerIDs = chooseDeckPlayerIDs
+            chooseDeckPlayerIDs
         }
         return BoardProjection(
             gameName: projection.gameName,
