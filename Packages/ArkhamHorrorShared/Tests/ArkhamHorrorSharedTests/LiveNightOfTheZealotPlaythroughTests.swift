@@ -613,10 +613,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
             "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
             "ARKHAM_LIVE_CAMPAIGN_VARIANT": "theDunwichLegacy",
         ])
+        let wrongTargetCampaignOrScenario = try CampaignOrScenario(
+            campaignId: "01", scenarioId: nil
+        )
         let wrongTarget = CreateGameRequest(
             deckIds: [nil, nil, nil, nil],
             playerCount: 1,
-            campaignOrScenario: try CampaignOrScenario(campaignId: "01", scenarioId: nil),
+            campaignOrScenario: wrongTargetCampaignOrScenario,
             difficulty: .easy,
             campaignName: "Wrong target",
             multiplayerVariant: .withFriends,
@@ -635,10 +638,13 @@ struct LiveNightOfTheZealotPlaythroughTests {
             #expect(String(describing: error).contains("campaignId=02"))
         }
 
+        let wrongVariantCampaignOrScenario = try CampaignOrScenario(
+            campaignId: "02", scenarioId: nil
+        )
         let wrongVariant = CreateGameRequest(
             deckIds: [nil, nil, nil, nil],
             playerCount: 1,
-            campaignOrScenario: try CampaignOrScenario(campaignId: "02", scenarioId: nil),
+            campaignOrScenario: wrongVariantCampaignOrScenario,
             difficulty: .easy,
             campaignName: "Wrong variant",
             multiplayerVariant: .withFriends,
