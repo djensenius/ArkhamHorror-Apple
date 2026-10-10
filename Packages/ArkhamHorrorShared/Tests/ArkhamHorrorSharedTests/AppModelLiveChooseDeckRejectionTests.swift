@@ -803,6 +803,54 @@ extension AppModelLiveChooseDeckTests {
         #expect(await connection.sentData.count == 1)
     }
 
+    @Test("Unavailable catalog notice is scoped to its scenario")
+    func unavailableCatalogNoticeIsScopedToItsScenario() async throws {
+        let service = LiveChooseDeckCampaignCatalogService(result: .failure(TestFailure()))
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: "1.unavailable-scope")
+            ),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020"
+        )
+
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) != nil)
+
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90004"
+        )
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == nil)
+
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            includesScenario: false
+        )
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == nil)
+    }
+
     @Test("Catalog fetch errors clear stale restriction cache keys")
     func catalogFetchErrorsClearStaleRestrictionCacheKeys() async throws {
         let catalog = try loadLiveCampaignCatalog()

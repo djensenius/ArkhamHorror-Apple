@@ -69,7 +69,10 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
         tableState: LiveChooseDeckRestrictionTableState?
     ) -> String? {
         switch self {
-        case let .unavailable(message, _):
+        case let .unavailable(message, scenarioID):
+            guard normalizedScenarioID(currentScenarioID) == normalizedScenarioID(scenarioID) else {
+                return nil
+            }
             return message
         case .loading:
             return liveChooseDeckLocalized(
