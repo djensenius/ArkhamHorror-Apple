@@ -597,6 +597,12 @@ struct GameLifecycleCreateCatalogTests {
                 let value = try localized(key: key, fallback: "__missing__", locale: locale)
                 #expect(value != "__missing__", "Missing localized value for \(key) in \(locale)")
             }
+            #expect(localeKeys.contains("create.catalog.failure.unsupportedServer"))
+            #expect(try localized(
+                key: "create.catalog.failure.unsupportedServer",
+                fallback: "__missing__",
+                locale: locale
+            ) != "__missing__")
         }
     }
 
@@ -737,6 +743,23 @@ struct GameLifecycleCreateCatalogTests {
         let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
         #expect(capabilities.capabilities.contains(CampaignCatalogAdvertisement.capabilityIdentifier)) // swiftlint:disable:this line_length
         #expect(capabilities.campaignCatalog == nil)
+    }
+
+    @Test("Create sheet warns without fetching when the server lacks campaign catalog support")
+    @MainActor
+    func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogCapabilityMissing() async {
+        let service = RecordingCampaignCatalogService(result: .failure(TestFailure()))
+        let model = await appModel(
+            compatibility: .modern(capabilities: []),
+            campaignCatalogService: service
+        )
+
+        let result = await model.createGameCatalogForSheet()
+
+        #expect(result.catalog == .default)
+        #expect(result.warningMessage == CampaignCatalogLoadFailure.unsupportedServer.message)
+        #expect(result.warningMessage != CampaignCatalogLoadFailure.malformedAdvertisement.message)
+        #expect(await service.requests.isEmpty)
     }
 
     @Test("Create sheet ignores pre-governance campaign catalog authority")

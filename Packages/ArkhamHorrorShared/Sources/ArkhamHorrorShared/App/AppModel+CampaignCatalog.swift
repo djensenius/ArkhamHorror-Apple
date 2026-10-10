@@ -19,7 +19,10 @@ extension AppModel {
         guard compatibility.modernCapabilities.contains(
             ServerCompatibility.campaignCatalogCapability
         ) else {
-            return CreateGameCatalogLoadResult(catalog: .default, warningMessage: nil)
+            return CreateGameCatalogLoadResult(
+                catalog: .default,
+                warningMessage: CampaignCatalogLoadFailure.unsupportedServer.message
+            )
         }
         guard let advertisement = compatibility.campaignCatalogAdvertisement else {
             return CreateGameCatalogLoadResult(
