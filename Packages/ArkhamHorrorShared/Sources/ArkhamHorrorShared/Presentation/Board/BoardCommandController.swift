@@ -447,27 +447,12 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(BoardFocusID.promptRetry)
             return true
         }
-        let promptEntry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt]
-        if prompt?.requiresDedicatedAmountUI == true, let entry = promptEntry {
-            coordinator.syncExternalFocus(entry)
-            return true
-        }
-        if prompt?.pickDestinyPrompt?.presentation != nil, let entry = promptEntry {
-            coordinator.syncExternalFocus(entry)
-            return true
-        }
-        if prompt?.isStandaloneSettingsPrompt(in: projection) == true, let entry = promptEntry {
-            coordinator.syncExternalFocus(entry)
-            return true
-        }
-        if prompt?.laidToRestSpiritDeckPrompt != nil, let entry = promptEntry {
+        if let entry = dedicatedPromptEntryFocusID() {
             coordinator.syncExternalFocus(entry)
             return true
         }
         guard prompt?.canSubmit == true else {
-            guard prompt?.canRetryCatalog == true else { return false }
-            coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
-            return true
+            return syncPromptCatalogRetryIfAvailable()
         }
         if let choice = prompt?.displayOrderedChoices(in: projection).first(where: {
             prompt?.isChoiceActionable($0, in: projection) == true
@@ -479,6 +464,29 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(focusID)
             return true
         }
+        return syncPromptCatalogRetryIfAvailable()
+    }
+
+    private func dedicatedPromptEntryFocusID() -> SemanticFocusID? {
+        guard let entry = coordinator.graph.zoneEntryPoints[BoardFocusZone.prompt] else {
+            return nil
+        }
+        if prompt?.requiresDedicatedAmountUI == true {
+            return entry
+        }
+        if prompt?.pickDestinyPrompt?.presentation != nil {
+            return entry
+        }
+        if prompt?.isStandaloneSettingsPrompt(in: projection) == true {
+            return entry
+        }
+        if prompt?.laidToRestSpiritDeckPrompt != nil {
+            return entry
+        }
+        return nil
+    }
+
+    private func syncPromptCatalogRetryIfAvailable() -> Bool {
         guard prompt?.canRetryCatalog == true else { return false }
         coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
         return true
@@ -487,15 +495,17 @@ final class BoardCommandController {
     private func firstActionableChaosTokenPromptElementFocusID() -> SemanticFocusID? {
         guard let prompt else { return nil }
         let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
-        let actionableChaosTokenFocusIDs = Set(projection.targetableChaosTokens.compactMap { token in
-            let elementID = BoardPromptElementID.chaosToken(token.id)
-            switch BoardLinkedChoicePresentationPolicy.decision(for: links[elementID] ?? []) {
-            case .submit, .menu:
-                return BoardFocusID.promptElement(elementID)
-            case .highlightOnly:
-                return nil
+        let actionableChaosTokenFocusIDs = Set(
+            projection.targetableChaosTokens.compactMap { token in
+                let elementID = BoardPromptElementID.chaosToken(token.id)
+                switch BoardLinkedChoicePresentationPolicy.decision(for: links[elementID] ?? []) {
+                case .submit, .menu:
+                    return BoardFocusID.promptElement(elementID)
+                case .highlightOnly:
+                    return nil
+                }
             }
-        })
+        )
         return coordinator.graph.order.first { focusID in
             actionableChaosTokenFocusIDs.contains(focusID) && coordinator.graph.contains(focusID)
         }
