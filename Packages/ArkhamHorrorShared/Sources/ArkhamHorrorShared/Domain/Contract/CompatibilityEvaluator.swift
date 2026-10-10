@@ -42,6 +42,10 @@ struct CompatibilityEvaluator: Sendable {
     static let localeCatalogSchemaRevision = ContractRevision.literal(
         major: 0, minor: 1, patch: 23
     )
+    /// The first backend contract revision that governs `campaignCatalog`.
+    static let campaignCatalogSchemaRevision = ContractRevision.literal(
+        major: 0, minor: 1, patch: 52
+    )
 
     /// Evaluates the decoded server capabilities against the compiled-in ``ContractPin``.
     ///
@@ -74,10 +78,13 @@ struct CompatibilityEvaluator: Sendable {
         let catalog = serverCapabilities.schemaRevision >= Self.localeCatalogSchemaRevision
             ? serverCapabilities.localeCatalog
             : nil
+        let campaignCatalog = serverCapabilities.schemaRevision >= Self.campaignCatalogSchemaRevision
+            ? serverCapabilities.campaignCatalog
+            : nil
         return .compatible(
             capabilities: serverCapabilities.capabilities,
             localeCatalog: catalog,
-            campaignCatalog: serverCapabilities.campaignCatalog
+            campaignCatalog: campaignCatalog
         )
     }
 

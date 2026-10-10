@@ -739,6 +739,47 @@ struct GameLifecycleCreateCatalogTests {
         #expect(capabilities.campaignCatalog == nil)
     }
 
+    @Test("Create sheet ignores pre-governance campaign catalog authority")
+    @MainActor
+    func createSheetUsesNotZFallbackForPreGovernanceCampaignCatalogAuthority() async throws {
+        let data = Data("""
+        {
+          "schemaRevision": "0.1.51",
+          "status": "ok",
+          "apiBasePath": "/api/v1",
+          "nativeClientMinimumRevision": "0.1.48",
+          "capabilities": ["arkham.campaign-catalog.v1"],
+          "campaignCatalog": {
+            "endpoint": "/api/v1/arkham/campaign-catalog",
+            "catalogRevision": "1.00000000000000000000000000000000",
+            "schemaVersion": "1.0.0",
+            "digestAlgorithm": "sha256"
+          }
+        }
+        """.utf8)
+        let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
+        let outcome = CompatibilityEvaluator(pin: .current).evaluate(capabilities)
+        let compatibility: ServerCompatibility
+        switch outcome {
+        case let .compatible(identifiers, _, campaignCatalog):
+            compatibility = .modern(capabilities: identifiers, campaignCatalog: campaignCatalog)
+        default:
+            Issue.record("Expected compatible outcome for 0.1.51, got \(outcome)")
+            compatibility = .legacy
+        }
+        let service = RecordingCampaignCatalogService(result: .success(try loadVendoredCatalog()))
+        let model = await appModel(
+            compatibility: compatibility,
+            campaignCatalogService: service
+        )
+
+        let result = await model.createGameCatalogForSheet()
+
+        #expect(result.catalog == .default)
+        #expect(result.warningMessage == CampaignCatalogLoadFailure.malformedAdvertisement.message)
+        #expect(await service.requests.isEmpty)
+    }
+
     @Test("Create sheet rejects campaign catalog metadata with unknown members before fetching")
     @MainActor
     func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogMetadataHasUnknownMember() async throws {
