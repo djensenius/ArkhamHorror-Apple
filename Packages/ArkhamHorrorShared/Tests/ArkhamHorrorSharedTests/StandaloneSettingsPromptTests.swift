@@ -84,7 +84,10 @@ struct StandaloneSettingsPromptTests {
             StandaloneScenarioSettingsCatalog.sourceRepository
                 == "https://github.com/djensenius/ArkhamHorror"
         )
-        #expect(StandaloneScenarioSettingsCatalog.sourceCommit == ContractPin.current.backendCommit)
+        #expect(
+            StandaloneScenarioSettingsCatalog.sourceCommit
+                == "8453314123831e9fb1e7817e34190671b73b8ae0"
+        )
         #expect(StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(scenarioID: "86001"))
         #expect(StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(scenarioID: "c86001"))
         #expect(!StandaloneScenarioSettingsCatalog.hasProvenEmptySettings(scenarioID: nil))

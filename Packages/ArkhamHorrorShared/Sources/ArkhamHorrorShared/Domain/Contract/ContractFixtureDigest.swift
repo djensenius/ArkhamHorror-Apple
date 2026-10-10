@@ -68,15 +68,23 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "be4863ce7fa5b234d72647d6f6b74abce5725962e9cb052a063e8a5eaee5b3a0"
+            sha256Hex: "38effc498e81e1cd5b9138476e4e8b1032663b4d9af4ed6fd9b19834308c7f25"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities-locale-catalog",
-            sha256Hex: "c98482cdf63e4a7933715a5a13192581afed1d8421300a5476181a99ca59bd77"
+            sha256Hex: "d9b61ece46e8bd7416f9c5cd1d7c16b9f84daaf09b898125e8892d44afb7d036"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities.schema",
-            sha256Hex: "c0638d27e54ede08d37afaf77d2c6d063e1f46a5c44066bf361b22b5fe980103"
+            sha256Hex: "a71638283a94b4e68c29c1a705dba0f007a3b5a28de324fecdcfdbd179430658"
+        ),
+        VendoredFixtureDigest(
+            fileName: "campaign-catalog",
+            sha256Hex: "1319f85f8d709c2e7134586621da42cb376048154cc5498e3f24a395c365c250"
+        ),
+        VendoredFixtureDigest(
+            fileName: "campaign-catalog.schema",
+            sha256Hex: "e49e5000658288b4324280fe4164359b419a0c91fbbf7c16c045385060c23dc1"
         ),
         VendoredFixtureDigest(
             fileName: "card-code-entity-map",
@@ -120,7 +128,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "36cf90115ac951c17f986c6e0d0e9d7d075b5c3dab8914001aff85aa348350ca"
+            sha256Hex: "a91257aefcab09ab3c5614edcbe0e4631a28d40f286cb8a55ea2c4d8d4a735f2"
         ),
         VendoredFixtureDigest(
             fileName: "mode-campaign-only",
@@ -432,7 +440,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "557c031387c22314bd7c98b6200293b3ba3e6d746b6842687eb04829f5820144"
+            sha256Hex: "9530d53a5426c821913d78bff9c1d80e67a42e7dc4460916605df033cb92491f"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",

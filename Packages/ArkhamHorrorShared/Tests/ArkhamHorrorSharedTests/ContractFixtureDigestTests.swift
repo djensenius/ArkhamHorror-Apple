@@ -124,6 +124,8 @@ struct ContractFixtureDigestTests {
             "answer-payment-amounts",
             "answer-question",
             "basic-choice-question.schema",
+            "campaign-catalog",
+            "campaign-catalog.schema",
             "capabilities",
             "capabilities-locale-catalog",
             "capabilities.schema",
@@ -287,17 +289,17 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "8453314123831e9fb1e7817e34190671b73b8ae0"
+            ContractPin.current.backendCommit == "25a3eb8072d0b3a309a7090912c2a9c2b858c730"
         )
     }
 
-    @Test("The immutable manifest governs 32 assignment negatives within 629 total")
+    @Test("The immutable manifest governs 32 assignment negatives within 637 total")
     func assignmentFamilyManifestCoverage() throws {
         let manifest = try ContractJSON.decode(
             GovernedContractManifest.self,
             from: fixtureData(named: "manifest")
         )
-        #expect(manifest.negativeFixtures.count == 629)
+        #expect(manifest.negativeFixtures.count == 637)
         let fixtureSchemas = Dictionary(
             uniqueKeysWithValues: manifest.fixtures.map { ($0.path, $0.schema) }
         )

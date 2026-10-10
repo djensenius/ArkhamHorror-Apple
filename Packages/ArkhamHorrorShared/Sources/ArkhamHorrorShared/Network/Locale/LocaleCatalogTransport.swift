@@ -6,10 +6,27 @@ struct LocaleCatalogResponse: Sendable, Equatable {
     let statusCode: Int
     let contentType: String?
     let contentTypeOptions: String?
+    let etag: String?
     /// The URL the response was ultimately produced by. Compared against the named origin so
     /// a transport that follows a redirect anyway cannot silently substitute another server.
     let url: URL?
     let data: Data
+
+    init(
+        statusCode: Int,
+        contentType: String?,
+        contentTypeOptions: String?,
+        etag: String? = nil,
+        url: URL?,
+        data: Data
+    ) {
+        self.statusCode = statusCode
+        self.contentType = contentType
+        self.contentTypeOptions = contentTypeOptions
+        self.etag = etag
+        self.url = url
+        self.data = data
+    }
 }
 
 /// The bounded public JSON transport seam for catalog documents and site settings.
@@ -25,6 +42,17 @@ protocol LocaleCatalogTransporting: Sendable {
     ///   `CancellationError` when the enclosing task is cancelled. A non-200 status is
     ///   returned rather than thrown so the caller decides.
     func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse
+
+    /// Fetches `request`, preserving caller-specified validation headers while still reading
+    /// at most `maxBytes` and refusing anything longer.
+    func fetch(_ request: URLRequest, maxBytes: Int) async throws -> LocaleCatalogResponse
+}
+
+extension LocaleCatalogTransporting {
+    func fetch(_ request: URLRequest, maxBytes: Int) async throws -> LocaleCatalogResponse {
+        guard let url = request.url else { throw LocaleCatalogFailure.transportFailure }
+        return try await fetch(url, maxBytes: maxBytes)
+    }
 }
 
 /// The production transport: a dedicated, unauthenticated, cookie-, credential- and
@@ -66,8 +94,10 @@ struct URLSessionLocaleCatalogTransport: LocaleCatalogTransporting {
     }
 
     func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse {
-        let request = request(for: url)
+        try await fetch(request(for: url), maxBytes: maxBytes)
+    }
 
+    func fetch(_ request: URLRequest, maxBytes: Int) async throws -> LocaleCatalogResponse {
         let stream: URLSession.AsyncBytes
         let response: URLResponse
         do {
@@ -95,6 +125,7 @@ struct URLSessionLocaleCatalogTransport: LocaleCatalogTransporting {
             statusCode: http.statusCode,
             contentType: http.value(forHTTPHeaderField: "Content-Type"),
             contentTypeOptions: http.value(forHTTPHeaderField: "X-Content-Type-Options"),
+            etag: http.value(forHTTPHeaderField: "ETag"),
             url: http.url,
             data: data
         )

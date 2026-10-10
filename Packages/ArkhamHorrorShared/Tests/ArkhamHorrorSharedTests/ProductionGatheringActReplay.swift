@@ -845,9 +845,10 @@ enum ProductionGatheringActReplayRunner {
         else {
             throw ProductionGatheringActReplayError.sessionNotSignedIn
         }
-        guard case let .modern(sessionCapabilities) = compatibility else {
+        guard case .modern = compatibility else {
             throw ProductionGatheringActReplayError.serverNotModern
         }
+        let sessionCapabilities = compatibility.modernCapabilities
         let serverCapabilities =
             try await capabilityTransport.decodedCapabilities()
         guard serverCapabilities.capabilities == sessionCapabilities,

@@ -26,6 +26,10 @@ struct ServerCapabilities: Equatable, Sendable {
     /// it must never produce a catalog fetch either, because a client that proceeded here
     /// would be trusting half an advertisement.
     let localeCatalog: LocaleCatalogAdvertisement?
+    /// Optional campaign-catalog pointer paired with `arkham.campaign-catalog.v1`.
+    /// Malformed or unpaired metadata decodes to `nil`; the capability string itself remains
+    /// preserved in ``capabilities`` so older code can still feature-gate conservatively.
+    let campaignCatalog: CampaignCatalogAdvertisement?
 
     init(
         schemaRevision: ContractRevision,
@@ -33,7 +37,8 @@ struct ServerCapabilities: Equatable, Sendable {
         apiBasePath: String,
         nativeClientMinimumRevision: ContractRevision,
         capabilities: Set<String>,
-        localeCatalog: LocaleCatalogAdvertisement? = nil
+        localeCatalog: LocaleCatalogAdvertisement? = nil,
+        campaignCatalog: CampaignCatalogAdvertisement? = nil
     ) {
         self.schemaRevision = schemaRevision
         self.status = status
@@ -41,6 +46,7 @@ struct ServerCapabilities: Equatable, Sendable {
         self.nativeClientMinimumRevision = nativeClientMinimumRevision
         self.capabilities = capabilities
         self.localeCatalog = localeCatalog
+        self.campaignCatalog = campaignCatalog
     }
 }
 
@@ -52,6 +58,7 @@ extension ServerCapabilities: Decodable {
         case nativeClientMinimumRevision
         case capabilities
         case localeCatalog
+        case campaignCatalog
     }
 
     init(from decoder: any Decoder) throws {
@@ -73,10 +80,21 @@ extension ServerCapabilities: Decodable {
             )
         }
         capabilities = identifiers
-        let raw = try container.decodeIfPresent(JSONValue.self, forKey: .localeCatalog)
-        let advertised = identifiers.contains(LocaleCatalogLimits.capabilityIdentifier)
-        localeCatalog = if advertised, let raw {
-            LocaleCatalogAdvertisement.decode(from: raw)
+        let rawLocaleCatalog = try container.decodeIfPresent(JSONValue.self, forKey: .localeCatalog)
+        let localeCatalogAdvertised = identifiers.contains(LocaleCatalogLimits.capabilityIdentifier)
+        localeCatalog = if localeCatalogAdvertised, let rawLocaleCatalog {
+            LocaleCatalogAdvertisement.decode(from: rawLocaleCatalog)
+        } else {
+            nil
+        }
+        let rawCampaignCatalog = try container.decodeIfPresent(
+            JSONValue.self, forKey: .campaignCatalog
+        )
+        let campaignCatalogAdvertised = identifiers.contains(
+            CampaignCatalogAdvertisement.capabilityIdentifier
+        )
+        campaignCatalog = if campaignCatalogAdvertised, let rawCampaignCatalog {
+            CampaignCatalogAdvertisement.decode(from: rawCampaignCatalog)
         } else {
             nil
         }

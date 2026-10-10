@@ -99,6 +99,16 @@ protocol GameLifecycleServicing: Sendable {
 
 extension GameLifecycleService: GameLifecycleServicing {}
 
+/// A narrow, injectable campaign-catalog interface used by the create-game sheet.
+protocol CampaignCatalogServicing: Sendable {
+    func load(
+        on profile: ServerProfile,
+        advertisement: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument
+}
+
+extension CampaignCatalogService: CampaignCatalogServicing {}
+
 /// A narrow, injectable authenticated saved-deck interface used by deck-management and
 /// lobby deck-choice presentation.
 protocol DeckServicing: Sendable {

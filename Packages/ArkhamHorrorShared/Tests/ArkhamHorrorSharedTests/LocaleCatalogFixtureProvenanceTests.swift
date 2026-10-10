@@ -6,7 +6,7 @@ import Testing
 struct LocaleCatalogFixtureProvenanceTests {
     private let expectedDigests = [
         "Contract/capabilities-locale-catalog.json":
-            "c98482cdf63e4a7933715a5a13192581afed1d8421300a5476181a99ca59bd77",
+            "d9b61ece46e8bd7416f9c5cd1d7c16b9f84daaf09b898125e8892d44afb7d036",
         "Contract/locale-catalog-backend-registry.json":
             "dd5499efa098c6b99492115fc06f55bc21b8d46d4434f9b5fa94bb1aa104180e",
         // swiftlint:disable:next line_length
@@ -22,7 +22,7 @@ struct LocaleCatalogFixtureProvenanceTests {
         "Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json":
             "d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693",
         "Contract/locale-catalog-manifest.json":
-            "ec1969b21298c2aa126c4bb1f97062ea267254233015ec51210ec5f1883c652e",
+            "604f6619514e7562f8070977038a3a67fa9b0dc13f22200fb3603d3dc436118d",
         "Contract/locale-catalog-owned-files.json":
             "13924d3a1d159fabdd0aaf65a3701da379d8641fb9164089463e6281ddef6e6c",
         "Contract/locale-catalog-source-de.json":
@@ -32,9 +32,9 @@ struct LocaleCatalogFixtureProvenanceTests {
         "Contract/locale-catalog-source-pt-BR.json":
             "cd7593ead3708918f8d8df4dea9775659a78351d90c485f3c82ad8fe69f4f241",
         "Contract/manifest.json":
-            "36cf90115ac951c17f986c6e0d0e9d7d075b5c3dab8914001aff85aa348350ca",
+            "a91257aefcab09ab3c5614edcbe0e4631a28d40f286cb8a55ea2c4d8d4a735f2",
         "Schemas/capabilities.schema.json":
-            "c0638d27e54ede08d37afaf77d2c6d063e1f46a5c44066bf361b22b5fe980103",
+            "a71638283a94b4e68c29c1a705dba0f007a3b5a28de324fecdcfdbd179430658",
         "Schemas/chunk.schema.json":
             "b96fbca81f638e57e7f1a7f9eb47b9968c4a608da42187998b0ca6eb32647584",
         "Schemas/manifest.schema.json":
