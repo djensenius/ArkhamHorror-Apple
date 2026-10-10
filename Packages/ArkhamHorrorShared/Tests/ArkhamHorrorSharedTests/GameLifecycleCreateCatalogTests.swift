@@ -1052,7 +1052,9 @@ private actor AsyncGate {
     private var continuation: CheckedContinuation<Void, Never>?
 
     func wait() async {
-        if isOpen { return }
+        if isOpen {
+            return
+        }
         await withCheckedContinuation { continuation in
             self.continuation = continuation
         }
