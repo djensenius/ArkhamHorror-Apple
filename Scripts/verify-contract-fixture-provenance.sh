@@ -100,6 +100,8 @@ basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema
 capabilities-locale-catalog.json:contracts/fixtures/capabilities-locale-catalog.json
 capabilities.json:contracts/fixtures/capabilities.json
 capabilities.schema.json:contracts/schemas/capabilities.schema.json
+campaign-catalog.json:contracts/fixtures/campaign-catalog.json
+campaign-catalog.schema.json:contracts/schemas/campaign-catalog.schema.json
 card-code-entity-map.json:contracts/fixtures/card-code-entity-map.json
 catalog.json:contracts/fixtures/catalog.json
 client-answer.schema.json:contracts/schemas/client-answer.schema.json

@@ -24,7 +24,7 @@ real_contract_pin_file="$repo_root/Packages/ArkhamHorrorShared/Sources/ArkhamHor
 fixture_names="
 act-no-advance-cost.json answer-amounts.json answer-rejected.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json answer-enemy-attack.json answer-exchange-amounts.json answer-payment-amounts.json answer-question.json capabilities-locale-catalog.json \
-capabilities.json card-code-entity-map.json catalog.json decks.json \
+capabilities.json campaign-catalog.json card-code-entity-map.json catalog.json decks.json \
 game-lifecycle.json game-list.json game-update.json get-game.json \
 investigator-unhealed-horror-negative.json location-enemy-view.json mode-campaign-only.json mode-campaign-scenario.json \
 mode-turn-zero.json movement.json question-agenda-advance.json question-agenda-consequence.json \
@@ -48,7 +48,7 @@ question-roland-defeat-reaction.json question-round-end-forced-ability.json ques
 replay-attestation.json uuid-entity-map.json"
 
 schema_names="
-basic-choice-question.schema.json capabilities.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
+basic-choice-question.schema.json capabilities.schema.json campaign-catalog.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
 question-presentation.schema.json raw-question-fixture.schema.json replay-attestation.schema.json"
 
 failures=0
@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.51",'
+    echo '  "schemaRevision": "0.1.52",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
@@ -146,6 +146,9 @@ write_backend_manifest() {
           ;;
         capabilities*.json)
           schema="contracts/schemas/capabilities.schema.json"
+          ;;
+        campaign-catalog.json)
+          schema="contracts/schemas/campaign-catalog.schema.json"
           ;;
         question-choose-one.json)
           schema="contracts/schemas/basic-choice-question.schema.json"
