@@ -18,10 +18,11 @@ extension AppModel {
         }
 
         let refreshKey = LiveChooseDeckRestrictionRefreshKey(gameID: gameID, cacheKey: cacheKey)
-        let refresh = liveChooseDeckRestrictionRefresh(
+        let refreshAdmission = liveChooseDeckRestrictionRefresh(
             for: refreshKey,
             context: context
         )
+        let refresh = refreshAdmission.refresh
         defer { clearLiveChooseDeckRestrictionRefresh(refresh, for: refreshKey) }
 
         liveChooseDeckRestrictionChecks[gameID] = .loading
@@ -38,7 +39,8 @@ extension AppModel {
                 refresh,
                 refreshKey: refreshKey,
                 gameID: gameID,
-                cacheKey: cacheKey
+                cacheKey: cacheKey,
+                ownsRefresh: refreshAdmission.createdRefresh
             )
         } catch {
             handleLiveChooseDeckRestrictionRefreshFailure(
@@ -70,16 +72,16 @@ extension AppModel {
     private func liveChooseDeckRestrictionRefresh(
         for refreshKey: LiveChooseDeckRestrictionRefreshKey,
         context: LiveChooseDeckRestrictionContext
-    ) -> LiveChooseDeckRestrictionRefresh {
+    ) -> (refresh: LiveChooseDeckRestrictionRefresh, createdRefresh: Bool) {
         if let currentRefresh = liveChooseDeckRestrictionRefreshes[refreshKey] {
-            return currentRefresh
+            return (currentRefresh, false)
         }
         let refresh = LiveChooseDeckRestrictionRefresh(
             id: UUID(),
             task: Task { try await self.loadLiveChooseDeckRestriction(for: context) }
         )
         liveChooseDeckRestrictionRefreshes[refreshKey] = refresh
-        return refresh
+        return (refresh, true)
     }
 
     private func clearLiveChooseDeckRestrictionRefresh(
@@ -110,9 +112,17 @@ extension AppModel {
         _ refresh: LiveChooseDeckRestrictionRefresh,
         refreshKey: LiveChooseDeckRestrictionRefreshKey,
         gameID: GameID,
-        cacheKey: LiveChooseDeckRestrictionCacheKey
+        cacheKey: LiveChooseDeckRestrictionCacheKey,
+        ownsRefresh: Bool
     ) {
-        guard !Task.isCancelled else { return }
+        if Task.isCancelled {
+            clearOwnerCanceledLiveChooseDeckRestrictionRefresh(
+                for: gameID,
+                cacheKey: cacheKey,
+                ownsRefresh: ownsRefresh
+            )
+            return
+        }
         guard liveChooseDeckRestrictionRefreshes[refreshKey]?.id == refresh.id else { return }
         guard currentLiveChooseDeckRestrictionCacheKey(for: gameID) == cacheKey else {
             clearUnownedStaleLiveChooseDeckRestrictionLoading(
@@ -121,6 +131,24 @@ extension AppModel {
             )
             return
         }
+        liveChooseDeckRestrictionChecks[gameID] = nil
+        liveChooseDeckRestrictionCacheKeys[gameID] = nil
+    }
+
+    private func clearOwnerCanceledLiveChooseDeckRestrictionRefresh(
+        for gameID: GameID,
+        cacheKey: LiveChooseDeckRestrictionCacheKey,
+        ownsRefresh: Bool
+    ) {
+        guard ownsRefresh else { return }
+        guard currentLiveChooseDeckRestrictionCacheKey(for: gameID) == cacheKey else {
+            clearUnownedStaleLiveChooseDeckRestrictionLoading(
+                for: gameID,
+                staleCacheKey: cacheKey
+            )
+            return
+        }
+        guard liveChooseDeckRestrictionChecks[gameID] == .loading else { return }
         liveChooseDeckRestrictionChecks[gameID] = nil
         liveChooseDeckRestrictionCacheKeys[gameID] = nil
     }
