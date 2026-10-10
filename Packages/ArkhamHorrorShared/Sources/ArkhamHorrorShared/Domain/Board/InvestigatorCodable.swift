@@ -143,13 +143,7 @@ extension Investigator: Codable {
         form = try container.decode(JSONValue.self, forKey: .form)
         formMeta = try container.decode(JSONValue.self, forKey: .formMeta)
         hand = try container.decode([JSONValue].self, forKey: .hand)
-        handSize = try Self.decodeConnectionData(
-            Int.self,
-            from: container,
-            forKey: .handSize,
-            missingDefault: 0,
-            codingPath: path
-        )
+        handSize = try Self.decodeHandSize(from: container, codingPath: path)
         health = try container.decode(Int.self, forKey: .health)
         horrorHealed = try container.decode(Int.self, forKey: .horrorHealed)
         id = try container.decode(InvestigatorID.self, forKey: .id)
@@ -214,6 +208,21 @@ extension Investigator: Codable {
         experiencePoints = try container.decode(Int.self, forKey: .experiencePoints)
     }
 
+    private static func decodeHandSize(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        codingPath: [any CodingKey]
+    ) throws -> Int? {
+        if allowsMissingConnectionData(at: codingPath) {
+            return try decodeAbsentOnly(
+                Int.self,
+                from: container,
+                forKey: .handSize,
+                codingPath: codingPath + [CodingKeys.handSize]
+            )
+        }
+        return try container.decode(Int.self, forKey: .handSize)
+    }
+
     private static func decodeConnectionData<T: Decodable>(
         _: T.Type,
         from container: KeyedDecodingContainer<CodingKeys>,
@@ -222,7 +231,12 @@ extension Investigator: Codable {
         codingPath: [any CodingKey]
     ) throws -> T {
         if allowsMissingConnectionData(at: codingPath) {
-            return try container.decodeIfPresent(T.self, forKey: key) ?? defaultValue
+            return try decodeAbsentOnly(
+                T.self,
+                from: container,
+                forKey: key,
+                codingPath: codingPath + [key]
+            ) ?? defaultValue
         }
         return try container.decode(T.self, forKey: key)
     }
@@ -276,7 +290,7 @@ extension Investigator: Codable {
         try container.encode(form, forKey: .form)
         try container.encode(formMeta, forKey: .formMeta)
         try container.encode(hand, forKey: .hand)
-        try container.encode(handSize, forKey: .handSize)
+        try container.encodeIfPresent(handSize, forKey: .handSize)
         try container.encode(health, forKey: .health)
         try container.encode(horrorHealed, forKey: .horrorHealed)
         try container.encode(id, forKey: .id)
