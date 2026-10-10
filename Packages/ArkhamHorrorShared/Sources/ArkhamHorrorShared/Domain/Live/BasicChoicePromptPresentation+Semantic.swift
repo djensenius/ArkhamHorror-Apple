@@ -325,12 +325,20 @@ extension BasicChoicePromptPresentation {
         descriptor(for: choice)?.completesSelection == true
     }
 
-    func shouldDisplayChoice(_: BasicChoice) -> Bool {
-        true
+    func shouldDisplayChoice(_ choice: BasicChoice, in projection: BoardProjection? = nil) -> Bool {
+        guard let projection,
+              let descriptor = descriptor(for: choice),
+              descriptor.uiTag == "TargetLabel",
+              !BoardPromptChoiceLinker.chaosTokenElementIDs(
+                  for: descriptor.target,
+                  projection: projection
+              ).isEmpty
+        else { return true }
+        return false
     }
 
-    func displayOrderedChoices() -> [BasicChoice] {
-        let displayed = choices.filter { shouldDisplayChoice($0) }
+    func displayOrderedChoices(in projection: BoardProjection? = nil) -> [BasicChoice] {
+        let displayed = choices.filter { shouldDisplayChoice($0, in: projection) }
         return displayed.filter { !isCompletingSelection($0) }
             + displayed.filter { isCompletingSelection($0) }
     }

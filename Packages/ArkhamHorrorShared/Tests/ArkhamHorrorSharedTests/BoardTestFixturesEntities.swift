@@ -129,6 +129,7 @@ extension BoardTestFixtures {
         concealedCount: Int = 0,
         cardCount: Int = 0,
         cardValues: [WireCardID: JSONValue] = [:],
+        focusedChaosTokens: [JSONValue] = [],
         questionCount: Int = 0,
         questionPlayerIDs: [PlayerID] = [],
         questions: [PlayerID: BasicChoiceQuestionPayload] = [:],
@@ -179,7 +180,8 @@ extension BoardTestFixtures {
             leadInvestigatorID: resolvedLeadInvestigatorID, playerOrder: playerOrder, phase: phase,
             phaseStep: phaseStep, inAction: false, skillTest: nil, skillTestChaosTokens: [],
             focusedCards: [], highlightedCards: [], focusedTarotCards: [], foundCards: .null,
-            focusedChaosTokens: [], activeCard: nil, removedFromPlay: [], gameState: gameState,
+            focusedChaosTokens: focusedChaosTokens, activeCard: nil, removedFromPlay: [],
+            gameState: gameState,
             inSetup: false, skillTestResults: nil,
             question: basicChoiceQuestions(
                 count: questionCount,
