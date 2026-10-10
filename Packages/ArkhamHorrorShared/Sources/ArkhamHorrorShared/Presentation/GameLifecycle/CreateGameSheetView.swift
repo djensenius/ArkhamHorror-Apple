@@ -125,12 +125,48 @@ struct CreateGameSheetView: View {
                 .accessibilityIdentifier(AccountAccessibilityID.createGameCatalogPicker)
             }
 
+            if !viewModel.selectedSideStoryParts.isEmpty {
+                Picker(
+                    gameLifecycleLocalized("create.sideStoryMode", "Scenarios"),
+                    selection: Binding(
+                        get: { viewModel.selectedSideStoryPartID },
+                        set: { viewModel.selectedSideStoryPartID = $0 }
+                    )
+                ) {
+                    Text(gameLifecycleLocalized("create.bothScenarios", "Both scenarios"))
+                        .tag(String?.none)
+                    ForEach(viewModel.selectedSideStoryParts) { part in
+                        Text(part.title).tag(Optional(part.id))
+                    }
+                }
+                .accessibilityLabel(
+                    gameLifecycleLocalized("create.sideStoryMode.accessibility", "Side-story scenario selection") // swiftlint:disable:this line_length
+                )
+                .accessibilityIdentifier(AccountAccessibilityID.createGameSideStoryModePicker)
+            }
+
             if viewModel.canToggleReturnTo {
                 Toggle(
-                    gameLifecycleLocalized("create.returnTo", "Return to"),
+                    returnToLabel,
                     isOn: Binding(get: { viewModel.useReturnTo }, set: { viewModel.useReturnTo = $0 }) // swiftlint:disable:this line_length
                 )
                 .accessibilityIdentifier(AccountAccessibilityID.createGameReturnToToggle)
+            }
+
+            if let required = viewModel.selectedScenarioRequiredInvestigatorText {
+                Text(required)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.createGameRequiredInvestigatorText
+                    )
+            }
+
+            ForEach(viewModel.selectedScenarioDeckRequirements, id: \.self) { requirement in
+                Text(requirement)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier(AccountAccessibilityID.createGameDeckRequirementText)
             }
 
             if let badge = viewModel.selectionBadge {
@@ -231,6 +267,15 @@ struct CreateGameSheetView: View {
             .accessibilityIdentifier(AccountAccessibilityID.createGameTarotToggle)
         }
         .disabled(viewModel.isSubmitting)
+    }
+
+    private var returnToLabel: String {
+        if viewModel.selectedScenarioUsesBlobReturnToVariant {
+            return gameLifecycleLocalized(
+                "create.blobElse.toggle", "The Blob That Ate Everything ELSE!"
+            )
+        }
+        return gameLifecycleLocalized("create.returnTo", "Return to")
     }
 
     private var nameSection: some View {

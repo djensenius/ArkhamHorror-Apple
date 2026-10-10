@@ -340,6 +340,12 @@
 "create.scenario.accessibility" = "Szenario";
 "create.scenario.hint" = "Wähle, welches eigenständige Szenario oder welche Nebengeschichte erstellt werden soll.";
 "create.returnTo" = "Rückkehr zu";
+"create.sideStoryMode" = "Szenarien";
+"create.sideStoryMode.accessibility" = "Nebengeschichten-Szenarioauswahl";
+"create.bothScenarios" = "Beide Szenarien";
+"create.requiresInvestigator" = "Erfordert ein %@-Deck.";
+"create.blobElse.title" = "The Blob That Ate Everything ELSE!";
+"create.blobElse.toggle" = "The Blob That Ate Everything ELSE!";
 "create.release.alpha" = "Alpha";
 "create.release.beta" = "Beta";
 "create.difficulty" = "Schwierigkeit";

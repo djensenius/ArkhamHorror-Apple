@@ -43,9 +43,11 @@ struct CampaignCatalogScenario: Sendable, Equatable, Hashable {
     let beta: Bool
     let returnToID: String?
     let returnToNameKey: String?
+    let returnToVariant: Bool
     let standaloneDifficulties: [RequestDifficulty]
     let requiredInvestigator: String?
     let requiredInvestigatorCodes: [String]
+    let deckRequirements: [String]
     let settings: [JSONValue]
     let parts: [CampaignCatalogSideStoryPart]
 }
@@ -181,9 +183,11 @@ extension CampaignCatalogScenario: Decodable {
         case beta
         case returnTo
         case returnToNameKey
+        case returnToVariant
         case standaloneDifficulties
         case requiredInvestigator
         case requiredInvestigatorCodes
+        case deckRequirements
         case settings
         case scenarios
     }
@@ -199,12 +203,18 @@ extension CampaignCatalogScenario: Decodable {
         beta = try container.decodeIfPresent(Bool.self, forKey: .beta) ?? false
         returnToID = try container.decodeIfPresent(String.self, forKey: .returnTo)
         returnToNameKey = try container.decodeIfPresent(String.self, forKey: .returnToNameKey)
+        returnToVariant = try container.decodeIfPresent(
+            Bool.self, forKey: .returnToVariant
+        ) ?? false
         standaloneDifficulties = try container.decodeIfPresent(
             [RequestDifficulty].self, forKey: .standaloneDifficulties
         ) ?? RequestDifficulty.allCases
         requiredInvestigator = try container.decodeIfPresent(String.self, forKey: .requiredInvestigator) // swiftlint:disable:this line_length
         requiredInvestigatorCodes = try container.decodeIfPresent(
             [String].self, forKey: .requiredInvestigatorCodes
+        ) ?? []
+        deckRequirements = try container.decodeIfPresent(
+            [String].self, forKey: .deckRequirements
         ) ?? []
         settings = try container.decodeIfPresent([JSONValue].self, forKey: .settings) ?? []
         parts = try container.decodeIfPresent([CampaignCatalogSideStoryPart].self, forKey: .scenarios) ?? [] // swiftlint:disable:this line_length

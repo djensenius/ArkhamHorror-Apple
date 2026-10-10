@@ -59,6 +59,22 @@ struct CreateGameViewModelTests {
         #expect(request.campaignOrScenario.scenarioId == "01104")
     }
 
+    @Test("Release badges expose alpha before beta for selected catalog entries")
+    func releaseBadgesExposeAlphaBeforeBeta() {
+        let catalog = CreateGameCatalog(
+            campaigns: [CreateGameCampaignOption(
+                id: "11", title: "Alpha Campaign", nameKey: nil, alpha: true, beta: true
+            )],
+            standaloneScenarios: [CreateGameScenarioOption(
+                id: "90004", title: "Beta Scenario", nameKey: nil, campaignID: nil, beta: true
+            )]
+        )
+        let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "11")
+        #expect(viewModel.selectionBadge == "Alpha")
+        viewModel.mode = .standaloneScenario
+        #expect(viewModel.selectionBadge == "Beta")
+    }
+
     @Test("Player count is constrained to 1...4 and controls multiplayer variant")
     func playerCountConstrainsVariant() {
         let viewModel = CreateGameViewModel()

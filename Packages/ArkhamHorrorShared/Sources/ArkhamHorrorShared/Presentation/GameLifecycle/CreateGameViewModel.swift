@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 import Observation
 
@@ -28,9 +29,16 @@ final class CreateGameViewModel {
 
     var selectedScenarioID: String {
         didSet {
+            selectedSideStoryPartID = nil
             normalizeSelection()
             applyScenarioDefaults()
         }
+    }
+
+    /// `nil` means the web's "both scenarios" side-story campaign mode. A concrete part id
+    /// mirrors the web's individual side-story scenario mode.
+    var selectedSideStoryPartID: String? {
+        didSet { normalizeSelection() }
     }
 
     var useReturnTo = false {
@@ -89,8 +97,16 @@ final class CreateGameViewModel {
             }
             return selectedCampaign?.title ?? gameLifecycleLocalized("create.mode.campaign", "Campaign") // swiftlint:disable:this line_length
         case .standaloneScenario:
+            if useReturnTo, selectedScenario?.returnToVariant == true {
+                return gameLifecycleLocalized(
+                    "create.blobElse.title", "The Blob That Ate Everything ELSE!"
+                )
+            }
             if useReturnTo, let returnTo = selectedScenario?.returnTo {
                 return returnTo.title
+            }
+            if let part = selectedSideStoryPart {
+                return part.title
             }
             return selectedScenario?.title ?? gameLifecycleLocalized(
                 "create.mode.standaloneScenario", "Standalone scenario"
@@ -125,8 +141,40 @@ final class CreateGameViewModel {
         case .campaign:
             selectedCampaign?.returnTo != nil
         case .standaloneScenario:
-            selectedScenario?.returnTo != nil
+            selectedScenario?.returnTo != nil || selectedScenario?.returnToVariant == true
         }
+    }
+
+    var selectedSideStoryParts: [CreateGameSideStoryPartOption] {
+        guard mode == .standaloneScenario else { return [] }
+        return selectedScenario?.parts ?? []
+    }
+
+    var selectedScenarioUsesBlobReturnToVariant: Bool {
+        mode == .standaloneScenario && selectedScenario?.returnToVariant == true
+    }
+
+    var selectedScenarioRequiredInvestigatorText: String? {
+        guard mode == .standaloneScenario,
+              let name = selectedScenario?.requiredInvestigator,
+              !(selectedScenario?.requiredInvestigatorCodes.isEmpty ?? true)
+        else { return nil }
+        return gameLifecycleLocalizedFormat(
+            "create.requiresInvestigator", "Requires a %@ deck.", name
+        )
+    }
+
+    var selectedScenarioDeckRequirements: [String] {
+        guard mode == .standaloneScenario else { return [] }
+        return selectedScenario?.deckRequirements ?? []
+    }
+
+    func selectedScenarioRequiresInvestigatorCode(_ code: String) -> Bool {
+        guard mode == .standaloneScenario,
+              let scenario = selectedScenario,
+              !scenario.requiredInvestigatorCodes.isEmpty
+        else { return true }
+        return scenario.requiredInvestigatorCodes.contains(Self.normalizedInvestigatorCode(code))
     }
 
     var selectedCampaignVariants: [CreateGameVariantOption] {
@@ -175,6 +223,7 @@ final class CreateGameViewModel {
         catalogWarningMessage = warningMessage
         selectedCampaignID = catalog.campaigns.first?.id ?? ""
         selectedScenarioID = catalog.standaloneScenarios.first?.id ?? ""
+        selectedSideStoryPartID = nil
         useReturnTo = false
         selectedVariantID = nil
         recommendedOptionEnabled = [:]
@@ -191,6 +240,7 @@ final class CreateGameViewModel {
         recommendedOptionEnabled[option.id] ?? option.defaultEnabled
     }
 
+    // swiftlint:disable:next function_body_length
     func makeRequest() throws -> CreateGameRequest {
         let campaignOrScenario: CampaignOrScenario
         let effectiveCampaignID: String?
@@ -214,12 +264,16 @@ final class CreateGameViewModel {
                 }
                 throw Failure.unknownScenarioSelection(selectedScenarioID)
             }
-            if let sideStoryCampaignID = scenario.sideStoryCampaignID {
-                effectiveCampaignID = sideStoryCampaignID
+            let startsSideStoryCampaign = scenario.sideStoryCampaignID != nil
+                && !scenario.parts.isEmpty
+                && selectedSideStoryPartID == nil
+            if startsSideStoryCampaign {
+                effectiveCampaignID = scenario.sideStoryCampaignID
                 effectiveScenarioID = nil
             } else {
                 effectiveCampaignID = nil
-                effectiveScenarioID = useReturnTo ? scenario.returnTo?.id ?? scenario.id : scenario.id // swiftlint:disable:this line_length
+                effectiveScenarioID = selectedSideStoryPartID
+                    ?? (useReturnTo ? scenario.returnTo?.id ?? scenario.id : scenario.id)
             }
             strictAsIfAt = false
         }
@@ -236,7 +290,7 @@ final class CreateGameViewModel {
             campaignName: resolvedGameName,
             multiplayerVariant: multiplayerVariant,
             includeTarotReadings: includeTarotReadings,
-            options: selectedCampaignOptions(),
+            options: selectedOptions(),
             strictAsIfAt: .value(strictAsIfAt),
             asIfRuling: .value(strictAsIfAt ? .chapter2 : .chapter1),
             ultimatumsAndBoons: .value([]),
@@ -275,6 +329,20 @@ final class CreateGameViewModel {
         catalog.standaloneScenarios.first { $0.id == selectedScenarioID }
     }
 
+    private var selectedSideStoryPart: CreateGameSideStoryPartOption? {
+        guard let selectedSideStoryPartID else { return nil }
+        return selectedSideStoryParts.first { $0.id == selectedSideStoryPartID }
+    }
+
+    private func selectedOptions() -> [CampaignOption] {
+        switch mode {
+        case .campaign:
+            selectedCampaignOptions()
+        case .standaloneScenario:
+            selectedScenarioOptions()
+        }
+    }
+
     private func selectedCampaignOptions() -> [CampaignOption] {
         guard mode == .campaign, let campaign = selectedCampaign else { return [] }
         var options = selectedCampaignRecommendedOptions.compactMap { option -> CampaignOption? in
@@ -286,6 +354,14 @@ final class CreateGameViewModel {
             options.append(.campaignVariant(variantID))
         }
         return options
+    }
+
+    private func selectedScenarioOptions() -> [CampaignOption] {
+        guard let scenario = selectedScenario else { return [] }
+        if useReturnTo, scenario.returnToVariant {
+            return [.flag(.playWithTheBlobThatAteEverythingElse)]
+        }
+        return []
     }
 
     private func normalizeSelection() {
@@ -300,6 +376,12 @@ final class CreateGameViewModel {
             if selectedScenarioID != fallback {
                 selectedScenarioID = fallback
             }
+        }
+        let selectedSideStoryPartUnavailable = selectedSideStoryPartID.map { id in
+            !selectedSideStoryParts.contains { $0.id == id }
+        } ?? false
+        if selectedSideStoryPartUnavailable {
+            selectedSideStoryPartID = nil
         }
         if !canToggleReturnTo, useReturnTo {
             useReturnTo = false
@@ -352,5 +434,9 @@ final class CreateGameViewModel {
 
     private func applyScenarioDefaults() {
         normalizeDifficulty()
+    }
+
+    private static func normalizedInvestigatorCode(_ code: String) -> String {
+        code.hasPrefix("c") ? String(code.dropFirst()) : code
     }
 }

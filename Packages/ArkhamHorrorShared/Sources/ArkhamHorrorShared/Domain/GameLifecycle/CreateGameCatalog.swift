@@ -107,9 +107,11 @@ struct CreateGameScenarioOption: Identifiable, Sendable, Equatable, Hashable {
     let alpha: Bool
     let beta: Bool
     let returnTo: CreateGameReturnToScenarioOption?
+    let returnToVariant: Bool
     let difficulties: [RequestDifficulty]
     let requiredInvestigator: String?
     let requiredInvestigatorCodes: [String]
+    let deckRequirements: [String]
     /// A side story with multiple scenarios starts as a campaign on the web when the
     /// "both scenarios" mode is selected (`NewCampaign.vue:358-365`). This field is the
     /// campaign id to echo in that request while sending `scenarioId: null`.
@@ -128,9 +130,11 @@ struct CreateGameScenarioOption: Identifiable, Sendable, Equatable, Hashable {
         alpha: Bool = false,
         beta: Bool = false,
         returnTo: CreateGameReturnToScenarioOption? = nil,
+        returnToVariant: Bool = false,
         difficulties: [RequestDifficulty] = RequestDifficulty.allCases,
         requiredInvestigator: String? = nil,
         requiredInvestigatorCodes: [String] = [],
+        deckRequirements: [String] = [],
         sideStoryCampaignID: String? = nil,
         parts: [CreateGameSideStoryPartOption] = []
     ) {
@@ -141,9 +145,11 @@ struct CreateGameScenarioOption: Identifiable, Sendable, Equatable, Hashable {
         self.alpha = alpha
         self.beta = beta
         self.returnTo = returnTo
+        self.returnToVariant = returnToVariant
         self.difficulties = difficulties.isEmpty ? RequestDifficulty.allCases : difficulties
         self.requiredInvestigator = requiredInvestigator
         self.requiredInvestigatorCodes = requiredInvestigatorCodes
+        self.deckRequirements = deckRequirements
         self.sideStoryCampaignID = sideStoryCampaignID
         self.parts = parts
     }
@@ -257,9 +263,13 @@ extension CreateGameCatalog {
             )
         }
 
-        let campaignScenarios = document.scenarios.map { scenario in
-            scenarioOption(from: scenario, resolver: resolver, isSideStory: false)
-        }
+        let campaignScenarios = document.scenarios
+            // Mirrors `frontend/src/arkham/views/NewCampaign.vue:124-129`: The Scarlet Keys
+            // campaign cannot be started as individual standalone scenarios.
+            .filter { $0.campaignID != "09" }
+            .map { scenario in
+                scenarioOption(from: scenario, resolver: resolver, isSideStory: false)
+            }
         let sideStories = document.sideStories.map { scenario in
             scenarioOption(from: scenario, resolver: resolver, isSideStory: true)
         }
@@ -289,9 +299,11 @@ extension CreateGameCatalog {
                     nameKey: nameKey
                 )
             },
+            returnToVariant: scenario.returnToVariant,
             difficulties: scenario.standaloneDifficulties,
             requiredInvestigator: scenario.requiredInvestigator,
             requiredInvestigatorCodes: scenario.requiredInvestigatorCodes,
+            deckRequirements: scenario.deckRequirements,
             sideStoryCampaignID: isSideStory ? scenario.campaignID : nil,
             parts: scenario.parts.map { part in
                 CreateGameSideStoryPartOption(
