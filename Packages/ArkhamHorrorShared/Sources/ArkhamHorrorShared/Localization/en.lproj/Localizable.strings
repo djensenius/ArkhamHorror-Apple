@@ -326,6 +326,7 @@
 "scenarioSpecific.spiritDeck.malformedCard" = "Malformed card entry";
 "scenarioSpecific.spiritDeck.fixed.hint" = "This card is fixed in the spirit deck and cannot be toggled.";
 "scenarioSpecific.spiritDeck.unselectable.hint" = "This card cannot be selected because its prompt entry could not be resolved.";
+"scenarioSpecific.spiritDeck.atLimit.hint" = "Deselect a spirit deck card before adding another.";
 "scenarioSpecific.spiritDeck.selected.hint" = "Removes this card from your spirit deck selection.";
 "scenarioSpecific.spiritDeck.unselected.hint" = "Adds this card to your spirit deck selection.";
 "scenarioSpecific.spiritDeck.accessibility.fixed" = "%@, %@, fixed";

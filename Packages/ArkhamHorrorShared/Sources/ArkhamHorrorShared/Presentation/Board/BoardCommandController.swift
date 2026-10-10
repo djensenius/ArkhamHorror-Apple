@@ -118,6 +118,7 @@ final class BoardCommandController {
             amountDraft: initialAmountDraft,
             exchangeAmount: 0,
             spiritDeckSearchText: "",
+            spiritDeckSelection: [],
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -172,6 +173,7 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: newProjection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -195,6 +197,7 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: newPrompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
@@ -422,7 +425,8 @@ final class BoardCommandController {
             prompt: prompt,
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
-            spiritDeckSearchText: spiritDeckSearchText
+            spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection
         )
         guard !zones.isEmpty else { return false }
         let current = focusedZone ?? zones[0]
@@ -648,6 +652,7 @@ final class BoardCommandController {
               let toggled = spiritDeckPrompt.toggledSelection(spiritDeckSelection, entryAt: index)
         else { return false }
         spiritDeckSelection = toggled
+        refreshFocusGraphForPromptControls()
         return true
     }
 
@@ -717,6 +722,7 @@ final class BoardCommandController {
             amountDraft: amountDraft,
             exchangeAmount: exchangeAmount,
             spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection,
             fullPlayerAreaPlayerID: Self.fullPlayerAreaPlayerID(
                 in: projection, prompt: prompt, localPlayerID: localPlayerID, isSolo: isSolo
             ),
