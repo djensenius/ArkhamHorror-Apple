@@ -59,15 +59,26 @@ struct LaidToRestSpiritDeckPromptPresentation: Sendable, Equatable {
         entries.indices.contains(index) && entries[index].isSelectable
     }
 
+    func canToggle(entry: Entry, selectedCodes: [String]) -> Bool {
+        guard entry.isSelectable, let code = entry.code else { return false }
+        let selected = Set(selectedCodes.filter { distinctSelectableCodes.contains($0) })
+        return selected.contains(code) || selected.count < count
+    }
+
+    func canToggle(entryAt index: Int, selectedCodes: [String]) -> Bool {
+        guard entries.indices.contains(index) else { return false }
+        return canToggle(entry: entries[index], selectedCodes: selectedCodes)
+    }
+
     func toggledSelection(_ selectedCodes: [String], entryAt index: Int) -> [String]? {
-        guard canToggle(entryAt: index), let code = entries[index].code else { return nil }
+        guard canToggle(entryAt: index, selectedCodes: selectedCodes),
+              let code = entries[index].code
+        else { return nil }
         var selected = selectedCodes.filter { distinctSelectableCodes.contains($0) }
         if selected.contains(code) {
             selected.removeAll { $0 == code }
-        } else if Set(selected).count < count {
-            selected.append(code)
         } else {
-            return selected
+            selected.append(code)
         }
         return selected
     }

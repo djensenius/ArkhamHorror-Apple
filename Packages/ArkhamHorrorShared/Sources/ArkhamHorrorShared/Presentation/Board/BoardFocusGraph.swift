@@ -130,6 +130,13 @@ enum BoardFocusID {
 /// zone (every other zone); ``FocusWrapPolicy/wrapWithinZone`` guarantees every entity
 /// stays reachable by directional movement even where an explicit edge is absent.
 enum BoardFocusGraphBuilder {
+    private struct PromptInputState {
+        let amountDraft: [String: Int]
+        let exchangeAmount: Int
+        let spiritDeckSearchText: String
+        let spiritDeckSelection: [String]
+    }
+
     // swiftlint:disable:next function_body_length
     static func makeGraph(
         projection: BoardProjection,
@@ -138,6 +145,7 @@ enum BoardFocusGraphBuilder {
         amountDraft: [String: Int] = [:],
         exchangeAmount: Int = 0,
         spiritDeckSearchText: String = "",
+        spiritDeckSelection: [String] = [],
         fullPlayerAreaPlayerID: PlayerID? = nil,
         isSolo: Bool = false,
         linkedChoiceMenuRequest: BoardLinkedChoiceMenuRequest? = nil
@@ -149,12 +157,16 @@ enum BoardFocusGraphBuilder {
         nodes.append(FocusNode(id: BoardFocusID.scenarioHeader, zone: BoardFocusZone.scenario))
         zoneEntryPoints[BoardFocusZone.scenario] = BoardFocusID.scenarioHeader
 
+        let promptInputState = PromptInputState(
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection
+        )
         let promptChoices = promptFocusIDs(
             prompt,
             projection: projection,
-            amountDraft: amountDraft,
-            exchangeAmount: exchangeAmount,
-            spiritDeckSearchText: spiritDeckSearchText
+            inputState: promptInputState
         )
         appendVerticalChain(
             promptChoices, zone: BoardFocusZone.prompt,
@@ -245,18 +257,14 @@ enum BoardFocusGraphBuilder {
     private static func promptFocusIDs(
         _ prompt: BasicChoicePromptPresentation?,
         projection: BoardProjection,
-        amountDraft: [String: Int],
-        exchangeAmount: Int,
-        spiritDeckSearchText: String
+        inputState: PromptInputState
     ) -> [SemanticFocusID] {
         var promptChoices: [SemanticFocusID] = []
         if let prompt, prompt.canSubmit {
             promptChoices = submittablePromptFocusIDs(
                 prompt,
                 projection: projection,
-                amountDraft: amountDraft,
-                exchangeAmount: exchangeAmount,
-                spiritDeckSearchText: spiritDeckSearchText
+                inputState: inputState
             )
         }
         if prompt?.canRetry == true {
@@ -271,15 +279,16 @@ enum BoardFocusGraphBuilder {
     private static func submittablePromptFocusIDs(
         _ prompt: BasicChoicePromptPresentation,
         projection: BoardProjection,
-        amountDraft: [String: Int],
-        exchangeAmount: Int,
-        spiritDeckSearchText: String
+        inputState: PromptInputState
     ) -> [SemanticFocusID] {
         if let amountPrompt = prompt.amountPrompt(in: projection) {
-            return amountPromptFocusIDs(amountPrompt, amountDraft: amountDraft)
+            return amountPromptFocusIDs(amountPrompt, amountDraft: inputState.amountDraft)
         }
         if let exchangePrompt = prompt.exchangePrompt(in: projection) {
-            return exchangePromptFocusIDs(exchangePrompt, exchangeAmount: exchangeAmount)
+            return exchangePromptFocusIDs(
+                exchangePrompt,
+                exchangeAmount: inputState.exchangeAmount
+            )
         }
         if let pickDestinyPrompt = prompt.pickDestinyPrompt?.presentation {
             return pickDestinyPrompt.rows.indices.map(BoardFocusID.promptPickDestinyRow)
@@ -290,8 +299,13 @@ enum BoardFocusGraphBuilder {
         }
         if let spiritDeckPrompt = prompt.laidToRestSpiritDeckPrompt {
             return [BoardFocusID.promptScenarioSpecificSearch]
-                + spiritDeckPrompt.displayEntries(matching: spiritDeckSearchText)
-                .filter(\.isSelectable)
+                + spiritDeckPrompt.displayEntries(matching: inputState.spiritDeckSearchText)
+                .filter {
+                    spiritDeckPrompt.canToggle(
+                        entry: $0,
+                        selectedCodes: inputState.spiritDeckSelection
+                    )
+                }
                 .map { BoardFocusID.promptScenarioSpecificCard($0.id) }
                 + [BoardFocusID.promptScenarioSpecificSubmit]
         }
@@ -348,20 +362,21 @@ enum BoardFocusGraphBuilder {
         prompt: BasicChoicePromptPresentation? = nil,
         amountDraft: [String: Int] = [:],
         exchangeAmount: Int = 0,
-        spiritDeckSearchText: String = ""
+        spiritDeckSearchText: String = "",
+        spiritDeckSelection: [String] = []
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
         let hasActionableChoice = prompt?.displayOrderedChoices(in: projection).contains {
             prompt?.isChoiceActionable($0, in: projection) == true
         } == true
+        let promptInputState = PromptInputState(
+            amountDraft: amountDraft,
+            exchangeAmount: exchangeAmount,
+            spiritDeckSearchText: spiritDeckSearchText,
+            spiritDeckSelection: spiritDeckSelection
+        )
         let hasAmountControls = prompt.map {
-            !promptFocusIDs(
-                $0,
-                projection: projection,
-                amountDraft: amountDraft,
-                exchangeAmount: exchangeAmount,
-                spiritDeckSearchText: spiritDeckSearchText
-            ).isEmpty
+            !promptFocusIDs($0, projection: projection, inputState: promptInputState).isEmpty
         } == true
         let hasPromptFocus = prompt?.canRetryCatalog == true
             || prompt?.canRetry == true

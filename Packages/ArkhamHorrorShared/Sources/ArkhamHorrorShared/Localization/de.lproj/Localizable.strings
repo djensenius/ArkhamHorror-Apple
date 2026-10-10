@@ -326,6 +326,7 @@
 "scenarioSpecific.spiritDeck.malformedCard" = "Fehlerhafter Karteneintrag";
 "scenarioSpecific.spiritDeck.fixed.hint" = "Diese Karte ist im Geist-Deck fest vorgegeben und kann nicht umgeschaltet werden.";
 "scenarioSpecific.spiritDeck.unselectable.hint" = "Diese Karte kann nicht ausgewählt werden, weil ihr Prompt-Eintrag nicht aufgelöst werden konnte.";
+"scenarioSpecific.spiritDeck.atLimit.hint" = "Wähle zuerst eine Geist-Deck-Karte ab, bevor du eine weitere hinzufügst.";
 "scenarioSpecific.spiritDeck.selected.hint" = "Entfernt diese Karte aus deiner Geist-Deck-Auswahl.";
 "scenarioSpecific.spiritDeck.unselected.hint" = "Fügt diese Karte zu deiner Geist-Deck-Auswahl hinzu.";
 "scenarioSpecific.spiritDeck.accessibility.fixed" = "%@, %@, fest vorgegeben";

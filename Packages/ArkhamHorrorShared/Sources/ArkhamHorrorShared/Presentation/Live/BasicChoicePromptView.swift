@@ -272,9 +272,13 @@ struct BasicChoicePromptView: View {
 
     private func spiritDeckEntry(
         _ entry: LaidToRestSpiritDeckPromptPresentation.Entry,
-        prompt _: LaidToRestSpiritDeckPromptPresentation
+        prompt: LaidToRestSpiritDeckPromptPresentation
     ) -> some View {
         let selected = entry.code.map { controller.spiritDeckSelection.contains($0) } ?? false
+        let canToggle = prompt.canToggle(
+            entry: entry,
+            selectedCodes: controller.spiritDeckSelection
+        )
         let title = entry.displayName ?? presentation.semanticLocalized(
             "scenarioSpecific.spiritDeck.unresolvedCard",
             value: "Card unavailable"
@@ -310,8 +314,10 @@ struct BasicChoicePromptView: View {
         )
         .buttonStyle(.bordered)
         .focused(focusBinding, equals: BoardFocusID.promptScenarioSpecificCard(entry.id))
-        .disabled(!presentation.canSubmit || !entry.isSelectable)
-        .accessibilityHint(spiritDeckAccessibilityHint(entry: entry, selected: selected))
+        .disabled(!presentation.canSubmit || !canToggle)
+        .accessibilityHint(spiritDeckAccessibilityHint(
+            entry: entry, selected: selected, canToggle: canToggle
+        ))
         .accessibilityIdentifier("liveGame.prompt.scenarioSpecific.card.\(entry.id)")
     }
 
@@ -331,7 +337,8 @@ struct BasicChoicePromptView: View {
 
     private func spiritDeckAccessibilityHint(
         entry: LaidToRestSpiritDeckPromptPresentation.Entry,
-        selected: Bool
+        selected: Bool,
+        canToggle: Bool
     ) -> String {
         if entry.isFixed {
             return presentation.semanticLocalized(
@@ -344,6 +351,12 @@ struct BasicChoicePromptView: View {
                 "scenarioSpecific.spiritDeck.unselectable.hint",
                 // swiftlint:disable:next line_length
                 value: "This card cannot be selected because its prompt entry could not be resolved."
+            )
+        }
+        guard canToggle else {
+            return presentation.semanticLocalized(
+                "scenarioSpecific.spiritDeck.atLimit.hint",
+                value: "Deselect a spirit deck card before adding another."
             )
         }
         return selected
