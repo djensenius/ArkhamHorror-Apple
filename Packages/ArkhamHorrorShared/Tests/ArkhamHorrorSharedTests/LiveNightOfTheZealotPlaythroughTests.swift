@@ -1257,8 +1257,16 @@ struct LiveNightOfTheZealotPlaythroughTests {
     func botStrategyAvoidsGameOverStoryChoice() {
         let prompt = Self.storyChoiceStrategyPrompt(
             choices: [
-                (index: 0, label: "$theDrownedCity.anOfferYouCantRefuse.label.refuse", messageTag: "GameOver"),
-                (index: 1, label: "$theDrownedCity.anOfferYouCantRefuse.label.accept", messageTag: "NextCampaignStep"),
+                StoryChoiceStrategyFixture(
+                    index: 0,
+                    label: "$theDrownedCity.anOfferYouCantRefuse.label.refuse",
+                    messageTag: "GameOver"
+                ),
+                StoryChoiceStrategyFixture(
+                    index: 1,
+                    label: "$theDrownedCity.anOfferYouCantRefuse.label.accept",
+                    messageTag: "NextCampaignStep"
+                ),
             ]
         )
 
@@ -2287,7 +2295,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
     }
 
     private static func storyChoiceStrategyPrompt(
-        choices: [(index: Int, label: String, messageTag: String)]
+        choices: [StoryChoiceStrategyFixture]
     ) -> BasicChoicePromptPresentation {
         let rawQuestion: JSONValue = .object([
             "tag": .string("ChooseOne"),
@@ -5170,10 +5178,8 @@ private func rawChoiceValue(
     if let choices = object?["choices"]?.arrayValue, choices.indices.contains(choice.sourceIndex) {
         return choices[choice.sourceIndex]
     }
-    if let readChoices = object?["readChoices"]?.objectValue,
-       let contents = readChoices["contents"]?.arrayValue,
-       contents.indices.contains(choice.sourceIndex)
-    {
+    let readChoiceContents = object?["readChoices"]?.objectValue?["contents"]?.arrayValue
+    if let contents = readChoiceContents, contents.indices.contains(choice.sourceIndex) {
         return contents[choice.sourceIndex]
     }
     return nil
@@ -5190,6 +5196,12 @@ private func containsGameOverMessage(_ value: JSONValue) -> Bool {
         return array.contains(where: containsGameOverMessage)
     }
     return false
+}
+
+private struct StoryChoiceStrategyFixture {
+    let index: Int
+    let label: String
+    let messageTag: String
 }
 
 private struct BotChoiceRank: Sendable, Equatable {
