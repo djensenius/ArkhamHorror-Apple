@@ -2369,22 +2369,49 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 token: token
             )
             let campaignOrScenario = try configuration.campaignOrScenario()
-            let gameID = try await model.createGame(
-                CreateGameRequest(
-                    deckIds: [deck.id],
-                    playerCount: 1,
-                    campaignOrScenario: campaignOrScenario,
-                    difficulty: configuration.difficulty,
-                    campaignName: configuration.gameName(for: investigator),
-                    multiplayerVariant: .solo,
-                    includeTarotReadings: configuration.includeTarotReadings,
-                    options: configuration.options,
-                    strictAsIfAt: configuration.strictAsIfAtField,
-                    asIfRuling: configuration.asIfRulingField,
-                    ultimatumsAndBoons: configuration.ultimatumsAndBoonsField,
-                    achievementsEnabled: .value(configuration.achievementsEnabled)
-                )
+            let directHarnessRequest = CreateGameRequest(
+                deckIds: [deck.id],
+                playerCount: 1,
+                campaignOrScenario: campaignOrScenario,
+                difficulty: configuration.difficulty,
+                campaignName: configuration.gameName(for: investigator),
+                multiplayerVariant: .solo,
+                includeTarotReadings: configuration.includeTarotReadings,
+                options: configuration.options,
+                strictAsIfAt: configuration.strictAsIfAtField,
+                asIfRuling: configuration.asIfRulingField,
+                ultimatumsAndBoons: configuration.ultimatumsAndBoonsField,
+                achievementsEnabled: .value(configuration.achievementsEnabled)
             )
+            let catalogFlowRequest = try await makeCatalogFlowRequest(
+                model: model,
+                investigator: investigator,
+                configuration: configuration
+            )
+            // Keep campaign/scenario/options/defaults from the catalog-backed create flow, but
+            // inject the pre-created test deck so the existing live bot can continue beyond setup.
+            let catalogFlowSentRequest = CreateGameRequest(
+                deckIds: [deck.id],
+                playerCount: catalogFlowRequest.playerCount,
+                campaignOrScenario: catalogFlowRequest.campaignOrScenario,
+                difficulty: catalogFlowRequest.difficulty,
+                campaignName: catalogFlowRequest.campaignName,
+                multiplayerVariant: catalogFlowRequest.multiplayerVariant,
+                includeTarotReadings: catalogFlowRequest.includeTarotReadings,
+                options: catalogFlowRequest.options,
+                strictAsIfAt: catalogFlowRequest.strictAsIfAt,
+                asIfRuling: catalogFlowRequest.asIfRuling,
+                ultimatumsAndBoons: catalogFlowRequest.ultimatumsAndBoons,
+                achievementsEnabled: catalogFlowRequest.achievementsEnabled
+            )
+            try recordCreateRequestComparison(
+                investigator: investigator,
+                configuration: configuration,
+                catalogFlowRequest: catalogFlowRequest,
+                catalogFlowSentRequest: catalogFlowSentRequest,
+                directHarnessRequest: directHarnessRequest
+            )
+            let gameID = try await model.createGame(catalogFlowSentRequest)
 
             let subscription = model.subscribeToLiveGame(gameID)
             defer { model.unsubscribeFromLiveGame(subscription) }
@@ -2489,6 +2516,77 @@ struct LiveNightOfTheZealotPlaythroughTests {
             .environment["ARKHAM_LIVE_DIAGNOSTIC_BYPASS_UNSUPPORTED"]?
             .lowercased()
         return rawValue == "1" || rawValue == "true" || rawValue == "yes"
+    }
+
+    private func makeCatalogFlowRequest(
+        model: AppModel,
+        investigator: InvestigatorFixture,
+        configuration: LivePlaythroughConfiguration
+    ) async throws -> CreateGameRequest {
+        let loadResult = await model.createGameCatalogForSheet()
+        let viewModel: CreateGameViewModel
+        switch configuration.target {
+        case let .campaign(id):
+            let baseID = returnToCampaignBaseIDs[id] ?? id
+            viewModel = CreateGameViewModel(catalog: loadResult.catalog, selectedCampaignID: baseID)
+            viewModel.useReturnTo = returnToCampaignBaseIDs[id] != nil
+        case let .standaloneScenario(id):
+            viewModel = CreateGameViewModel(
+                catalog: loadResult.catalog,
+                mode: .standaloneScenario,
+                selectedScenarioID: id
+            )
+        }
+        viewModel.difficulty = configuration.difficulty
+        viewModel.includeTarotReadings = configuration.includeTarotReadings
+        viewModel.customName = configuration.gameName(for: investigator)
+        if let variantID = configuration.campaignVariants.first {
+            viewModel.selectedVariantID = variantID
+        }
+        return try viewModel.makeRequest()
+    }
+
+    private func recordCreateRequestComparison(
+        investigator: InvestigatorFixture,
+        configuration: LivePlaythroughConfiguration,
+        catalogFlowRequest: CreateGameRequest,
+        catalogFlowSentRequest: CreateGameRequest,
+        directHarnessRequest: CreateGameRequest
+    ) throws {
+        guard let rawDirectory = ProcessInfo.processInfo.environment[
+            "ARKHAM_LIVE_CREATE_REQUEST_AUDIT_DIR"
+        ]?.trimmingCharacters(in: .whitespacesAndNewlines), !rawDirectory.isEmpty else {
+            return
+        }
+        let directory = URL(fileURLWithPath: rawDirectory, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let stem = "\(configuration.target.slug)-\(slugComponent(investigator.name))"
+        let catalogFlowBytes = try ContractJSON.encode(catalogFlowRequest)
+        let catalogFlowSentBytes = try ContractJSON.encode(catalogFlowSentRequest)
+        let directHarnessBytes = try ContractJSON.encode(directHarnessRequest)
+        try catalogFlowBytes.write(to: directory.appendingPathComponent("\(stem)-flow-ui.json"))
+        try catalogFlowSentBytes.write(
+            to: directory.appendingPathComponent("\(stem)-flow-sent.json")
+        )
+        try directHarnessBytes.write(to: directory.appendingPathComponent("\(stem)-direct.json"))
+        let catalogFlowJSON = String(bytes: catalogFlowBytes, encoding: .utf8) ?? ""
+        let catalogFlowSentJSON = String(bytes: catalogFlowSentBytes, encoding: .utf8) ?? ""
+        let directHarnessJSON = String(bytes: directHarnessBytes, encoding: .utf8) ?? ""
+        let report = """
+        target=\(configuration.target.summary)
+        investigator=\(investigator.name) (\(investigator.code))
+        flow-ui-bytes=\(catalogFlowJSON)
+        flow-sent-bytes=\(catalogFlowSentJSON)
+        direct-harness-bytes=\(directHarnessJSON)
+        flow-ui-equals-direct=\(catalogFlowBytes == directHarnessBytes)
+        flow-sent-equals-direct=\(catalogFlowSentBytes == directHarnessBytes)
+        flow-ui-equals-flow-sent=\(catalogFlowBytes == catalogFlowSentBytes)
+        """
+        try report.write(
+            to: directory.appendingPathComponent("\(stem)-comparison.txt"),
+            atomically: true,
+            encoding: .utf8
+        )
     }
 
     private func waitForLocaleCatalogIfAdvertised(_ model: AppModel) async throws {
