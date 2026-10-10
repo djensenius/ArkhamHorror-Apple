@@ -975,8 +975,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
             named: "forgotten-age-pick-supplies-resupply-q122"
         )
 
-        #expect(Self.selectedBotIndex(in: initialPrompt) == 1)
-        #expect(Self.selectedBotIndex(in: resupplyPrompt) == 1)
+        #expect(Self.selectedBotIndex(in: initialPrompt) == 7)
+        #expect(Self.selectedBotIndex(in: resupplyPrompt) == 6)
     }
 
     @Test("Return Circle Undone destiny prompt is answerable")
@@ -1157,6 +1157,56 @@ struct LiveNightOfTheZealotPlaythroughTests {
             repeatCount: 0,
             skillTestPreparationCount: 0
         ) == 2)
+    }
+
+    @Test("Live bot strategy explores before empty-location upkeep")
+    func botStrategyExploresBeforeEmptyLocationUpkeep() {
+        let enemyID = BoardTestFixtures.enemyID("000000000904")
+        let enemyEntity = QuestionPresentation.Entity(
+            kind: .enemy,
+            id: enemyID.codingKey.stringValue
+        )
+        let exploreChoice = QuestionPresentation.Choice(
+            sourceIndex: 0,
+            kind: .useAbility,
+            ability: QuestionPresentation.Ability(
+                cardCode: "c04207",
+                index: 1,
+                type: .action,
+                actions: [.activate, .explore],
+                canBeCancelled: false
+            )
+        )
+        let prompt = Self.strategyPrompt(choices: [
+            exploreChoice,
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .investigate),
+            QuestionPresentation.Choice(sourceIndex: 2, kind: .gainResource),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(currentLocationClues: 0),
+            selectableIndexes: [0, 1, 2],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(currentLocationClues: 2),
+            selectableIndexes: [0, 1, 2],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
+        #expect(preferredSelectableIndex(
+            in: Self.strategyPrompt(choices: [
+                exploreChoice,
+                QuestionPresentation.Choice(sourceIndex: 3, kind: .evade, entity: enemyEntity),
+            ]),
+            projection: Self.strategyProjection(engagedEnemyID: enemyID),
+            selectableIndexes: [0, 3],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 3)
     }
 
     @Test("Live bot strategy breaks repeated player-window ability loops by ending the turn")
@@ -1345,6 +1395,32 @@ struct LiveNightOfTheZealotPlaythroughTests {
             skillTestPreparationCount: 0,
             failedFightEnemyIDs: [enemyID.codingKey.stringValue]
         ) == 6)
+    }
+
+    @Test("Live bot strategy avoids optional clue tests at defeat risk")
+    func botStrategyAvoidsOptionalClueTestsAtDefeatRisk() {
+        let prompt = Self.strategyPrompt(choices: [
+            QuestionPresentation.Choice(sourceIndex: 0, kind: .investigate),
+            QuestionPresentation.Choice(sourceIndex: 1, kind: .gainResource),
+        ])
+
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(currentLocationClues: 2),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 0)
+        #expect(preferredSelectableIndex(
+            in: prompt,
+            projection: Self.strategyProjection(
+                currentLocationClues: 2,
+                investigatorTokens: [TokenCount(token: "Damage", count: 8)]
+            ),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0
+        ) == 1)
     }
 
     @Test("Live bot strategy prefers asset soak for lethal damage")
@@ -5094,22 +5170,69 @@ private func preferredPickSupplyIndex(
     guard prompt.identity.rawQuestion.objectValue?["tag"]?.stringValue == "PickSupplies",
           let rawChoices = prompt.identity.rawQuestion.objectValue?["choices"]?.arrayValue
     else { return nil }
-    return selectableIndexes.sorted().first { index in
-        rawChoices.indices.contains(index) && containsPickSupplyMessage(rawChoices[index])
+    let chosenSupplies = Set(prompt.identity.rawQuestion.objectValue?["chosenSupplies"]?
+        .arrayValue?.compactMap(\.stringValue) ?? [])
+    let supplyChoices = selectableIndexes.compactMap { index -> SupplyChoiceRank? in
+        guard rawChoices.indices.contains(index),
+              let supply = pickSupplyName(in: rawChoices[index])
+        else { return nil }
+        return SupplyChoiceRank(
+            index: index,
+            priority: forgottenAgeSupplyPriority(supply),
+            isDuplicate: chosenSupplies.contains(supply)
+        )
+    }
+    return supplyChoices.min()?.index
+}
+
+private struct SupplyChoiceRank: Comparable {
+    let index: Int
+    let priority: Int
+    let isDuplicate: Bool
+
+    static func < (lhs: SupplyChoiceRank, rhs: SupplyChoiceRank) -> Bool {
+        if lhs.isDuplicate != rhs.isDuplicate {
+            return !lhs.isDuplicate
+        }
+        if lhs.priority != rhs.priority {
+            return lhs.priority < rhs.priority
+        }
+        return lhs.index < rhs.index
     }
 }
 
-private func containsPickSupplyMessage(_ value: JSONValue) -> Bool {
+private let forgottenAgeSupplyPriorities = [
+    "Compass",
+    "Map",
+    "Binoculars",
+    "Torches",
+    "Rope",
+    "Canteen",
+    "Medicine",
+    "Blanket",
+    "Chalk",
+    "Pocketknife",
+    "Pickaxe",
+    "Gasoline",
+    "Provisions",
+    "Pendant",
+]
+
+private func forgottenAgeSupplyPriority(_ supply: String) -> Int {
+    forgottenAgeSupplyPriorities.firstIndex(of: supply) ?? 100
+}
+
+private func pickSupplyName(in value: JSONValue) -> String? {
     if value.objectValue?["tag"]?.stringValue == "PickSupply" {
-        return true
+        return value.objectValue?["contents"]?.arrayValue?.dropFirst().first?.stringValue
     }
     if let object = value.objectValue {
-        return object.values.contains(where: containsPickSupplyMessage)
+        return object.values.lazy.compactMap(pickSupplyName).first
     }
     if let array = value.arrayValue {
-        return array.contains(where: containsPickSupplyMessage)
+        return array.lazy.compactMap(pickSupplyName).first
     }
-    return false
+    return nil
 }
 
 private struct BotChoiceRank: Sendable, Equatable {
@@ -5183,7 +5306,9 @@ private struct BotStrategyContext {
         case .advanceAgenda:
             score = 9800
         case .investigate:
-            score = currentLocation?.clueCount ?? 0 > 0 ? 9400 : 6200
+            score = survivalAdjustedProgressScore(
+                currentLocation?.clueCount ?? 0 > 0 ? 9400 : 6200
+            )
         case .fight:
             score = fightScore(choice)
         case .evade:
@@ -5346,6 +5471,9 @@ private struct BotStrategyContext {
         if ability.actions.contains(.investigate) {
             return currentLocation?.clueCount ?? 0 > 0 ? 9200 : 6000
         }
+        if ability.actions.contains(.explore) {
+            return survivalAdjustedProgressScore(engagedEnemyCount > 0 ? 8300 : 9000)
+        }
         if ability.actions.contains(.fight) {
             return fightScore(choice) - 100
         }
@@ -5393,6 +5521,15 @@ private struct BotStrategyContext {
             return 8100
         }
         return 6000
+    }
+
+    private func survivalAdjustedProgressScore(_ score: Int) -> Int {
+        isEndangered ? min(score, 2000) : score
+    }
+
+    private var isEndangered: Bool {
+        guard let investigator = actingInvestigator else { return false }
+        return remainingHealth(for: investigator) <= 1 || remainingSanity(for: investigator) <= 1
     }
 
     private func survivabilityScore(
