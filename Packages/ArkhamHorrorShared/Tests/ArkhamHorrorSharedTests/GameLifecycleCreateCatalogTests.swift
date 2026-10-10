@@ -153,6 +153,28 @@ struct GameLifecycleCreateCatalogTests {
         #expect(document.sideStories.map(\.id) == ["90004", "83001"])
     }
 
+    @Test("Duplicate server campaign identifiers keep the first entry")
+    func duplicateCampaignIdentifiersKeepFirstEntry() throws {
+        var json = try jsonObject(from: vendoredCatalogBytes())
+        json["campaigns"] = [
+            ["id": "01", "nameKey": "catalogNames.campaigns.01.first.name"],
+            ["id": "01", "nameKey": "catalogNames.campaigns.01.duplicate.name"],
+            ["id": "02", "nameKey": "catalogNames.campaigns.02.name"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        let resolver = Self.syntheticResolver(entries: [
+            "catalogNames.campaigns.01.first.name": "First Zealot Entry",
+            "catalogNames.campaigns.01.duplicate.name": "Duplicate Zealot Entry",
+            "catalogNames.campaigns.02.name": "Dunwich",
+        ])
+
+        let document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+        let catalog = CreateGameCatalog.from(document: document, resolver: resolver)
+
+        #expect(catalog.campaigns.map(\.id) == ["01", "02"])
+        #expect(catalog.campaigns.map(\.title) == ["First Zealot Entry", "Dunwich"])
+    }
+
     @Test("Create requests echo catalog ids and web create-game fields")
     @MainActor
     // swiftlint:disable:next function_body_length

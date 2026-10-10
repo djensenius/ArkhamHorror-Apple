@@ -273,7 +273,7 @@ extension CreateGameCatalog {
         // alpha/dev disabled; dev entries would require both a dev build and alpha opt-in.
         let displayRules = CreateGameDisplayRules(includeBeta: includeBeta)
         let campaignOptionsByID = Dictionary(
-            uniqueKeysWithValues: document.campaigns
+            document.campaigns
                 .filter { displayRules.shouldDisplay(alpha: $0.alpha, beta: $0.beta, dev: $0.dev) }
                 .map { campaign in
                     let option = campaignOption(
@@ -282,9 +282,14 @@ extension CreateGameCatalog {
                         displayRules: displayRules
                     )
                     return (campaign.id, option)
-                }
+                },
+            uniquingKeysWith: { first, _ in first }
         )
-        let campaigns = document.campaigns.compactMap { campaignOptionsByID[$0.id] }
+        var emittedCampaignIDs: Set<String> = []
+        let campaigns = document.campaigns.compactMap { campaign -> CreateGameCampaignOption? in
+            guard emittedCampaignIDs.insert(campaign.id).inserted else { return nil }
+            return campaignOptionsByID[campaign.id]
+        }
 
         let campaignScenarios = document.scenarios
             // Mirrors `frontend/src/arkham/views/NewCampaign.vue:118-129`: hidden scenarios,
