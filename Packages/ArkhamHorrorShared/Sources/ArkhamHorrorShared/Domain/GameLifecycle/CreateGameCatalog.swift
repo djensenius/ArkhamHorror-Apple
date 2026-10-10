@@ -90,6 +90,10 @@ struct CreateGameCampaignOption: Identifiable, Sendable, Equatable, Hashable {
         )
     }
 
+    private static let officialCampaignIDs = Set([
+        "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13",
+    ])
+
     static func defaultStrictAsIfAt(for id: String, chapter: Int? = nil) -> Bool {
         // Mirrors the web chapter rule in `frontend/src/arkham/data.ts:48-53`: an explicit
         // campaign chapter wins; otherwise official campaigns from `11` on use Chapter 2
@@ -97,7 +101,9 @@ struct CreateGameCampaignOption: Identifiable, Sendable, Equatable, Hashable {
         if let chapter {
             return chapter == 2
         }
-        guard !id.hasPrefix(":"), id >= "11" else { return false }
+        guard !id.hasPrefix(":"), Self.officialCampaignIDs.contains(id), id >= "11" else {
+            return false
+        }
         return true
     }
 }

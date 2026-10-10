@@ -578,6 +578,15 @@ struct GameLifecycleCreateCatalogTests {
         #expect(try sideStory.makeRequest().difficulty == .easy)
     }
 
+    @Test("Unknown campaign ids default to Chapter 1 unless the catalog declares a chapter")
+    func unknownCampaignIDsDefaultToChapter1() {
+        #expect(!CreateGameCampaignOption.defaultStrictAsIfAt(for: "fanCampaign"))
+        #expect(!CreateGameCampaignOption.defaultStrictAsIfAt(for: ":fanCampaign"))
+        #expect(!CreateGameCampaignOption.defaultStrictAsIfAt(for: "14"))
+        #expect(CreateGameCampaignOption.defaultStrictAsIfAt(for: "11"))
+        #expect(CreateGameCampaignOption.defaultStrictAsIfAt(for: "fanCampaign", chapter: 2))
+    }
+
     @Test("Create flow strings resolve in English and German bundles")
     func createFlowStringsResolveFromModuleBundle() throws {
         let keysByLocale = try Dictionary(
