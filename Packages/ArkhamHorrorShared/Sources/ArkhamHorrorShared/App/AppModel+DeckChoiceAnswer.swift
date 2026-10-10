@@ -62,9 +62,13 @@ extension AppModel {
         liveChooseDeckRestrictionChecks[gameID] = .loading
         do {
             let check = try await loadLiveChooseDeckRestriction(for: context)
-            guard !Task.isCancelled,
-                  liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID
-            else { return }
+            if Task.isCancelled {
+                guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
+                liveChooseDeckRestrictionChecks[gameID] = nil
+                liveChooseDeckRestrictionCacheKeys[gameID] = nil
+                return
+            }
+            guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
             guard liveChooseDeckRestrictionCacheKey(
                 for: liveChooseDeckRestrictionContext(for: gameID)
             ) == cacheKey else {
@@ -77,13 +81,14 @@ extension AppModel {
         } catch is CancellationError {
             guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
             liveChooseDeckRestrictionChecks[gameID] = nil
+            liveChooseDeckRestrictionCacheKeys[gameID] = nil
         } catch {
             guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
+            liveChooseDeckRestrictionCacheKeys[gameID] = nil
             guard liveChooseDeckRestrictionCacheKey(
                 for: liveChooseDeckRestrictionContext(for: gameID)
             ) == cacheKey else {
                 liveChooseDeckRestrictionChecks[gameID] = nil
-                liveChooseDeckRestrictionCacheKeys[gameID] = nil
                 return
             }
             liveChooseDeckRestrictionChecks[gameID] = .unavailable(
@@ -95,7 +100,17 @@ extension AppModel {
 
     func liveChooseDeckRestrictionNotice(for gameID: GameID) -> String? {
         liveChooseDeckRestrictionChecks[gameID]?.notice(
+            currentScenarioID: liveChooseDeckScenarioID(for: gameID),
             tableState: liveChooseDeckRestrictionTableState(for: gameID)
+        )
+    }
+
+    func liveChooseDeckRestrictionTaskKey(for gameID: GameID) -> LiveChooseDeckRestrictionTaskKey {
+        let context = liveChooseDeckRestrictionContext(for: gameID)
+        return LiveChooseDeckRestrictionTaskKey(
+            gameID: gameID,
+            scenarioID: context.scenarioID,
+            catalogRevision: liveChooseDeckCampaignCatalogRevision()
         )
     }
 

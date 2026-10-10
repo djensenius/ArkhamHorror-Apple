@@ -101,7 +101,7 @@ struct LiveChooseDeckSelectionView: View {
         .task {
             await viewModel.load()
         }
-        .task(id: gameID) {
+        .task(id: model.liveChooseDeckRestrictionTaskKey(for: gameID)) {
             await model.refreshLiveChooseDeckRestriction(for: gameID)
         }
     }

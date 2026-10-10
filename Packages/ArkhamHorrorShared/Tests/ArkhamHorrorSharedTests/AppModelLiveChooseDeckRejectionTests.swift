@@ -122,7 +122,6 @@ extension AppModelLiveChooseDeckTests {
         isSideStory: Bool = true,
         includesScenario: Bool = true,
         chooseDeckPlayerIDs: [PlayerID]? = nil,
-        defaultChooseDeckPlayerIDs: Bool = true,
         investigators: [BoardInvestigatorNode]? = nil
     ) -> BoardProjection {
         var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
@@ -138,11 +137,6 @@ extension AppModelLiveChooseDeckTests {
         } else {
             nil
         }
-        let resolvedChooseDeckPlayerIDs: [PlayerID]? = if defaultChooseDeckPlayerIDs {
-            chooseDeckPlayerIDs ?? [ownerID]
-        } else {
-            chooseDeckPlayerIDs
-        }
         return BoardProjection(
             gameName: projection.gameName,
             hasCampaignContext: projection.hasCampaignContext,
@@ -156,7 +150,7 @@ extension AppModelLiveChooseDeckTests {
             enemyLocations: projection.enemyLocations,
             investigators: investigators ?? projection.investigators,
             playerOrderCount: projection.playerOrderCount,
-            chooseDeckPlayerIDs: resolvedChooseDeckPlayerIDs,
+            chooseDeckPlayerIDs: chooseDeckPlayerIDs,
             enemyIDs: projection.enemyIDs,
             treacheryIDs: projection.treacheryIDs,
             treacheriesByID: projection.treacheriesByID,
@@ -198,7 +192,6 @@ extension AppModelLiveChooseDeckTests {
         isSideStory: Bool = true,
         includesScenario: Bool = true,
         chooseDeckPlayerIDs: [PlayerID]? = nil,
-        defaultChooseDeckPlayerIDs: Bool = true,
         investigators: [BoardInvestigatorNode]? = nil
     ) -> InstalledLiveChooseDeckPrompt {
         let projection = chooseDeckProjection(
@@ -207,7 +200,6 @@ extension AppModelLiveChooseDeckTests {
             isSideStory: isSideStory,
             includesScenario: includesScenario,
             chooseDeckPlayerIDs: chooseDeckPlayerIDs,
-            defaultChooseDeckPlayerIDs: defaultChooseDeckPlayerIDs,
             investigators: investigators
         )
         let attempt = makeLiveChooseDeckAttempt(on: model, gameID: gameID)
@@ -529,7 +521,8 @@ extension AppModelLiveChooseDeckTests {
             gameID: gameID,
             ownerID: ownerID,
             connection: connection,
-            scenarioID: "c90020"
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
         )
         let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
 
@@ -579,7 +572,7 @@ extension AppModelLiveChooseDeckTests {
             ownerID: ownerID,
             connection: connection,
             scenarioID: "c90020",
-            chooseDeckPlayerIDs: [ownerID],
+            chooseDeckPlayerIDs: [ownerID, otherPlayerID],
             investigators: [agnesInvestigator]
         )
         let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
@@ -587,6 +580,7 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker")
         #expect(model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,
@@ -615,9 +609,10 @@ extension AppModelLiveChooseDeckTests {
             ownerID: ownerID,
             connection: connection,
             scenarioID: "c90020",
-            chooseDeckPlayerIDs: [ownerID],
+            chooseDeckPlayerIDs: [ownerID, otherPlayerID],
             investigators: [rolandInvestigator]
         )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
 
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
@@ -625,6 +620,14 @@ extension AppModelLiveChooseDeckTests {
             for: wrongDeck,
             in: gameID
         ) == "This scenario requires Agnes Baker")
+        #expect(!model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid,
+            deck: wrongDeck
+        ))
+        #expect(await !model.chooseDeckForLivePrompt(wrongDeck, in: gameID))
+        #expect(await connection.sentData.isEmpty)
     }
 
     @Test("Required-investigator multiplayer does not block before the last chooser")
@@ -650,12 +653,45 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker")
         #expect(model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,
             validation: .valid,
             deck: wrongDeck
         ))
+    }
+
+    @Test("Required-investigator solo two-handed final chooser counts the seated hand")
+    func requiredInvestigatorSoloTwoHandedFinalChooserCountsSeatedHand() async throws {
+        let catalog = try loadLiveCampaignCatalog()
+        let model = await makeCatalogBackedRejectionModel(catalog: catalog)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let otherHandID = try sampleOtherPlayerID()
+        let wrongDeck = try sampleRejectedDeck()
+        let rolandInvestigator = try investigatorNode(
+            playerID: otherHandID,
+            cardCode: "c01001",
+            displayName: "Roland Banks"
+        )
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID, otherHandID],
+            investigators: [rolandInvestigator]
+        )
+
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+
+        #expect(model.liveChooseDeckRestrictionDeckError(
+            for: wrongDeck,
+            in: gameID
+        ) == "This scenario requires Agnes Baker")
     }
 
     @Test("Required-investigator multiplayer fails open when chooser count is unavailable")
@@ -672,7 +708,6 @@ extension AppModelLiveChooseDeckTests {
             ownerID: ownerID,
             connection: connection,
             scenarioID: "c90020",
-            defaultChooseDeckPlayerIDs: false,
             investigators: []
         )
         let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
@@ -680,7 +715,7 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
-        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == liveChooseDeckLocalized(
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker\n" + liveChooseDeckLocalized(
             "liveChooseDeck.restriction.multiplayerUnavailable",
             "Side-story investigator requirements cannot be fully checked from the current table "
                 + "state. Make sure one player uses the scenario's required investigator."
@@ -758,6 +793,49 @@ extension AppModelLiveChooseDeckTests {
         await connection.enqueueSendResult(.success(()))
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
         #expect(await connection.sentData.count == 1)
+    }
+
+    @Test("Catalog fetch errors clear stale restriction cache keys")
+    func catalogFetchErrorsClearStaleRestrictionCacheKeys() async throws {
+        let catalog = try loadLiveCampaignCatalog()
+        let service = SequencedCatalogService(results: [.success(catalog), .failure(TestFailure())])
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: catalog.catalogRevision)
+            ),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90004",
+            chooseDeckPlayerIDs: [ownerID]
+        )
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+        #expect(model.liveChooseDeckRestrictionCacheKeys[gameID] != nil)
+
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
+        )
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+
+        #expect(model.liveChooseDeckRestrictionCacheKeys[gameID] == nil)
     }
 
     @Test("Catalog fetch errors are retried on later deck restriction refreshes")
@@ -1012,6 +1090,28 @@ extension AppModelLiveChooseDeckTests {
             validation: .valid,
             deck: deck
         ))
+    }
+
+    @Test("Canceled immediate restriction refresh clears loading state")
+    func canceledImmediateRestrictionRefreshClearsLoadingState() async throws {
+        let model = await makeSignedInRejectionModel()
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020",
+            chooseDeckPlayerIDs: [ownerID]
+        )
+        let refresh = Task { await model.refreshLiveChooseDeckRestriction(for: gameID) }
+
+        refresh.cancel()
+        await refresh.value
+
+        #expect(model.liveChooseDeckRestrictionChecks[gameID] == nil)
     }
 
     @Test("Cancellation leaves live deck restriction unavailable notice unset")
@@ -1362,6 +1462,22 @@ private actor LiveChooseDeckCampaignCatalogService: CampaignCatalogServicing {
         advertisement _: CampaignCatalogAdvertisement
     ) async throws -> CampaignCatalogDocument {
         try result.get()
+    }
+}
+
+private actor SequencedCatalogService: CampaignCatalogServicing {
+    private var results: [Result<CampaignCatalogDocument, any Error>]
+
+    init(results: [Result<CampaignCatalogDocument, any Error>]) {
+        self.results = results
+    }
+
+    func load(
+        on _: ServerProfile,
+        advertisement _: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument {
+        guard !results.isEmpty else { throw TestFailure() }
+        return try results.removeFirst().get()
     }
 }
 

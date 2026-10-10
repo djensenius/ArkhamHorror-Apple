@@ -26,6 +26,12 @@ struct LiveChooseDeckRestrictionTableState: Sendable, Equatable {
     }
 }
 
+struct LiveChooseDeckRestrictionTaskKey: Sendable, Equatable {
+    let gameID: GameID
+    let scenarioID: String?
+    let catalogRevision: String?
+}
+
 struct LiveChooseDeckRestrictionContext: Sendable, Equatable {
     let rawScenarioID: String?
     let isSideStory: Bool?
@@ -48,24 +54,48 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
     case unavailable(message: String, scenarioID: String?)
     case requiresInvestigator(LiveChooseDeckRequiredInvestigator)
 
-    func notice(tableState: LiveChooseDeckRestrictionTableState?) -> String? {
+    func notice(
+        currentScenarioID: String?,
+        tableState: LiveChooseDeckRestrictionTableState?
+    ) -> String? {
         switch self {
         case let .unavailable(message, _):
-            message
+            return message
         case .loading:
-            liveChooseDeckLocalized(
+            return liveChooseDeckLocalized(
                 "liveChooseDeck.restriction.checking",
                 "Checking side-story deck requirements…"
             )
-        case .requiresInvestigator where tableState?.hasRequiredInputs != true:
-            liveChooseDeckLocalized(
+        case let .requiresInvestigator(requirement):
+            guard normalizedScenarioID(currentScenarioID) == requirement.scenarioID else {
+                return nil
+            }
+            let requirementMessage = Self.requirementMessage(for: requirement)
+            guard tableState?.hasRequiredInputs != true else { return requirementMessage }
+            return requirementMessage + "\n" + liveChooseDeckLocalized(
                 "liveChooseDeck.restriction.multiplayerUnavailable",
                 "Side-story investigator requirements cannot be fully checked from the current "
                     + "table state. Make sure one player uses the scenario's required investigator."
             )
-        case .unrestricted, .requiresInvestigator:
-            nil
+        case .unrestricted:
+            return nil
         }
+    }
+
+    static func requirementMessage(for requirement: LiveChooseDeckRequiredInvestigator) -> String {
+        guard let investigatorName = requirement.investigatorName else {
+            return liveChooseDeckLocalized(
+                "liveChooseDeck.error.requiresSpecificInvestigator",
+                "This scenario requires a specific investigator"
+            )
+        }
+        return String(
+            format: liveChooseDeckLocalized(
+                "liveChooseDeck.error.requiresInvestigator",
+                "This scenario requires %@"
+            ),
+            investigatorName
+        )
     }
 
     func rejectionMessage(
@@ -88,19 +118,7 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
             guard tableState?.shouldBlockMissingRequiredInvestigator(
                 requirement.investigatorCodes
             ) == true else { return nil }
-            guard let investigatorName = requirement.investigatorName else {
-                return liveChooseDeckLocalized(
-                    "liveChooseDeck.error.requiresSpecificInvestigator",
-                    "This scenario requires a specific investigator"
-                )
-            }
-            return String(
-                format: liveChooseDeckLocalized(
-                    "liveChooseDeck.error.requiresInvestigator",
-                    "This scenario requires %@"
-                ),
-                investigatorName
-            )
+            return Self.requirementMessage(for: requirement)
         case .unrestricted, .unavailable:
             return nil
         }
@@ -150,9 +168,20 @@ extension AppModel {
         let chosenInvestigatorCodes = Set(
             projection.investigators.map { normalizedCardCode($0.cardCode.rawValue) }
         )
+        let isLastPlayerChoosing = projection.chooseDeckPlayerIDs.map { playerIDs in
+            // The server keeps every player id in IsChooseDecks for the whole phase. Match the
+            // web by counting only pending ids that do not yet have a seated investigator.
+            // BoardInvestigatorNode.playerID is copied from the server investigator playerId.
+            playerIDs.filter { playerID in
+                !projection.investigators.contains { $0.playerID == playerID }
+            }.count <= 1
+        }
+        // If gameState is not IsChooseDecks, chooseDeckPlayerIDs is unavailable. The web's
+        // empty player list makes that look like the last chooser; Apple intentionally fails
+        // open because the server did not provide the ChooseDeck table data.
         return LiveChooseDeckRestrictionTableState(
             chosenInvestigatorCodes: chosenInvestigatorCodes,
-            isLastPlayerChoosing: projection.chooseDeckPlayerIDs.map { $0.count <= 1 }
+            isLastPlayerChoosing: isLastPlayerChoosing
         )
     }
 }
