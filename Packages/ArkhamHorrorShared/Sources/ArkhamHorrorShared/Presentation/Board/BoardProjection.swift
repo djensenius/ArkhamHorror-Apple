@@ -111,6 +111,7 @@ struct BoardEnemyLocationNode: Sendable, Equatable, Identifiable {
 /// One investigator entity (`PublicGame.investigators`), ordered by `PublicGame.playerOrder`.
 struct BoardInvestigatorNode: Sendable, Equatable, Identifiable {
     let id: InvestigatorID
+    let cardCode: CardCode
     let playerID: PlayerID
     let displayName: String
     let subtitle: String?
@@ -366,6 +367,9 @@ struct BoardProjection: Sendable, Equatable {
     let investigators: [BoardInvestigatorNode]
     /// Exact `PublicGame.playerOrder.count`, used for multiplayer-only presentation gates.
     let playerOrderCount: Int
+    /// Player IDs from `PublicGame.gameState.contents` while the server is waiting on
+    /// `ChooseDeck`; `nil` when the state is not a known choose-deck state.
+    let chooseDeckPlayerIDs: [PlayerID]?
     /// Opaque enemy values remain out of scope; their canonical IDs are sorted by raw UUID
     /// text so identity-based prompt actionability is deterministic.
     let enemyIDs: [EnemyID]

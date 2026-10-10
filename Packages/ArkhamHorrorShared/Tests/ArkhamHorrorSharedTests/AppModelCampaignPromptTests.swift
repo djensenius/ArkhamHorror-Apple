@@ -113,6 +113,7 @@ func campaignPromptProjection(
         enemyLocations: base.enemyLocations,
         investigators: base.investigators,
         playerOrderCount: base.playerOrderCount,
+        chooseDeckPlayerIDs: base.chooseDeckPlayerIDs,
         enemyIDs: base.enemyIDs,
         treacheryIDs: base.treacheryIDs,
         treacheriesByID: base.treacheriesByID,

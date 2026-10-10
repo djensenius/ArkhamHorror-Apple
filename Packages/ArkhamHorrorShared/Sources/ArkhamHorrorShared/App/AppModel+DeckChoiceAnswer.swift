@@ -1,41 +1,75 @@
 import Foundation
 
-enum LiveChooseDeckAnswerability: Sendable, Equatable {
-    case canAnswer(promptKey: BasicChoicePromptKey)
-    case readOnly(String)
-
-    var promptKey: BasicChoicePromptKey? {
-        switch self {
-        case let .canAnswer(promptKey):
-            promptKey
-        case .readOnly:
-            nil
-        }
-    }
-}
-
 extension AppModel {
     func canAnswerLiveChooseDeck(for gameID: GameID) -> LiveChooseDeckAnswerability {
         guard let prompt = basicChoicePresentation(for: gameID),
               LiveChooseDeckQuestion.matches(prompt.identity.rawQuestion)
-        else { return .readOnly("This game is not currently asking you to choose a deck.") }
+        else {
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.notChoosingDeck",
+                "This game is not currently asking you to choose a deck."
+            ))
+        }
         guard case let .participant(playerID) = liveGameParticipantIdentities[gameID] else {
-            return .readOnly("Spectators cannot choose decks for this game.")
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.spectator",
+                "Spectators cannot choose decks for this game."
+            ))
         }
         guard playerID == prompt.ownerID else {
-            return .readOnly("This deck choice belongs to another player.")
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.otherPlayer",
+                "This deck choice belongs to another player."
+            ))
         }
         guard case let .signedIn(_, compatibility, _) = sessionState,
               case .modern = compatibility
         else {
-            return .readOnly(
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.incompatibleServer",
                 "Update or reconnect to a contract-compatible server to choose a deck."
-            )
+            ))
         }
         guard let connection = liveGameConnections[gameID],
               liveGameSessions[gameID]?.attemptID == connection.attemptID
-        else { return .readOnly("Reconnect to choose a deck.") }
+        else {
+            return .readOnly(liveChooseDeckLocalized(
+                "liveChooseDeck.readOnly.reconnect",
+                "Reconnect to choose a deck."
+            ))
+        }
         return .canAnswer(promptKey: prompt.identity.promptKey)
+    }
+
+    func liveChooseDeckRestrictionNotice(for gameID: GameID) -> String? {
+        liveChooseDeckRestrictionChecks[gameID]?.notice(
+            currentScenarioID: liveChooseDeckScenarioID(for: gameID),
+            tableState: liveChooseDeckRestrictionTableState(for: gameID)
+        )
+    }
+
+    func liveChooseDeckRestrictionTaskKey(for gameID: GameID) -> LiveChooseDeckRestrictionTaskKey {
+        let context = liveChooseDeckRestrictionContext(for: gameID)
+        return LiveChooseDeckRestrictionTaskKey(
+            gameID: gameID,
+            scenarioID: context.scenarioID,
+            catalogRevision: liveChooseDeckCampaignCatalogRevision()
+        )
+    }
+
+    func liveChooseDeckRestrictionValidationMessage(for deck: Deck, in gameID: GameID) -> String? {
+        liveChooseDeckRestrictionChecks[gameID]?.rejectionMessage(
+            for: deck,
+            currentScenarioID: liveChooseDeckScenarioID(for: gameID),
+            tableState: liveChooseDeckRestrictionTableState(for: gameID)
+        )
+    }
+
+    func liveChooseDeckRestrictionDeckError(for deck: Deck, in gameID: GameID) -> String? {
+        guard case .requiresInvestigator? = liveChooseDeckRestrictionChecks[gameID] else {
+            return nil
+        }
+        return liveChooseDeckRestrictionValidationMessage(for: deck, in: gameID)
     }
 
     func liveChooseDeckRejectionReason(
@@ -78,7 +112,24 @@ extension AppModel {
         promptKey: BasicChoicePromptKey,
         validation: LobbyDeckSelectionViewModel.ValidationState
     ) -> Bool {
+        liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: validation,
+            deck: nil
+        )
+    }
+
+    func liveChooseDeckPickerEnabled(
+        for gameID: GameID,
+        promptKey: BasicChoicePromptKey,
+        validation: LobbyDeckSelectionViewModel.ValidationState,
+        deck: Deck?
+    ) -> Bool {
         guard validation == .valid else { return false }
+        if let deck, liveChooseDeckRestrictionValidationMessage(for: deck, in: gameID) != nil {
+            return false
+        }
         return !liveChooseDeckIsAwaitingAnswer(for: gameID, promptKey: promptKey)
     }
 
@@ -86,7 +137,8 @@ extension AppModel {
     /// family as the web client. This is intentionally separate from the pre-game
     /// REST `PUT /games/{id}/decks` upgrade/replace route.
     func chooseDeckForLivePrompt(_ deck: Deck, in gameID: GameID) async -> Bool {
-        guard case .canAnswer = canAnswerLiveChooseDeck(for: gameID),
+        guard liveChooseDeckRestrictionValidationMessage(for: deck, in: gameID) == nil,
+              case .canAnswer = canAnswerLiveChooseDeck(for: gameID),
               let prompt = basicChoicePresentation(for: gameID),
               let connection = liveGameConnections[gameID]
         else { return false }
@@ -128,6 +180,75 @@ extension AppModel {
             deckID: deck.id,
             actionAttemptID: actionAttemptID,
             connectionID: connection.connectionID
+        )
+    }
+
+    func loadLiveChooseDeckRestriction(
+        for context: LiveChooseDeckRestrictionContext
+    ) async throws -> LiveChooseDeckRestrictionCheck {
+        guard case let .signedIn(profile, compatibility, _) = sessionState,
+              compatibility.modernCapabilities.contains(
+                  ServerCompatibility.campaignCatalogCapability
+              ),
+              let advertisement = compatibility.campaignCatalogAdvertisement
+        else {
+            return .unavailable(
+                message: liveChooseDeckRestrictionUnavailableMessage(),
+                scenarioID: context.scenarioID
+            )
+        }
+        try Task.checkCancellation()
+        let document = try await campaignCatalogService.load(
+            on: profile,
+            advertisement: advertisement
+        )
+        try Task.checkCancellation()
+        return LiveChooseDeckRestrictionCatalogLookup.check(
+            for: context.rawScenarioID,
+            in: document
+        )
+    }
+
+    private func liveChooseDeckScenarioID(for gameID: GameID) -> String? {
+        liveChooseDeckRestrictionContext(for: gameID).rawScenarioID
+    }
+
+    func liveChooseDeckRestrictionContext(
+        for gameID: GameID
+    ) -> LiveChooseDeckRestrictionContext {
+        guard let projection = liveGameStates[gameID]?.lastKnownProjection,
+              let scenario = projection.scenario
+        else { return LiveChooseDeckRestrictionContext(rawScenarioID: nil, isSideStory: nil) }
+        return LiveChooseDeckRestrictionContext(
+            rawScenarioID: scenario.id,
+            isSideStory: scenario.isSideStory
+        )
+    }
+
+    func liveChooseDeckRestrictionCacheKey(
+        for context: LiveChooseDeckRestrictionContext
+    ) -> LiveChooseDeckRestrictionCacheKey {
+        LiveChooseDeckRestrictionCacheKey(
+            scenarioID: context.scenarioID,
+            isSideStory: context.isSideStory,
+            catalogRevision: liveChooseDeckCampaignCatalogRevision()
+        )
+    }
+
+    private func liveChooseDeckCampaignCatalogRevision() -> String? {
+        guard case let .signedIn(_, compatibility, _) = sessionState,
+              compatibility.modernCapabilities.contains(
+                  ServerCompatibility.campaignCatalogCapability
+              )
+        else { return nil }
+        return compatibility.campaignCatalogAdvertisement?.catalogRevision
+    }
+
+    func liveChooseDeckRestrictionUnavailableMessage() -> String {
+        liveChooseDeckLocalized(
+            "liveChooseDeck.restriction.unavailable",
+            "Side-story investigator requirements cannot be checked right now. "
+                + "Make sure this deck uses the scenario's required investigator."
         )
     }
 
@@ -211,4 +332,16 @@ extension AppModel {
         else { return }
         basicChoiceActions[gameID]?.phase = phase
     }
+}
+
+func normalizedScenarioID(_ scenarioID: String?) -> String? {
+    scenarioID.map(normalizedCardCode)
+}
+
+func normalizedCardCode(_ code: String) -> String {
+    code.hasPrefix("c") ? String(code.dropFirst()) : code
+}
+
+func liveChooseDeckLocalized(_ key: String, _ fallback: String) -> String {
+    NSLocalizedString(key, bundle: .module, value: fallback, comment: "")
 }
