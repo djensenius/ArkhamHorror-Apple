@@ -3,6 +3,7 @@ import Observation
 
 @MainActor
 @Observable
+// swiftlint:disable:next type_body_length
 final class CreateGameViewModel {
     enum Failure: Error, Equatable, Sendable {
         case emptyCampaignCatalog
@@ -11,21 +12,42 @@ final class CreateGameViewModel {
         case unknownScenarioSelection(String)
     }
 
-    let catalog: CreateGameCatalog
+    private(set) var catalog: CreateGameCatalog
+    var catalogWarningMessage: String?
 
     var mode: CreateGameMode = .campaign {
         didSet { normalizeSelection() }
     }
 
     var selectedCampaignID: String {
-        didSet { normalizeSelection() }
+        didSet {
+            normalizeSelection()
+            applyCampaignDefaults()
+        }
     }
 
     var selectedScenarioID: String {
+        didSet {
+            normalizeSelection()
+            applyScenarioDefaults()
+        }
+    }
+
+    var useReturnTo = false {
         didSet { normalizeSelection() }
     }
 
-    var difficulty: RequestDifficulty = .easy
+    var selectedVariantID: String? {
+        didSet { normalizeSelection() }
+    }
+
+    var recommendedOptionEnabled: [String: Bool] = [:]
+
+    var difficulty: RequestDifficulty = .easy {
+        didSet { normalizeDifficulty() }
+    }
+
+    var includeTarotReadings = false
 
     var playerCount: Int = 1 {
         didSet { normalizePlayerCount() }
@@ -41,22 +63,38 @@ final class CreateGameViewModel {
 
     init(
         catalog: CreateGameCatalog = .default,
+        catalogWarningMessage: String? = nil,
         mode: CreateGameMode = .campaign,
         selectedCampaignID: String? = nil,
         selectedScenarioID: String? = nil
     ) {
         self.catalog = catalog
+        self.catalogWarningMessage = catalogWarningMessage
         self.mode = mode
         self.selectedCampaignID = selectedCampaignID ?? catalog.campaigns.first?.id ?? ""
         self.selectedScenarioID = selectedScenarioID ?? catalog.standaloneScenarios.first?.id ?? ""
+        switch mode {
+        case .campaign:
+            applyCampaignDefaults()
+        case .standaloneScenario:
+            applyScenarioDefaults()
+        }
     }
 
     var selectedTitle: String {
         switch mode {
         case .campaign:
-            selectedCampaign?.title ?? "Campaign"
+            if useReturnTo, let returnTo = selectedCampaign?.returnTo {
+                return returnTo.title
+            }
+            return selectedCampaign?.title ?? gameLifecycleLocalized("create.mode.campaign", "Campaign") // swiftlint:disable:this line_length
         case .standaloneScenario:
-            selectedScenario?.title ?? "Standalone scenario"
+            if useReturnTo, let returnTo = selectedScenario?.returnTo {
+                return returnTo.title
+            }
+            return selectedScenario?.title ?? gameLifecycleLocalized(
+                "create.mode.standaloneScenario", "Standalone scenario"
+            )
         }
     }
 
@@ -73,6 +111,52 @@ final class CreateGameViewModel {
         playerCount > 1 ? [.withFriends, .solo] : [.withFriends]
     }
 
+    var availableDifficulties: [RequestDifficulty] {
+        switch mode {
+        case .campaign:
+            RequestDifficulty.allCases
+        case .standaloneScenario:
+            selectedScenario?.difficulties ?? RequestDifficulty.allCases
+        }
+    }
+
+    var canToggleReturnTo: Bool {
+        switch mode {
+        case .campaign:
+            selectedCampaign?.returnTo != nil
+        case .standaloneScenario:
+            selectedScenario?.returnTo != nil
+        }
+    }
+
+    var selectedCampaignVariants: [CreateGameVariantOption] {
+        selectedCampaign?.variants ?? []
+    }
+
+    var selectedCampaignRecommendedOptions: [CreateGameRecommendedOption] {
+        selectedCampaign?.recommendedOptions ?? []
+    }
+
+    var selectionBadge: String? {
+        let alpha: Bool
+        let beta: Bool
+        switch mode {
+        case .campaign:
+            alpha = selectedCampaign?.alpha == true || (useReturnTo && selectedCampaign?.returnTo?.alpha == true) // swiftlint:disable:this line_length
+            beta = selectedCampaign?.beta == true || (useReturnTo && selectedCampaign?.returnTo?.beta == true) // swiftlint:disable:this line_length
+        case .standaloneScenario:
+            alpha = selectedScenario?.alpha == true
+            beta = selectedScenario?.beta == true
+        }
+        if alpha {
+            return gameLifecycleLocalized("create.release.alpha", "Alpha")
+        }
+        if beta {
+            return gameLifecycleLocalized("create.release.beta", "Beta")
+        }
+        return nil
+    }
+
     var canSubmit: Bool {
         !isSubmitting && hasValidSelection
     }
@@ -86,8 +170,32 @@ final class CreateGameViewModel {
         }
     }
 
+    func replaceCatalog(_ catalog: CreateGameCatalog, warningMessage: String?) {
+        self.catalog = catalog
+        catalogWarningMessage = warningMessage
+        selectedCampaignID = catalog.campaigns.first?.id ?? ""
+        selectedScenarioID = catalog.standaloneScenarios.first?.id ?? ""
+        useReturnTo = false
+        selectedVariantID = nil
+        recommendedOptionEnabled = [:]
+        normalizeSelection()
+        applyCampaignDefaults()
+        applyScenarioDefaults()
+    }
+
+    func setRecommendedOption(_ option: CreateGameRecommendedOption, enabled: Bool) {
+        recommendedOptionEnabled[option.id] = enabled
+    }
+
+    func isRecommendedOptionEnabled(_ option: CreateGameRecommendedOption) -> Bool {
+        recommendedOptionEnabled[option.id] ?? option.defaultEnabled
+    }
+
     func makeRequest() throws -> CreateGameRequest {
         let campaignOrScenario: CampaignOrScenario
+        let effectiveCampaignID: String?
+        let effectiveScenarioID: String?
+        let strictAsIfAt: Bool
         switch mode {
         case .campaign:
             guard let campaign = selectedCampaign else {
@@ -96,7 +204,9 @@ final class CreateGameViewModel {
                 }
                 throw Failure.unknownCampaignSelection(selectedCampaignID)
             }
-            campaignOrScenario = try CampaignOrScenario(campaignId: campaign.id, scenarioId: nil)
+            effectiveCampaignID = useReturnTo ? campaign.returnTo?.id ?? campaign.id : campaign.id
+            effectiveScenarioID = nil
+            strictAsIfAt = campaign.strictAsIfAtDefault
         case .standaloneScenario:
             guard let scenario = selectedScenario else {
                 if catalog.standaloneScenarios.isEmpty {
@@ -104,8 +214,19 @@ final class CreateGameViewModel {
                 }
                 throw Failure.unknownScenarioSelection(selectedScenarioID)
             }
-            campaignOrScenario = try CampaignOrScenario(campaignId: nil, scenarioId: scenario.id)
+            if let sideStoryCampaignID = scenario.sideStoryCampaignID {
+                effectiveCampaignID = sideStoryCampaignID
+                effectiveScenarioID = nil
+            } else {
+                effectiveCampaignID = nil
+                effectiveScenarioID = useReturnTo ? scenario.returnTo?.id ?? scenario.id : scenario.id // swiftlint:disable:this line_length
+            }
+            strictAsIfAt = false
         }
+        campaignOrScenario = try CampaignOrScenario(
+            campaignId: effectiveCampaignID,
+            scenarioId: effectiveScenarioID
+        )
 
         return CreateGameRequest(
             deckIds: Array(repeating: nil, count: playerCount),
@@ -114,12 +235,12 @@ final class CreateGameViewModel {
             difficulty: difficulty,
             campaignName: resolvedGameName,
             multiplayerVariant: multiplayerVariant,
-            includeTarotReadings: false,
-            options: [],
-            strictAsIfAt: .absent,
-            asIfRuling: .absent,
+            includeTarotReadings: includeTarotReadings,
+            options: selectedCampaignOptions(),
+            strictAsIfAt: .value(strictAsIfAt),
+            asIfRuling: .value(strictAsIfAt ? .chapter2 : .chapter1),
             ultimatumsAndBoons: .absent,
-            achievementsEnabled: .value(true)
+            achievementsEnabled: .value(effectiveCampaignID != nil)
         )
     }
 
@@ -139,7 +260,9 @@ final class CreateGameViewModel {
             failureMessage = error.message
             return nil
         } catch {
-            failureMessage = "Couldn't create game. Try again."
+            failureMessage = gameLifecycleLocalized(
+                "create.failure.generic", "Couldn't create game. Try again."
+            )
             return nil
         }
     }
@@ -150,6 +273,19 @@ final class CreateGameViewModel {
 
     private var selectedScenario: CreateGameScenarioOption? {
         catalog.standaloneScenarios.first { $0.id == selectedScenarioID }
+    }
+
+    private func selectedCampaignOptions() -> [CampaignOption] {
+        guard mode == .campaign, let campaign = selectedCampaign else { return [] }
+        var options = selectedCampaignRecommendedOptions.compactMap { option -> CampaignOption? in
+            guard isRecommendedOptionEnabled(option), let flag = option.flag else { return nil }
+            return .flag(flag)
+        }
+        let variantID = selectedVariantID ?? campaign.variants.first?.id
+        if let variantID, !variantID.isEmpty {
+            options.append(.campaignVariant(variantID))
+        }
+        return options
     }
 
     private func normalizeSelection() {
@@ -165,7 +301,22 @@ final class CreateGameViewModel {
                 selectedScenarioID = fallback
             }
         }
+        if !canToggleReturnTo, useReturnTo {
+            useReturnTo = false
+        }
+        let selectedVariantIsAvailable = selectedVariantID.map { id in
+            selectedCampaignVariants.contains { $0.id == id }
+        } ?? true
+        if !selectedVariantIsAvailable {
+            selectedVariantID = selectedCampaignVariants.first?.id
+        }
+        normalizeDifficulty()
         normalizeMultiplayerVariant()
+    }
+
+    private func normalizeDifficulty() {
+        guard !availableDifficulties.contains(difficulty) else { return }
+        difficulty = availableDifficulties.first ?? .easy
     }
 
     private func normalizePlayerCount() {
@@ -183,5 +334,23 @@ final class CreateGameViewModel {
         if playerCount == 1, multiplayerVariant != .withFriends {
             multiplayerVariant = .withFriends
         }
+    }
+
+    private func applyCampaignDefaults() {
+        guard let campaign = selectedCampaign else {
+            normalizeDifficulty()
+            return
+        }
+        selectedVariantID = campaign.variants.first?.id
+        var next: [String: Bool] = [:]
+        for option in campaign.recommendedOptions {
+            next[option.id] = recommendedOptionEnabled[option.id] ?? option.defaultEnabled
+        }
+        recommendedOptionEnabled = next
+        normalizeDifficulty()
+    }
+
+    private func applyScenarioDefaults() {
+        normalizeDifficulty()
     }
 }

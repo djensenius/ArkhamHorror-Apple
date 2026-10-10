@@ -1,15 +1,30 @@
 import SwiftUI
 
+// swiftlint:disable:next type_body_length
 struct CreateGameSheetView: View {
     let model: AppModel
     let onCreated: (GameID) -> Void
 
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel = CreateGameViewModel()
+    @State private var didLoadCatalog = false
+    @FocusState private var focusedField: Field?
+
+    private enum Field: Hashable {
+        case name
+    }
 
     var body: some View {
         Form {
+            if let warning = viewModel.catalogWarningMessage {
+                Section {
+                    ArkhamFailureText(message: warning)
+                        .accessibilityLabel("Campaign catalog warning: \(warning)")
+                        .accessibilityIdentifier(AccountAccessibilityID.createGameCatalogWarningText) // swiftlint:disable:this line_length
+                }
+            }
             gameSection
+            optionsSection
             playersSection
             nameSection
             if let failure = viewModel.failureMessage {
@@ -20,22 +35,23 @@ struct CreateGameSheetView: View {
                 }
             }
         }
-        .navigationTitle("New Game")
+        .navigationTitle(gameLifecycleLocalized("create.title", "New Game"))
         #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
         #if os(macOS)
-        .frame(minWidth: 420, minHeight: 520)
+        .frame(minWidth: 460, minHeight: 620)
         #endif
         .interactiveDismissDisabled(viewModel.isSubmitting)
         .accessibilityIdentifier(AccountAccessibilityID.createGameSheet)
+        .task { await loadCatalogIfNeeded() }
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
-                Button("Cancel") {
+                Button(gameLifecycleLocalized("create.cancel", "Cancel")) {
                     dismiss()
                 }
                 .disabled(viewModel.isSubmitting)
-                .accessibilityLabel("Cancel new game")
+                .accessibilityLabel(gameLifecycleLocalized("create.cancel.accessibility", "Cancel new game")) // swiftlint:disable:this line_length
                 .accessibilityIdentifier(AccountAccessibilityID.createGameCancelButton)
             }
             ToolbarItem(placement: .confirmationAction) {
@@ -45,102 +61,151 @@ struct CreateGameSheetView: View {
                     if viewModel.isSubmitting {
                         ProgressView()
                     } else {
-                        Text("Create")
+                        Text(gameLifecycleLocalized("create.submit", "Create"))
                     }
                 }
                 .disabled(!viewModel.canSubmit)
-                .accessibilityLabel(viewModel.isSubmitting ? "Creating game" : "Create game")
+                .accessibilityLabel(viewModel.isSubmitting
+                    ? gameLifecycleLocalized("create.submitting.accessibility", "Creating game")
+                    : gameLifecycleLocalized("create.submit.accessibility", "Create game"))
                 .accessibilityIdentifier(AccountAccessibilityID.createGameSubmitButton)
             }
         }
     }
 
     private var gameSection: some View {
-        Section("Game") {
+        Section(gameLifecycleLocalized("create.section.game", "Game")) {
             Picker(
-                "Mode",
-                selection: Binding(
-                    get: { viewModel.mode },
-                    set: { viewModel.mode = $0 }
-                )
+                gameLifecycleLocalized("create.mode", "Mode"),
+                selection: Binding(get: { viewModel.mode }, set: { viewModel.mode = $0 })
             ) {
                 ForEach(CreateGameMode.allCases) { mode in
                     Text(mode.displayName).tag(mode)
                 }
             }
-            .accessibilityLabel("Game mode")
+            .accessibilityLabel(gameLifecycleLocalized("create.mode.accessibility", "Game mode"))
             .accessibilityIdentifier(AccountAccessibilityID.createGameModePicker)
 
             switch viewModel.mode {
             case .campaign:
                 Picker(
-                    "Campaign",
+                    gameLifecycleLocalized("create.campaign", "Campaign"),
                     selection: Binding(
                         get: { viewModel.selectedCampaignID },
                         set: { viewModel.selectedCampaignID = $0 }
                     )
                 ) {
                     ForEach(viewModel.catalog.campaigns) { campaign in
-                        Text(campaign.title).tag(campaign.id)
+                        Text(releaseLabel(campaign.title, alpha: campaign.alpha, beta: campaign.beta)) // swiftlint:disable:this line_length
+                            .tag(campaign.id)
                     }
                 }
-                .accessibilityLabel("Campaign")
-                .accessibilityHint("Choose which campaign to create.")
+                .accessibilityLabel(gameLifecycleLocalized("create.campaign.accessibility", "Campaign")) // swiftlint:disable:this line_length
+                .accessibilityHint(
+                    gameLifecycleLocalized("create.campaign.hint", "Choose which campaign to create.") // swiftlint:disable:this line_length
+                )
                 .accessibilityIdentifier(AccountAccessibilityID.createGameCatalogPicker)
             case .standaloneScenario:
                 Picker(
-                    "Scenario",
+                    gameLifecycleLocalized("create.scenario", "Scenario"),
                     selection: Binding(
                         get: { viewModel.selectedScenarioID },
                         set: { viewModel.selectedScenarioID = $0 }
                     )
                 ) {
                     ForEach(viewModel.catalog.standaloneScenarios) { scenario in
-                        Text(scenario.title).tag(scenario.id)
+                        Text(releaseLabel(scenario.title, alpha: scenario.alpha, beta: scenario.beta)) // swiftlint:disable:this line_length
+                            .tag(scenario.id)
                     }
                 }
-                .accessibilityLabel("Scenario")
-                .accessibilityHint("Choose which standalone scenario to create.")
+                .accessibilityLabel(gameLifecycleLocalized("create.scenario.accessibility", "Scenario")) // swiftlint:disable:this line_length
+                .accessibilityHint(
+                    gameLifecycleLocalized("create.scenario.hint", "Choose which standalone scenario or side story to create.") // swiftlint:disable:this line_length
+                )
                 .accessibilityIdentifier(AccountAccessibilityID.createGameCatalogPicker)
             }
 
-            Picker(
-                "Difficulty",
-                selection: Binding(
-                    get: { viewModel.difficulty },
-                    set: { viewModel.difficulty = $0 }
+            if viewModel.canToggleReturnTo {
+                Toggle(
+                    gameLifecycleLocalized("create.returnTo", "Return to"),
+                    isOn: Binding(get: { viewModel.useReturnTo }, set: { viewModel.useReturnTo = $0 }) // swiftlint:disable:this line_length
                 )
+                .accessibilityIdentifier(AccountAccessibilityID.createGameReturnToToggle)
+            }
+
+            if let badge = viewModel.selectionBadge {
+                Text(badge)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(badge)
+            }
+
+            Picker(
+                gameLifecycleLocalized("create.difficulty", "Difficulty"),
+                selection: Binding(get: { viewModel.difficulty }, set: { viewModel.difficulty = $0 }) // swiftlint:disable:this line_length
             ) {
-                ForEach(RequestDifficulty.allCases, id: \.self) { difficulty in
+                ForEach(viewModel.availableDifficulties, id: \.self) { difficulty in
                     Text(difficulty.displayName).tag(difficulty)
                 }
             }
-            .accessibilityLabel("Difficulty")
+            .accessibilityLabel(gameLifecycleLocalized("create.difficulty.accessibility", "Difficulty")) // swiftlint:disable:this line_length
             .accessibilityIdentifier(AccountAccessibilityID.createGameDifficultyPicker)
         }
         .disabled(viewModel.isSubmitting)
     }
 
+    @ViewBuilder
+    private var optionsSection: some View {
+        let hasOptions = !viewModel.selectedCampaignVariants.isEmpty
+            || !viewModel.selectedCampaignRecommendedOptions.isEmpty
+        if viewModel.mode == .campaign, hasOptions {
+            Section(gameLifecycleLocalized("create.section.options", "Options")) {
+                if !viewModel.selectedCampaignVariants.isEmpty {
+                    Picker(
+                        gameLifecycleLocalized("create.variant", "Variant"),
+                        selection: Binding(
+                            get: { viewModel.selectedVariantID ?? viewModel.selectedCampaignVariants.first?.id ?? "" }, // swiftlint:disable:this line_length
+                            set: { viewModel.selectedVariantID = $0 }
+                        )
+                    ) {
+                        ForEach(viewModel.selectedCampaignVariants) { variant in
+                            Text(variant.label).tag(variant.id)
+                        }
+                    }
+                    .accessibilityIdentifier(AccountAccessibilityID.createGameVariantOptionPicker)
+                }
+                ForEach(viewModel.selectedCampaignRecommendedOptions) { option in
+                    Toggle(
+                        option.label,
+                        isOn: Binding(
+                            get: { viewModel.isRecommendedOptionEnabled(option) },
+                            set: { viewModel.setRecommendedOption(option, enabled: $0) }
+                        )
+                    )
+                    .accessibilityIdentifier(AccountAccessibilityID.createGameRecommendedOptionToggle(option.id)) // swiftlint:disable:this line_length
+                }
+            }
+            .disabled(viewModel.isSubmitting)
+        }
+    }
+
     private var playersSection: some View {
-        Section("Players") {
+        Section(gameLifecycleLocalized("create.section.players", "Players")) {
             Picker(
-                "Player count",
-                selection: Binding(
-                    get: { viewModel.playerCount },
-                    set: { viewModel.playerCount = $0 }
-                )
+                gameLifecycleLocalized("create.playerCount", "Player count"),
+                selection: Binding(get: { viewModel.playerCount }, set: { viewModel.playerCount = $0 }) // swiftlint:disable:this line_length
             ) {
                 ForEach(1 ... 4, id: \.self) { count in
                     Text("\(count)").tag(count)
                 }
             }
-            .accessibilityLabel("Player count")
+            .accessibilityLabel(gameLifecycleLocalized("create.playerCount.accessibility", "Player count")) // swiftlint:disable:this line_length
             .accessibilityValue("\(viewModel.playerCount)")
             .accessibilityIdentifier(AccountAccessibilityID.createGamePlayerCountPicker)
 
             if viewModel.shouldShowMultiplayerVariant {
                 Picker(
-                    "Multiplayer",
+                    gameLifecycleLocalized("create.multiplayer", "Multiplayer"),
                     selection: Binding(
                         get: { viewModel.multiplayerVariant },
                         set: { viewModel.multiplayerVariant = $0 }
@@ -150,9 +215,20 @@ struct CreateGameSheetView: View {
                         Text(variant.displayName).tag(variant)
                     }
                 }
-                .accessibilityLabel("Multiplayer variant")
+                .accessibilityLabel(
+                    gameLifecycleLocalized("create.multiplayer.accessibility", "Multiplayer variant") // swiftlint:disable:this line_length
+                )
                 .accessibilityIdentifier(AccountAccessibilityID.createGameVariantPicker)
             }
+
+            Toggle(
+                gameLifecycleLocalized("create.includeTarotReadings", "Include tarot readings"),
+                isOn: Binding(
+                    get: { viewModel.includeTarotReadings },
+                    set: { viewModel.includeTarotReadings = $0 }
+                )
+            )
+            .accessibilityIdentifier(AccountAccessibilityID.createGameTarotToggle)
         }
         .disabled(viewModel.isSubmitting)
     }
@@ -161,20 +237,41 @@ struct CreateGameSheetView: View {
         Section {
             TextField(
                 viewModel.selectedTitle,
-                text: Binding(
-                    get: { viewModel.customName },
-                    set: { viewModel.customName = $0 }
+                text: Binding(get: { viewModel.customName }, set: { viewModel.customName = $0 })
+            )
+            .focused($focusedField, equals: .name)
+            .disabled(viewModel.isSubmitting)
+            .accessibilityLabel(gameLifecycleLocalized("create.name.accessibility", "Game name"))
+            .accessibilityHint(
+                gameLifecycleLocalizedFormat(
+                    "create.name.hint", "Optional. Leave blank to use %@.", viewModel.selectedTitle
                 )
             )
-            .disabled(viewModel.isSubmitting)
-            .accessibilityLabel("Game name")
-            .accessibilityHint("Optional. Leave blank to use \(viewModel.selectedTitle).")
             .accessibilityIdentifier(AccountAccessibilityID.createGameNameField)
         } header: {
-            Text("Name")
+            Text(gameLifecycleLocalized("create.section.name", "Name"))
         } footer: {
-            Text("Leave blank to use \(viewModel.selectedTitle).")
+            Text(gameLifecycleLocalizedFormat(
+                "create.name.footer", "Leave blank to use %@.", viewModel.selectedTitle
+            ))
         }
+    }
+
+    private func releaseLabel(_ title: String, alpha: Bool, beta: Bool) -> String {
+        if alpha {
+            return "\(title) (\(gameLifecycleLocalized("create.release.alpha", "Alpha")))"
+        }
+        if beta {
+            return "\(title) (\(gameLifecycleLocalized("create.release.beta", "Beta")))"
+        }
+        return title
+    }
+
+    private func loadCatalogIfNeeded() async {
+        guard !didLoadCatalog else { return }
+        didLoadCatalog = true
+        let result = await model.createGameCatalogForSheet()
+        viewModel.replaceCatalog(result.catalog, warningMessage: result.warningMessage)
     }
 
     private func submit() async {

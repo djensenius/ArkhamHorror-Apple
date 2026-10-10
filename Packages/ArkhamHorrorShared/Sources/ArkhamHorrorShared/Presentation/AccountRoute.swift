@@ -122,12 +122,16 @@ enum AccountAccessibilityID {
     static let createGameModePicker = "account.games.create.mode"
     static let createGameCatalogPicker = "account.games.create.catalog"
     static let createGameDifficultyPicker = "account.games.create.difficulty"
+    static let createGameReturnToToggle = "account.games.create.returnTo"
     static let createGamePlayerCountPicker = "account.games.create.playerCount"
     static let createGameVariantPicker = "account.games.create.variant"
+    static let createGameVariantOptionPicker = "account.games.create.variant.option"
+    static let createGameTarotToggle = "account.games.create.tarot"
     static let createGameNameField = "account.games.create.name"
     static let createGameSubmitButton = "account.games.create.submit"
     static let createGameCancelButton = "account.games.create.cancel"
     static let createGameFailureText = "account.games.create.failure"
+    static let createGameCatalogWarningText = "account.games.create.catalog.warning"
     static let joinGameInviteOpenButton = "account.games.joinInvite.open"
     static let joinGameInviteField = "account.games.joinInvite.field"
     static let joinGameInviteSubmitButton = "account.games.joinInvite.submit"
@@ -135,6 +139,10 @@ enum AccountAccessibilityID {
     static let joinGameInviteFailureText = "account.games.joinInvite.failure"
     static let gameDeleteConfirmButton = "account.games.delete.confirm"
     static let gameListFailureText = "account.games.list.failure"
+
+    static func createGameRecommendedOptionToggle(_ optionID: String) -> String {
+        "account.games.create.recommendedOption.\(optionID)"
+    }
 
     /// A per-game row identifier, distinct for every game in the list.
     static func gameRow(for gameID: UUID) -> String {
