@@ -264,6 +264,7 @@ private struct CreateGameDisplayRules {
 }
 
 extension CreateGameCatalog {
+    // swiftlint:disable:next function_body_length
     static func from(
         document: CampaignCatalogDocument,
         resolver: LocaleCatalogResolver?,

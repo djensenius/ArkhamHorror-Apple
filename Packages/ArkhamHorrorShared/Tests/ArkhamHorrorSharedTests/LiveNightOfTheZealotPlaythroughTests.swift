@@ -163,6 +163,7 @@ private struct LivePlaythroughConfiguration: Sendable, Equatable {
         ultimatumsAndBoons.isEmpty ? .absent : .value(ultimatumsAndBoons)
     }
 
+    // swiftlint:disable:next function_body_length
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) throws -> LivePlaythroughConfiguration {
@@ -607,6 +608,7 @@ struct LiveNightOfTheZealotPlaythroughTests {
     }
 
     @Test("Catalog flow request assertion rejects target and variant drift")
+    // swiftlint:disable:next function_body_length
     func catalogFlowRequestAssertionRejectsTargetAndVariantDrift() throws {
         let configuration = try LivePlaythroughConfiguration.fromEnvironment([
             "ARKHAM_LIVE_CAMPAIGN_ID": "02",

@@ -4,6 +4,7 @@ import Testing
 
 @MainActor
 @Suite("CreateGameViewModel")
+// swiftlint:disable:next type_body_length
 struct CreateGameViewModelTests {
     @Test("Defaults create a one-player Easy Night of the Zealot campaign")
     func defaultsCreateOnePlayerCampaign() throws {
