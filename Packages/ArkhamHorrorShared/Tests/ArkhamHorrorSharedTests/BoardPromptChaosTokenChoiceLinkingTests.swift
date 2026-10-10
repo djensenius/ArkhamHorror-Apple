@@ -109,6 +109,68 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
         #expect(links[.chaosToken(skull.chaosTokenID)]?.map(\.choiceIndex) == [1])
     }
 
+    @Test("Target labels and chaos-token groups share first matching focused tokens")
+    func targetLabelsAndChaosTokenGroupsShareFirstMatchingFocusedTokens() {
+        let token = chaosToken(.skull, cancelled: true)
+        let projection = chaosTokenProjection(bagTokens: [token], focusedTokens: [token])
+        let prompt = chaosTokenPrompt(descriptors: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .opaque,
+                uiTag: "TargetLabel",
+                target: chaosTokenTarget(token)
+            ),
+            QuestionPresentation.Choice(
+                sourceIndex: 1,
+                kind: .chaosTokenGroupChoice,
+                step: chaosTokenGroupStep(tokens: [token])
+            ),
+        ])
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+
+        #expect(prompt.displayOrderedChoices(in: projection).map(\.index) == [1])
+        #expect(links[.chaosToken(token.chaosTokenID)]?.map(\.choiceIndex) == [0])
+    }
+
+    @Test("Non-chaos target labels stay in the prompt list")
+    func nonChaosTargetLabelsStayInPromptList() {
+        let token = chaosToken(.skull, cancelled: true)
+        let projection = chaosTokenProjection(bagTokens: [token], focusedTokens: [token])
+        let prompt = chaosTokenPrompt(descriptors: [
+            QuestionPresentation.Choice(
+                sourceIndex: 0,
+                kind: .opaque,
+                uiTag: "TargetLabel",
+                target: chaosTokenTarget(token)
+            ),
+            QuestionPresentation.Choice(
+                sourceIndex: 1,
+                kind: .opaque,
+                uiTag: "TargetLabel",
+                target: cardTarget("c02062")
+            ),
+        ])
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+
+        #expect(prompt.displayOrderedChoices(in: projection).map(\.index) == [1])
+        #expect(links[.chaosToken(token.chaosTokenID)]?.map(\.choiceIndex) == [0])
+    }
+
+    @Test("Malformed focused chaos-token entries are dropped independently")
+    func malformedFocusedChaosTokenEntriesAreDroppedIndependently() {
+        let token = chaosToken(.cultist, cancelled: true)
+        let projection = chaosTokenProjection(
+            bagTokens: [token],
+            focusedTokenValues: [malformedChaosTokenValue(), chaosTokenValue(token)]
+        )
+        let prompt = chaosTokenPrompt(targets: [chaosTokenTarget(token)])
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+
+        #expect(projection.targetableChaosTokens.map(\.id) == [token.chaosTokenID])
+        #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
+        #expect(links[.chaosToken(token.chaosTokenID)]?.map(\.choiceIndex) == [0])
+    }
+
     private func chaosTokenPrompt(targets: [JSONValue]) -> BasicChoicePromptPresentation {
         chaosTokenPrompt(descriptors: targets.enumerated().map { index, target in
             QuestionPresentation.Choice(
@@ -149,11 +211,21 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
         bagTokens: [ChaosToken],
         focusedTokens: [ChaosToken]
     ) -> BoardProjection {
+        chaosTokenProjection(
+            bagTokens: bagTokens,
+            focusedTokenValues: focusedTokens.map(chaosTokenValue)
+        )
+    }
+
+    private func chaosTokenProjection(
+        bagTokens: [ChaosToken],
+        focusedTokenValues: [JSONValue]
+    ) -> BoardProjection {
         BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             mode: .scenarioOnly(BoardTestFixtures.scenario(
                 chaosBag: BoardTestFixtures.chaosBag(chaosTokens: bagTokens)
             )),
-            focusedChaosTokens: focusedTokens.map(chaosTokenValue)
+            focusedChaosTokens: focusedTokenValues
         ))
     }
 
@@ -199,8 +271,21 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
 
     private func chaosTokenReference(_ token: ChaosToken) -> JSONValue {
         .object([
-            "id": .string(token.chaosTokenID.codingKey.stringValue),
+            "chaosTokenId": .string(token.chaosTokenID.codingKey.stringValue),
             "face": .string(token.chaosTokenFace.rawValue),
+        ])
+    }
+
+    private func cardTarget(_ code: String) -> JSONValue {
+        .object([
+            "tag": .string("CardCodeTarget"),
+            "contents": .string(code),
+        ])
+    }
+
+    private func malformedChaosTokenValue() -> JSONValue {
+        .object([
+            "chaosTokenId": .string("not-a-real-token"),
         ])
     }
 
