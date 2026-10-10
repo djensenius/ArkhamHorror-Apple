@@ -449,7 +449,7 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "uuid-entity-map",
             sha256Hex: "09ebbcb0bffbcfac4060c878976570b965f10b70a2597111b162662b56b7763d"
-        )
+        ),
     ]
 }
 
