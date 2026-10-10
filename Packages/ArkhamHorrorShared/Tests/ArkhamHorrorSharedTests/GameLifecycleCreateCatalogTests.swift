@@ -627,6 +627,28 @@ struct GameLifecycleCreateCatalogTests {
         #expect(requests[1].value(forHTTPHeaderField: "If-None-Match") == "W/\"catalog-a\"")
     }
 
+    @Test("Campaign catalog service rejects an oversized catalog through bounded fetch")
+    func serviceRejectsOversizedCatalogBeforeUnboundedBuffering() async {
+        let transport = CampaignCatalogOversizedTransport(
+            url: ServerProfile.hosted.endpointURL(path: "/arkham/campaign-catalog")
+        )
+        let service = CampaignCatalogService(transport: transport)
+
+        await #expect(throws: CampaignCatalogLoadFailure.tooLarge) {
+            _ = try await service.load(
+                on: .hosted,
+                advertisement: advertisement(revision: "1.00000000000000000000000000000000")
+            )
+        }
+
+        let maxBytes = 4 * 1024 * 1024
+        #expect(await transport.boundedMaxBytes == [maxBytes])
+        #expect(await transport.unboundedBufferedBytes == 0)
+        #expect(await transport.requests.compactMap(\.url) == [ServerProfile.hosted.endpointURL(
+            path: "/arkham/campaign-catalog"
+        )])
+    }
+
     @Test("Campaign catalog service keys cache entries by advertised catalog revision")
     func serviceCacheUsesAdvertisedCatalogRevision() async throws {
         let url = ServerProfile.hosted.endpointURL(path: "/arkham/campaign-catalog")
@@ -1087,7 +1109,7 @@ private actor RecordingCampaignCatalogService: CampaignCatalogServicing {
     }
 }
 
-private actor CampaignCatalogQueuedTransport: HTTPTransport {
+private actor CampaignCatalogQueuedTransport: HTTPTransport, LocaleCatalogTransporting {
     private var responses: [(Data, URLResponse)]
     private(set) var requests: [URLRequest] = []
 
@@ -1096,12 +1118,85 @@ private actor CampaignCatalogQueuedTransport: HTTPTransport {
     }
 
     nonisolated func data(for request: URLRequest) async throws -> (Data, URLResponse) {
-        try await record(request)
+        try await recordUnbounded(request)
     }
 
-    private func record(_ request: URLRequest) throws -> (Data, URLResponse) {
+    nonisolated func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse {
+        try await fetch(URLRequest(url: url), maxBytes: maxBytes)
+    }
+
+    nonisolated func fetch(
+        _ request: URLRequest,
+        maxBytes: Int
+    ) async throws -> LocaleCatalogResponse {
+        try await recordBounded(request, maxBytes: maxBytes)
+    }
+
+    private func recordUnbounded(_ request: URLRequest) throws -> (Data, URLResponse) {
         requests.append(request)
         return responses.removeFirst()
+    }
+
+    private func recordBounded(
+        _ request: URLRequest,
+        maxBytes: Int
+    ) throws -> LocaleCatalogResponse {
+        requests.append(request)
+        let (data, response) = responses.removeFirst()
+        guard data.count <= maxBytes else { throw LocaleCatalogFailure.tooLarge }
+        guard let http = response as? HTTPURLResponse else {
+            throw LocaleCatalogFailure.transportFailure
+        }
+        return LocaleCatalogResponse(
+            statusCode: http.statusCode,
+            contentType: http.value(forHTTPHeaderField: "Content-Type"),
+            contentTypeOptions: http.value(forHTTPHeaderField: "X-Content-Type-Options"),
+            etag: http.value(forHTTPHeaderField: "ETag"),
+            url: http.url,
+            data: data
+        )
+    }
+}
+
+private actor CampaignCatalogOversizedTransport: HTTPTransport, LocaleCatalogTransporting {
+    private let url: URL
+    private(set) var requests: [URLRequest] = []
+    private(set) var boundedMaxBytes: [Int] = []
+    private(set) var unboundedBufferedBytes = 0
+
+    init(url: URL) {
+        self.url = url
+    }
+
+    nonisolated func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await recordUnbounded(request)
+    }
+
+    nonisolated func fetch(_ url: URL, maxBytes: Int) async throws -> LocaleCatalogResponse {
+        try await fetch(URLRequest(url: url), maxBytes: maxBytes)
+    }
+
+    nonisolated func fetch(
+        _ request: URLRequest,
+        maxBytes: Int
+    ) async throws -> LocaleCatalogResponse {
+        try await recordBounded(request, maxBytes: maxBytes)
+    }
+
+    private func recordUnbounded(_ request: URLRequest) throws -> (Data, URLResponse) {
+        requests.append(request)
+        let bytes = Data(repeating: 0x20, count: (4 * 1024 * 1024) + 1)
+        unboundedBufferedBytes += bytes.count
+        return (bytes, httpResponse(url: url, status: 200))
+    }
+
+    private func recordBounded(
+        _ request: URLRequest,
+        maxBytes: Int
+    ) throws -> LocaleCatalogResponse {
+        requests.append(request)
+        boundedMaxBytes.append(maxBytes)
+        throw LocaleCatalogFailure.tooLarge
     }
 }
 

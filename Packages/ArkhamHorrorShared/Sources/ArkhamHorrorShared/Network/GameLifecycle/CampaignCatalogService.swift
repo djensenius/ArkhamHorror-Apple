@@ -62,12 +62,12 @@ private actor CampaignCatalogMemoryCache {
 struct CampaignCatalogService: Sendable {
     private static let maxBytes = 4 * 1024 * 1024
 
-    private let transport: any HTTPTransport
+    private let transport: any LocaleCatalogTransporting
     private let pin: ContractPin
     private let cache: CampaignCatalogMemoryCache
 
     init(
-        transport: any HTTPTransport = URLSessionTransport(),
+        transport: any LocaleCatalogTransporting = URLSessionLocaleCatalogTransport(),
         pin: ContractPin = .current
     ) {
         self.transport = transport
@@ -97,12 +97,18 @@ struct CampaignCatalogService: Sendable {
             request.setValue(etag, forHTTPHeaderField: "If-None-Match")
         }
 
-        let data: Data
-        let response: URLResponse
+        let response: LocaleCatalogResponse
         do {
-            (data, response) = try await transport.data(for: request)
+            response = try await transport.fetch(request, maxBytes: Self.maxBytes)
         } catch let failure as CampaignCatalogLoadFailure {
             throw failure
+        } catch let failure as LocaleCatalogFailure {
+            switch failure {
+            case .tooLarge:
+                throw CampaignCatalogLoadFailure.tooLarge
+            default:
+                throw CampaignCatalogLoadFailure.transportFailure
+            }
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch {
@@ -111,20 +117,19 @@ struct CampaignCatalogService: Sendable {
         }
         try Task.checkCancellation()
 
-        guard let http = response as? HTTPURLResponse else {
-            throw CampaignCatalogLoadFailure.nonHTTPResponse
-        }
-        switch http.statusCode {
+        switch response.statusCode {
         case 304:
             if let cached {
                 return cached.document
             }
             throw CampaignCatalogLoadFailure.unexpectedStatus(304)
         case 200 ... 299:
-            guard data.count <= Self.maxBytes else { throw CampaignCatalogLoadFailure.tooLarge }
+            guard response.data.count <= Self.maxBytes else {
+                throw CampaignCatalogLoadFailure.tooLarge
+            }
             let document: CampaignCatalogDocument
             do {
-                document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+                document = try ContractJSON.decode(CampaignCatalogDocument.self, from: response.data)
             } catch {
                 try Task.checkCancellation()
                 throw CampaignCatalogLoadFailure.malformedCatalog
@@ -134,7 +139,7 @@ struct CampaignCatalogService: Sendable {
             }
             await cache.store(
                 CachedCampaignCatalog(
-                    etag: http.value(forHTTPHeaderField: "ETag"),
+                    etag: response.etag,
                     catalogRevision: document.catalogRevision,
                     document: document
                 ),
@@ -142,7 +147,7 @@ struct CampaignCatalogService: Sendable {
             )
             return document
         default:
-            throw CampaignCatalogLoadFailure.unexpectedStatus(http.statusCode)
+            throw CampaignCatalogLoadFailure.unexpectedStatus(response.statusCode)
         }
     }
 }
