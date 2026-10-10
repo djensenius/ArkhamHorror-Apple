@@ -220,8 +220,20 @@ extension CampaignCatalogScenario: Decodable {
         dev = try container.decodeIfPresent(Bool.self, forKey: .dev) ?? false
         show = try container.decodeIfPresent(Bool.self, forKey: .show) ?? true
         standalone = try container.decodeIfPresent(Bool.self, forKey: .standalone) ?? true
-        returnToID = try container.decodeIfPresent(String.self, forKey: .returnTo)
-        returnToNameKey = try container.decodeIfPresent(String.self, forKey: .returnToNameKey)
+        let decodedReturnToID = try container.decodeIfPresent(String.self, forKey: .returnTo)
+        let decodedReturnToNameKey = try container.decodeIfPresent(
+            String.self, forKey: .returnToNameKey
+        )
+        switch (decodedReturnToID, decodedReturnToNameKey) {
+        case (nil, nil):
+            returnToID = nil
+            returnToNameKey = nil
+        case let (id?, nameKey?):
+            returnToID = try CampaignCatalogCampaign.requireIdentifier(id)
+            returnToNameKey = try CampaignCatalogCampaign.requireCatalogNameKey(nameKey)
+        default:
+            throw CampaignCatalogDecodeError.malformedStructure
+        }
         returnToVariant = try container.decodeIfPresent(
             Bool.self, forKey: .returnToVariant
         ) ?? false
@@ -266,7 +278,8 @@ private extension CampaignCatalogCampaign {
     }
 
     static func requireCatalogNameKey(_ key: String) throws -> String {
-        guard key.hasPrefix("catalogNames.") else {
+        let prefix = "catalogNames."
+        guard key.hasPrefix(prefix), key.count > prefix.count else {
             throw CampaignCatalogDecodeError.malformedStructure
         }
         return key

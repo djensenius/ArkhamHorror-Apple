@@ -153,6 +153,75 @@ struct GameLifecycleCreateCatalogTests {
         #expect(document.sideStories.map(\.id) == ["90004", "83001"])
     }
 
+    @Test("Scenario return-to pairs and catalog name keys are validated per entry")
+    @MainActor
+    func scenarioReturnToPairsAndNameKeysAreValidated() throws {
+        var json = try jsonObject(from: vendoredCatalogBytes())
+        json["campaigns"] = [[
+            "id": "01",
+            "nameKey": "catalogNames.campaigns.01.name",
+        ]]
+        json["scenarios"] = [
+            [
+                "id": "01104",
+                "nameKey": "catalogNames.scenarios.01104.name",
+                "campaign": "01",
+                "returnTo": "01501",
+                "returnToNameKey": "catalogNames.scenarios.01501.name",
+            ],
+            [
+                "id": "missing-return-name",
+                "nameKey": "catalogNames.scenarios.missingReturnName.name",
+                "campaign": "01",
+                "returnTo": "01502",
+            ],
+            [
+                "id": "missing-return-id",
+                "nameKey": "catalogNames.scenarios.missingReturnID.name",
+                "campaign": "01",
+                "returnToNameKey": "catalogNames.scenarios.01503.name",
+            ],
+            [
+                "id": "malformed-return-name",
+                "nameKey": "catalogNames.scenarios.malformedReturnName.name",
+                "campaign": "01",
+                "returnTo": "01504",
+                "returnToNameKey": "scenario.returnTo.unsafe",
+            ],
+            [
+                "id": "empty-catalog-name",
+                "nameKey": "catalogNames.",
+                "campaign": "01",
+            ],
+            [
+                "id": "malformed-scenario-name",
+                "nameKey": "scenario.unsafe",
+                "campaign": "01",
+            ],
+        ]
+        json["sideStories"] = []
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        let resolver = Self.syntheticResolver(entries: [
+            "catalogNames.campaigns.01.name": "The Night of the Zealot",
+            "catalogNames.scenarios.01104.name": "The Gathering",
+            "catalogNames.scenarios.01501.name": "Return to the Gathering",
+        ])
+
+        let document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+        #expect(document.scenarios.map(\.id) == ["01104"])
+        #expect(document.scenarios.first?.returnToNameKey == "catalogNames.scenarios.01501.name")
+
+        let catalog = CreateGameCatalog.from(document: document, resolver: resolver)
+        #expect(catalog.standaloneScenarios.map(\.id) == ["01104"])
+        let viewModel = CreateGameViewModel(
+            catalog: catalog, mode: .standaloneScenario, selectedScenarioID: "01104"
+        )
+        viewModel.useReturnTo = true
+        let request = try viewModel.makeRequest()
+        #expect(request.campaignName == "Return to the Gathering")
+        #expect(request.campaignName != "scenario.returnTo.unsafe")
+    }
+
     @Test("Duplicate server campaign identifiers keep the first entry")
     func duplicateCampaignIdentifiersKeepFirstEntry() throws {
         var json = try jsonObject(from: vendoredCatalogBytes())
