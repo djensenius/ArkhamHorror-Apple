@@ -325,6 +325,11 @@ final class AppModel {
     var basicChoiceActions: [GameID: BasicChoiceActionRecord] = [:]
     /// Catalog-derived side-story investigator requirement checks for live `ChooseDeck` prompts.
     var liveChooseDeckRestrictionChecks: [GameID: LiveChooseDeckRestrictionCheck] = [:]
+    /// Cache identity for live `ChooseDeck` restriction checks so view reappearance does
+    /// not refetch.
+    var liveChooseDeckRestrictionCacheKeys: [GameID: LiveChooseDeckRestrictionCacheKey] = [:]
+    /// In-flight refresh identities for live `ChooseDeck` restriction checks.
+    var liveChooseDeckRestrictionRefreshIDs: [GameID: UUID] = [:]
     /// REST deck-upgrade submissions claimed for the live game currently being answered.
     ///
     /// Each claim carries an attempt identity so a stale task's cleanup cannot clear a

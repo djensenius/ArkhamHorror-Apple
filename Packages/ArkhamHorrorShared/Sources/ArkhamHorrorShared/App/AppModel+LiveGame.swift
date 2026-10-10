@@ -139,6 +139,9 @@ extension AppModel {
         liveGameParticipantIdentities = [:]
         liveGameMultiplayerModes = [:]
         basicChoiceActions = [:]
+        liveChooseDeckRestrictionChecks = [:]
+        liveChooseDeckRestrictionCacheKeys = [:]
+        liveChooseDeckRestrictionRefreshIDs = [:]
         for submission in campaignDeckSubmissions.values {
             submission.task?.cancel()
         }
