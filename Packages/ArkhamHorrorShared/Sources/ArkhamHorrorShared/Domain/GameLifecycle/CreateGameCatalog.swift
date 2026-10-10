@@ -270,7 +270,6 @@ private struct CreateGameDisplayRules {
 }
 
 extension CreateGameCatalog {
-    // swiftlint:disable:next function_body_length
     static func from(
         document: CampaignCatalogDocument,
         resolver: LocaleCatalogResolver?,
@@ -293,7 +292,8 @@ extension CreateGameCatalog {
         let campaignOptionsByID = Dictionary(uniqueKeysWithValues: campaigns.map { ($0.id, $0) })
 
         var emittedRawScenarioIDs: Set<String> = []
-        let campaignScenarios = document.scenarios.compactMap { scenario -> CreateGameScenarioOption? in
+        let campaignScenarios = document.scenarios.compactMap { scenario ->
+            CreateGameScenarioOption? in
             guard emittedRawScenarioIDs.insert(scenario.id).inserted else { return nil }
             // Mirrors `frontend/src/arkham/views/NewCampaign.vue:118-129`: hidden scenarios,
             // non-standalone scenarios, hidden parent campaigns and The Scarlet Keys campaign
