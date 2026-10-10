@@ -212,8 +212,15 @@
 "campaign.error.updateDeckFailed" = "Der Server konnte dieses Deck nicht aktualisieren. Versuche es erneut.";
 "liveChooseDeck.heading.generic" = "Deck wählen";
 "liveChooseDeck.error.requiresInvestigator" = "Dieses Szenario erfordert %@";
+"liveChooseDeck.error.requiresSpecificInvestigator" = "Dieses Szenario erfordert einen bestimmten Ermittler";
 "liveChooseDeck.restriction.checking" = "Anforderungen an Ermittlerdecks für Nebengeschichten werden geprüft …";
-"liveChooseDeck.restriction.unavailable" = "Anforderungen an Ermittlerdecks für Nebengeschichten konnten nicht geprüft werden. Der Server prüft dieses Deck beim Absenden.";
+"liveChooseDeck.restriction.unavailable" = "Anforderungen an Ermittlerdecks für Nebengeschichten können derzeit nicht geprüft werden. Stelle sicher, dass dieses Deck den für das Szenario erforderlichen Ermittler verwendet.";
+"liveChooseDeck.sendFailure" = "Dieses Deck konnte nicht gesendet werden. Stelle die Verbindung wieder her und versuche es erneut.";
+"liveChooseDeck.loadingSavedDecks" = "Gespeicherte Decks werden geladen …";
+"liveChooseDeck.retrySavedDecks" = "Gespeicherte Decks erneut laden";
+"liveChooseDeck.noSavedDecks" = "Importiere ein Deck über den Decks-Bildschirm, bevor du ein Deck wählst.";
+"liveChooseDeck.checkingDeck" = "Server-Unterstützung wird geprüft …";
+"liveChooseDeck.validDeck" = "Der Server kann die Hauptkarten dieses Decks spielen.";
 "campaign.upgrade.investigator" = "Ermittler";
 "campaign.upgrade.availableXp" = "Verfügbare EP";
 "campaign.upgrade.totalXp" = "EP gesamt / ausgegeben";

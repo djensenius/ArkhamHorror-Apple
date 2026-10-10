@@ -6,7 +6,12 @@ struct LiveChooseDeckSendAttempt: Equatable, Sendable {
 }
 
 struct LiveChooseDeckSubmissionState: Equatable {
-    static let sendFailureMessage = "This deck could not be sent. Reconnect and try again."
+    static var sendFailureMessage: String {
+        liveChooseDeckLocalized(
+            "liveChooseDeck.sendFailure",
+            "This deck could not be sent. Reconnect and try again."
+        )
+    }
 
     private(set) var activeAttempt: LiveChooseDeckSendAttempt?
     private(set) var sendFailure: String?
@@ -115,22 +120,31 @@ struct LiveChooseDeckSelectionView: View {
         switch viewModel.loadState {
         case .idle, .loading:
             HStack {
-                Text("Loading saved decks…")
+                Text(liveChooseDeckLocalized(
+                    "liveChooseDeck.loadingSavedDecks",
+                    "Loading saved decks…"
+                ))
                 Spacer()
                 ProgressView().controlSize(.small)
             }
         case let .failed(message):
             VStack(alignment: .leading, spacing: 8) {
                 ArkhamFailureText(message: message)
-                Button("Retry Saved Decks") {
+                Button(liveChooseDeckLocalized(
+                    "liveChooseDeck.retrySavedDecks",
+                    "Retry Saved Decks"
+                )) {
                     Task { await viewModel.reload() }
                 }
                 .buttonStyle(.bordered)
             }
         case let .loaded(decks):
             if decks.isEmpty {
-                Text("Import a deck from the Decks screen before choosing a deck.")
-                    .foregroundStyle(.secondary)
+                Text(liveChooseDeckLocalized(
+                    "liveChooseDeck.noSavedDecks",
+                    "Import a deck from the Decks screen before choosing a deck."
+                ))
+                .foregroundStyle(.secondary)
             } else {
                 ForEach(decks, id: \.id) { deck in
                     deckButton(deck)
@@ -198,13 +212,19 @@ struct LiveChooseDeckSelectionView: View {
     ) -> some View {
         switch state {
         case .pending:
-            Text("Checking server support…")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(liveChooseDeckLocalized(
+                "liveChooseDeck.checkingDeck",
+                "Checking server support…"
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
         case .valid:
-            Text("Server can play this deck's main cards.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            Text(liveChooseDeckLocalized(
+                "liveChooseDeck.validDeck",
+                "Server can play this deck's main cards."
+            ))
+            .font(.caption)
+            .foregroundStyle(.secondary)
         case let .invalid(message), let .failed(message):
             Text(message)
                 .font(.caption)
