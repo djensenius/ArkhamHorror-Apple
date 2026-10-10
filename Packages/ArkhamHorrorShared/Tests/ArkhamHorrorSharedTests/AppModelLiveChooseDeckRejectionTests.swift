@@ -1389,6 +1389,17 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
         #expect(await service.loadCount() == 1)
 
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: "\(catalog.catalogRevision).next")
+            ),
+            user: .sample
+        )
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+        #expect(await service.loadCount() == 2)
+
         _ = installRejectedLivePrompt(
             on: model,
             gameID: gameID,
@@ -1397,7 +1408,7 @@ extension AppModelLiveChooseDeckTests {
             scenarioID: "c90004"
         )
         await model.refreshLiveChooseDeckRestriction(for: gameID)
-        #expect(await service.loadCount() == 2)
+        #expect(await service.loadCount() == 3)
     }
 
     @Test("Stored restriction for another scenario does not reject this scenario's deck")
