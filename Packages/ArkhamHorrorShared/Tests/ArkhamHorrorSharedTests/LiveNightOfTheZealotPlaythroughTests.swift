@@ -187,19 +187,41 @@ private struct LivePlaythroughConfiguration: Sendable, Equatable {
             ?? "/tmp/arkham-logs/playthrough-results-\(target.slug).md"
         let shouldWriteLegacy = target.isNightOfTheZealotCampaign
             && trimmedValue("ARKHAM_LIVE_RESULT_PATH", in: environment) == nil
-        let strictAsIfAt = try parseOptionalBool(
+        let defaultStrictAsIfAt = defaultStrictAsIfAt(for: target)
+        let explicitStrictAsIfAt = try parseOptionalBool(
             trimmedValue("ARKHAM_LIVE_STRICT_AS_IF_AT", in: environment),
             name: "ARKHAM_LIVE_STRICT_AS_IF_AT"
-        ) ?? defaultStrictAsIfAt(for: target)
-        let achievements = try parseOptionalBool(
+        )
+        if let explicitStrictAsIfAt, explicitStrictAsIfAt != defaultStrictAsIfAt {
+            throw LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+                name: "ARKHAM_LIVE_STRICT_AS_IF_AT",
+                value: String(explicitStrictAsIfAt)
+            )
+        }
+        let strictAsIfAt = explicitStrictAsIfAt ?? defaultStrictAsIfAt
+        let defaultAchievements = target.defaultAchievementsEnabled
+        let explicitAchievements = try parseOptionalBool(
             trimmedValue("ARKHAM_LIVE_ACHIEVEMENTS_ENABLED", in: environment),
             name: "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED"
-        ) ?? target.defaultAchievementsEnabled
+        )
+        if let explicitAchievements, explicitAchievements != defaultAchievements {
+            throw LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+                name: "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED",
+                value: String(explicitAchievements)
+            )
+        }
+        let achievements = explicitAchievements ?? defaultAchievements
         let includeTarotReadings = try parseOptionalBool(
             trimmedValue("ARKHAM_LIVE_INCLUDE_TAROT_READINGS", in: environment),
             name: "ARKHAM_LIVE_INCLUDE_TAROT_READINGS"
         ) ?? false
         let ultimatumsAndBoons = try parseUltimatumsAndBoons(in: environment)
+        if !ultimatumsAndBoons.isEmpty {
+            throw LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+                name: "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS",
+                value: ultimatumsAndBoons.map(\.rawValue).joined(separator: ",")
+            )
+        }
         let botSeed = try parseBotSeed(trimmedValue("ARKHAM_LIVE_BOT_SEED", in: environment))
         return LivePlaythroughConfiguration(
             target: target,
@@ -238,6 +260,7 @@ private enum LiveHarnessConfigurationError: Error, CustomStringConvertible, Equa
     case unknownUltimatumOrBoon(String)
     case invalidBoolean(name: String, value: String)
     case invalidBotSeed(String)
+    case unsupportedAppFlowSetting(name: String, value: String)
 
     var description: String {
         switch self {
@@ -255,6 +278,8 @@ private enum LiveHarnessConfigurationError: Error, CustomStringConvertible, Equa
             "\(name) must be one of true/false/1/0/yes/no, got '\(value)'"
         case let .invalidBotSeed(value):
             "ARKHAM_LIVE_BOT_SEED must be an unsigned integer, got '\(value)'"
+        case let .unsupportedAppFlowSetting(name, value):
+            "\(name)=\(value) is unsupported via the app create-game flow"
         }
     }
 }
@@ -538,22 +563,172 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.achievementsEnabled == false)
     }
 
-    @Test("Live harness maps web variants and as-if ruling fields")
-    func campaignVariantsAndAsIfRulingMapToWebFields() throws {
+    @Test("Live harness maps a single web variant and default as-if ruling fields")
+    func campaignVariantAndAsIfRulingMapToWebFields() throws {
         let configuration = try LivePlaythroughConfiguration.fromEnvironment([
             "ARKHAM_LIVE_CAMPAIGN_ID": "11",
-            "ARKHAM_LIVE_CAMPAIGN_VARIANT": "alpha, beta",
-            "ARKHAM_LIVE_CAMPAIGN_VARIANTS": "gamma",
-            "ARKHAM_LIVE_STRICT_AS_IF_AT": "false",
+            "ARKHAM_LIVE_CAMPAIGN_VARIANT": "alpha",
         ])
 
-        #expect(configuration.options == [
-            .campaignVariant("alpha"),
-            .campaignVariant("beta"),
-            .campaignVariant("gamma"),
+        #expect(configuration.options == [.campaignVariant("alpha")])
+        #expect(configuration.strictAsIfAtField == .value(true))
+        #expect(configuration.asIfRulingField == .value(.chapter2))
+    }
+
+    @Test("Live harness rejects app-flow settings it cannot express")
+    func unsupportedAppFlowSettingsAreConfigurationErrors() {
+        #expect(throws: LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+            name: "ARKHAM_LIVE_STRICT_AS_IF_AT",
+            value: "false"
+        )) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_CAMPAIGN_ID": "11",
+                "ARKHAM_LIVE_STRICT_AS_IF_AT": "false",
+            ])
+        }
+        #expect(throws: LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+            name: "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED",
+            value: "true"
+        )) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_SCENARIO_ID": "90004",
+                "ARKHAM_LIVE_ACHIEVEMENTS_ENABLED": "true",
+                "ARKHAM_LIVE_INVESTIGATOR_CODES": "01002",
+            ])
+        }
+        #expect(throws: LiveHarnessConfigurationError.unsupportedAppFlowSetting(
+            name: "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS",
+            value: "BoonOfHades"
+        )) {
+            _ = try LivePlaythroughConfiguration.fromEnvironment([
+                "ARKHAM_LIVE_ULTIMATUMS_AND_BOONS": "BoonOfHades",
+            ])
+        }
+    }
+
+    @Test("Catalog flow request assertion rejects target and variant drift")
+    func catalogFlowRequestAssertionRejectsTargetAndVariantDrift() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_CAMPAIGN_ID": "02",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
+            "ARKHAM_LIVE_CAMPAIGN_VARIANT": "theDunwichLegacy",
         ])
-        #expect(configuration.strictAsIfAtField == .value(false))
-        #expect(configuration.asIfRulingField == .value(.chapter1))
+        let wrongTarget = CreateGameRequest(
+            deckIds: [nil, nil, nil, nil],
+            playerCount: 1,
+            campaignOrScenario: try CampaignOrScenario(campaignId: "01", scenarioId: nil),
+            difficulty: .easy,
+            campaignName: "Wrong target",
+            multiplayerVariant: .withFriends,
+            includeTarotReadings: false,
+            options: [.campaignVariant("theDunwichLegacy")],
+            strictAsIfAt: .value(false),
+            asIfRuling: .value(.chapter1),
+            ultimatumsAndBoons: .value([]),
+            achievementsEnabled: .value(true)
+        )
+        do {
+            try assertCatalogFlowRequest(wrongTarget, matches: configuration)
+            Issue.record("Catalog flow target drift should fail loudly")
+        } catch {
+            #expect(String(describing: error).contains("target mismatch"))
+            #expect(String(describing: error).contains("campaignId=02"))
+        }
+
+        let wrongVariant = CreateGameRequest(
+            deckIds: [nil, nil, nil, nil],
+            playerCount: 1,
+            campaignOrScenario: try CampaignOrScenario(campaignId: "02", scenarioId: nil),
+            difficulty: .easy,
+            campaignName: "Wrong variant",
+            multiplayerVariant: .withFriends,
+            includeTarotReadings: false,
+            options: [.flag(.playersDoNotControlStoryAssetClues)],
+            strictAsIfAt: .value(false),
+            asIfRuling: .value(.chapter1),
+            ultimatumsAndBoons: .value([]),
+            achievementsEnabled: .value(true)
+        )
+        do {
+            try assertCatalogFlowRequest(wrongVariant, matches: configuration)
+            Issue.record("Catalog flow variant drift should fail loudly")
+        } catch {
+            #expect(String(describing: error).contains("campaign variants"))
+            #expect(String(describing: error).contains("theDunwichLegacy"))
+        }
+    }
+
+    @Test("Catalog flow maps Return To scenarios and side-story parts")
+    func catalogFlowTargetConfigurationMapsReturnToAndSideStoryParts() throws {
+        let catalog = CreateGameCatalog(
+            campaigns: [CreateGameCampaignOption(id: "01", title: "The Night of the Zealot")],
+            standaloneScenarios: [
+                CreateGameScenarioOption(
+                    id: "01104",
+                    title: "The Gathering",
+                    nameKey: nil,
+                    campaignID: "01",
+                    returnTo: CreateGameReturnToScenarioOption(
+                        id: "50011", title: "Return to The Gathering", nameKey: nil
+                    )
+                ),
+                CreateGameScenarioOption(
+                    id: "83001",
+                    title: "The Labyrinths of Lunacy",
+                    nameKey: nil,
+                    campaignID: nil,
+                    sideStoryCampaignID: "83",
+                    parts: [
+                        CreateGameSideStoryPartOption(id: "83001", title: "Group A", nameKey: nil),
+                        CreateGameSideStoryPartOption(id: "83016", title: "Group B", nameKey: nil),
+                    ]
+                ),
+            ]
+        )
+        let returnToModel = CreateGameViewModel(catalog: catalog)
+        try configureCatalogFlowTarget(.standaloneScenario(id: "50011"), in: returnToModel)
+        let returnToRequest = try returnToModel.makeRequest()
+        #expect(returnToRequest.campaignOrScenario.campaignId == nil)
+        #expect(returnToRequest.campaignOrScenario.scenarioId == "50011")
+
+        let sideStoryModel = CreateGameViewModel(catalog: catalog)
+        try configureCatalogFlowTarget(.standaloneScenario(id: "83016"), in: sideStoryModel)
+        let sideStoryRequest = try sideStoryModel.makeRequest()
+        #expect(sideStoryRequest.campaignOrScenario.campaignId == nil)
+        #expect(sideStoryRequest.campaignOrScenario.scenarioId == "83016")
+    }
+
+    @Test("Catalog flow variant validation rejects invalid or multiple variants")
+    func catalogFlowVariantValidationRejectsInvalidOrMultipleVariants() throws {
+        let catalog = CreateGameCatalog(
+            campaigns: [CreateGameCampaignOption(
+                id: "06",
+                title: "The Dream-Eaters",
+                nameKey: nil,
+                variants: [
+                    CreateGameVariantOption(id: "theDreamQuest", label: "The Dream-Quest"),
+                    CreateGameVariantOption(id: "theWebOfDreams", label: "The Web of Dreams"),
+                ]
+            )],
+            standaloneScenarios: []
+        )
+        let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "06")
+
+        do {
+            try applyCatalogFlowVariants(["missingVariant"], in: viewModel)
+            Issue.record("Invalid campaign variant should fail")
+        } catch {
+            #expect(String(describing: error).contains("missingVariant"))
+        }
+        do {
+            try applyCatalogFlowVariants(["theDreamQuest", "theWebOfDreams"], in: viewModel)
+            Issue.record("Multiple campaign variants should fail")
+        } catch {
+            #expect(String(describing: error).contains("multiple"))
+        }
+
+        try applyCatalogFlowVariants(["theWebOfDreams"], in: viewModel)
+        #expect(try viewModel.makeRequest().options == [.campaignVariant("theWebOfDreams")])
     }
 
     @Test("Return To campaigns inherit the web base-campaign as-if chapter")
@@ -2524,26 +2699,104 @@ struct LiveNightOfTheZealotPlaythroughTests {
         configuration: LivePlaythroughConfiguration
     ) async throws -> CreateGameRequest {
         let loadResult = await model.createGameCatalogForSheet()
-        let viewModel: CreateGameViewModel
-        switch configuration.target {
-        case let .campaign(id):
-            let baseID = returnToCampaignBaseIDs[id] ?? id
-            viewModel = CreateGameViewModel(catalog: loadResult.catalog, selectedCampaignID: baseID)
-            viewModel.useReturnTo = returnToCampaignBaseIDs[id] != nil
-        case let .standaloneScenario(id):
-            viewModel = CreateGameViewModel(
-                catalog: loadResult.catalog,
-                mode: .standaloneScenario,
-                selectedScenarioID: id
-            )
+        if let warning = loadResult.warningMessage {
+            throw PlaythroughError.catalogFlowCatalogUnavailable(warning)
         }
+        let viewModel = CreateGameViewModel(catalog: loadResult.catalog)
+        try configureCatalogFlowTarget(configuration.target, in: viewModel)
         viewModel.difficulty = configuration.difficulty
         viewModel.includeTarotReadings = configuration.includeTarotReadings
         viewModel.customName = configuration.gameName(for: investigator)
-        if let variantID = configuration.campaignVariants.first {
-            viewModel.selectedVariantID = variantID
+        try applyCatalogFlowVariants(configuration.campaignVariants, in: viewModel)
+        let request = try viewModel.makeRequest()
+        try assertCatalogFlowRequest(request, matches: configuration)
+        return request
+    }
+
+    private func configureCatalogFlowTarget(
+        _ target: PlaythroughTarget,
+        in viewModel: CreateGameViewModel
+    ) throws {
+        switch target {
+        case let .campaign(id):
+            let baseID = returnToCampaignBaseIDs[id] ?? id
+            viewModel.mode = .campaign
+            viewModel.selectedCampaignID = baseID
+            viewModel.useReturnTo = returnToCampaignBaseIDs[id] != nil
+        case let .standaloneScenario(id):
+            viewModel.mode = .standaloneScenario
+            if let baseScenario = viewModel.catalog.standaloneScenarios.first(where: {
+                $0.returnTo?.id == id
+            }) {
+                viewModel.selectedScenarioID = baseScenario.id
+                viewModel.useReturnTo = true
+            } else if let sideStory = viewModel.catalog.standaloneScenarios.first(where: {
+                $0.parts.contains { $0.id == id }
+            }) {
+                viewModel.selectedScenarioID = sideStory.id
+                viewModel.selectedSideStoryPartID = id
+            } else if viewModel.catalog.standaloneScenarios.contains(where: { $0.id == id }) {
+                viewModel.selectedScenarioID = id
+                if viewModel.selectedSideStoryParts.contains(where: { $0.id == id }) {
+                    viewModel.selectedSideStoryPartID = id
+                }
+            } else {
+                throw PlaythroughError.unsupportedAppFlow(
+                    "standalone scenario \(id) is unsupported via app flow; no catalog "
+                        + "scenario, Return To scenario, or side-story part matched"
+                )
+            }
         }
-        return try viewModel.makeRequest()
+    }
+
+    private func applyCatalogFlowVariants(
+        _ variantIDs: [String],
+        in viewModel: CreateGameViewModel
+    ) throws {
+        guard !variantIDs.isEmpty else { return }
+        guard viewModel.mode == .campaign else {
+            throw PlaythroughError.unsupportedAppFlow(
+                "ARKHAM_LIVE_CAMPAIGN_VARIANT is only supported for campaign targets"
+            )
+        }
+        guard variantIDs.count == 1, let variantID = variantIDs.first else {
+            throw PlaythroughError.unsupportedAppFlow(
+                "multiple ARKHAM_LIVE_CAMPAIGN_VARIANT values are unsupported via app flow"
+            )
+        }
+        guard viewModel.selectedCampaignVariants.contains(where: { $0.id == variantID }) else {
+            throw PlaythroughError.unsupportedAppFlow(
+                "ARKHAM_LIVE_CAMPAIGN_VARIANT \(variantID) is not available for "
+                    + "campaign \(viewModel.selectedCampaignID)"
+            )
+        }
+        viewModel.selectedVariantID = variantID
+    }
+
+    private func assertCatalogFlowRequest(
+        _ request: CreateGameRequest,
+        matches configuration: LivePlaythroughConfiguration
+    ) throws {
+        let expected = try configuration.campaignOrScenario()
+        guard request.campaignOrScenario.campaignId == expected.campaignId,
+              request.campaignOrScenario.scenarioId == expected.scenarioId
+        else {
+            throw PlaythroughError.catalogFlowRequestMismatch(
+                "expected \(configuration.target.summary), got "
+                    + "campaignId=\(request.campaignOrScenario.campaignId ?? "null"), "
+                    + "scenarioId=\(request.campaignOrScenario.scenarioId ?? "null")"
+            )
+        }
+        let actualVariants = request.options.compactMap { option -> String? in
+            guard case let .campaignVariant(id) = option else { return nil }
+            return id
+        }
+        guard actualVariants == configuration.campaignVariants else {
+            throw PlaythroughError.catalogFlowRequestMismatch(
+                "expected campaign variants \(configuration.campaignVariants), got "
+                    + "\(actualVariants)"
+            )
+        }
     }
 
     private func recordCreateRequestComparison(
@@ -4342,6 +4595,9 @@ private enum PlaythroughError: Error, CustomStringConvertible {
     case submissionFailed(String)
     case noEligibleReplacementInvestigator(String)
     case noPromptOwnerInvestigator(PlayerID)
+    case catalogFlowCatalogUnavailable(String)
+    case catalogFlowRequestMismatch(String)
+    case unsupportedAppFlow(String)
     case timedOut(String)
 
     var description: String {
@@ -4356,6 +4612,12 @@ private enum PlaythroughError: Error, CustomStringConvertible {
             "no eligible replacement investigator for \(investigatorID)"
         case let .noPromptOwnerInvestigator(playerID):
             "no current investigator for prompt owner \(playerID.rawValue.uuidString)"
+        case let .catalogFlowCatalogUnavailable(warning):
+            "catalog-backed create flow warning: \(warning)"
+        case let .catalogFlowRequestMismatch(reason):
+            "catalog-backed create flow target mismatch: \(reason)"
+        case let .unsupportedAppFlow(reason):
+            "unsupported via app flow: \(reason)"
         case let .timedOut(description): "timed out waiting for \(description)"
         }
     }
