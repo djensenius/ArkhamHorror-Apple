@@ -12,6 +12,20 @@ struct LiveChooseDeckRestrictionCacheKey: Sendable, Equatable {
     let catalogRevision: String?
 }
 
+struct LiveChooseDeckRestrictionTableState: Sendable, Equatable {
+    let chosenInvestigatorCodes: Set<String>?
+    let isLastPlayerChoosing: Bool?
+
+    var hasRequiredInputs: Bool {
+        chosenInvestigatorCodes != nil && isLastPlayerChoosing != nil
+    }
+
+    func shouldBlockMissingRequiredInvestigator(_ requiredCodes: Set<String>) -> Bool {
+        guard let chosenInvestigatorCodes, let isLastPlayerChoosing else { return false }
+        return isLastPlayerChoosing && chosenInvestigatorCodes.isDisjoint(with: requiredCodes)
+    }
+}
+
 struct LiveChooseDeckRestrictionContext: Sendable, Equatable {
     let rawScenarioID: String?
     let isSideStory: Bool?
@@ -34,7 +48,7 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
     case unavailable(message: String, scenarioID: String?)
     case requiresInvestigator(LiveChooseDeckRequiredInvestigator)
 
-    var notice: String? {
+    func notice(tableState: LiveChooseDeckRestrictionTableState?) -> String? {
         switch self {
         case let .unavailable(message, _):
             message
@@ -43,12 +57,21 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
                 "liveChooseDeck.restriction.checking",
                 "Checking side-story deck requirements…"
             )
+        case .requiresInvestigator where tableState?.hasRequiredInputs != true:
+            liveChooseDeckLocalized(
+                "liveChooseDeck.restriction.multiplayerUnavailable",
+                "Side-story investigator requirements cannot be fully checked from the current table state. Make sure one player uses the scenario's required investigator."
+            )
         case .unrestricted, .requiresInvestigator:
             nil
         }
     }
 
-    func rejectionMessage(for deck: Deck, currentScenarioID: String?) -> String? {
+    func rejectionMessage(
+        for deck: Deck,
+        currentScenarioID: String?,
+        tableState: LiveChooseDeckRestrictionTableState?
+    ) -> String? {
         switch self {
         case .loading:
             return liveChooseDeckLocalized(
@@ -61,6 +84,9 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
             }
             let deckInvestigatorCode = deck.liveChooseDeckInvestigatorCode
             guard !requirement.investigatorCodes.contains(deckInvestigatorCode) else { return nil }
+            guard tableState?.shouldBlockMissingRequiredInvestigator(
+                requirement.investigatorCodes
+            ) == true else { return nil }
             guard let investigatorName = requirement.investigatorName else {
                 return liveChooseDeckLocalized(
                     "liveChooseDeck.error.requiresSpecificInvestigator",

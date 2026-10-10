@@ -75,6 +75,7 @@ struct AppModelLiveChooseDeckTests {
             enemyLocations: projection.enemyLocations,
             investigators: projection.investigators,
             playerOrderCount: projection.playerOrderCount,
+            chooseDeckPlayerIDs: projection.chooseDeckPlayerIDs,
             enemyIDs: projection.enemyIDs,
             treacheryIDs: projection.treacheryIDs,
             treacheriesByID: projection.treacheriesByID,

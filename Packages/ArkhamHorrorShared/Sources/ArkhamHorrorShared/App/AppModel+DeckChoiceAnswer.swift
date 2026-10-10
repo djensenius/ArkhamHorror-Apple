@@ -65,13 +65,16 @@ extension AppModel {
     }
 
     func liveChooseDeckRestrictionNotice(for gameID: GameID) -> String? {
-        liveChooseDeckRestrictionChecks[gameID]?.notice
+        liveChooseDeckRestrictionChecks[gameID]?.notice(
+            tableState: liveChooseDeckRestrictionTableState(for: gameID)
+        )
     }
 
     func liveChooseDeckRestrictionValidationMessage(for deck: Deck, in gameID: GameID) -> String? {
         liveChooseDeckRestrictionChecks[gameID]?.rejectionMessage(
             for: deck,
-            currentScenarioID: liveChooseDeckScenarioID(for: gameID)
+            currentScenarioID: liveChooseDeckScenarioID(for: gameID),
+            tableState: liveChooseDeckRestrictionTableState(for: gameID)
         )
     }
 
@@ -232,6 +235,19 @@ extension AppModel {
         return LiveChooseDeckRestrictionContext(
             rawScenarioID: scenario.id,
             isSideStory: scenario.isSideStory
+        )
+    }
+
+    private func liveChooseDeckRestrictionTableState(
+        for gameID: GameID
+    ) -> LiveChooseDeckRestrictionTableState? {
+        guard let projection = liveGameStates[gameID]?.lastKnownProjection else { return nil }
+        let chosenInvestigatorCodes = Set(
+            projection.investigators.map { normalizedCardCode($0.cardCode.rawValue) }
+        )
+        return LiveChooseDeckRestrictionTableState(
+            chosenInvestigatorCodes: chosenInvestigatorCodes,
+            isLastPlayerChoosing: projection.chooseDeckPlayerIDs.map { $0.count <= 1 }
         )
     }
 

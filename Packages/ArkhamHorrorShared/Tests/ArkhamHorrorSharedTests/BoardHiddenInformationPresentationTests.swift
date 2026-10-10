@@ -260,6 +260,7 @@ private func hiddenInformationInvestigatorNode(
 ) -> BoardInvestigatorNode {
     BoardInvestigatorNode(
         id: id,
+        cardCode: id.rawValue,
         playerID: playerID,
         displayName: "Roland Banks",
         subtitle: nil,

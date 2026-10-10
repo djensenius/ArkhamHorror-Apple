@@ -38,6 +38,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             enemyLocations: enemyLocations,
             investigators: investigators,
             playerOrderCount: snapshot.playerOrder.count,
+            chooseDeckPlayerIDs: Self.chooseDeckPlayerIDs(from: snapshot.gameState),
             enemyIDs: snapshot.enemies.keys.sorted {
                 $0.codingKey.stringValue < $1.codingKey.stringValue
             },
@@ -64,6 +65,11 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
 
     private static func safeGameName(_ snapshot: PublicGameSnapshot) -> String {
         BoardDisplayFormatting.safeLabel(snapshot.name, fallback: snapshot.id.description)
+    }
+
+    private static func chooseDeckPlayerIDs(from gameState: GameState) -> [PlayerID]? {
+        guard case let .chooseDecks(players) = gameState else { return nil }
+        return players
     }
 
     // MARK: - Scenario / campaign
