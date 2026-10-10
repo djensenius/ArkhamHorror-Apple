@@ -45,7 +45,6 @@ extension AppModelLiveChooseDeckTests {
         try PlayerID(#require(UUID(uuidString: "00000000-0000-0000-0000-000000000002")))
     }
 
-    // swiftlint:disable:next function_body_length
     private func investigatorNode(
         playerID: PlayerID,
         cardCode rawCardCode: String,
@@ -597,7 +596,7 @@ extension AppModelLiveChooseDeckTests {
     }
 
     @Test("Required-investigator multiplayer blocks the last chooser when nobody provides it")
-    func requiredInvestigatorMultiplayerBlocksLastChooserWithoutRequiredInvestigator() async throws {
+    func requiredInvestigatorMultiplayerBlocksLastChooser() async throws {
         let catalog = try loadLiveCampaignCatalog()
         let model = await makeCatalogBackedRejectionModel(catalog: catalog)
         let connection = FakeGameSocketConnection()

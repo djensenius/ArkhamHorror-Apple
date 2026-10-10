@@ -267,19 +267,6 @@ extension AppModel {
         )
     }
 
-    private func liveChooseDeckRestrictionTableState(
-        for gameID: GameID
-    ) -> LiveChooseDeckRestrictionTableState? {
-        guard let projection = liveGameStates[gameID]?.lastKnownProjection else { return nil }
-        let chosenInvestigatorCodes = Set(
-            projection.investigators.map { normalizedCardCode($0.cardCode.rawValue) }
-        )
-        return LiveChooseDeckRestrictionTableState(
-            chosenInvestigatorCodes: chosenInvestigatorCodes,
-            isLastPlayerChoosing: projection.chooseDeckPlayerIDs.map { $0.count <= 1 }
-        )
-    }
-
     private func liveChooseDeckRestrictionCacheKey(
         for context: LiveChooseDeckRestrictionContext
     ) -> LiveChooseDeckRestrictionCacheKey {

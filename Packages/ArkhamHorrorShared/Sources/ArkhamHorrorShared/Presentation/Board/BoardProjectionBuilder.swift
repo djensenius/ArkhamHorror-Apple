@@ -39,9 +39,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             investigators: investigators,
             playerOrderCount: snapshot.playerOrder.count,
             chooseDeckPlayerIDs: Self.chooseDeckPlayerIDs(from: snapshot.gameState),
-            enemyIDs: snapshot.enemies.keys.sorted {
-                $0.codingKey.stringValue < $1.codingKey.stringValue
-            },
+            enemyIDs: sortedEnemyIDs(from: snapshot),
             treacheryIDs: snapshot.treacheries.keys.sorted {
                 $0.codingKey.stringValue < $1.codingKey.stringValue
             },
@@ -57,7 +55,8 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             chaosBag: makeChaosBag(from: snapshot.mode),
             counters: makeCounters(from: snapshot),
             skillTest: BoardSkillTestProjectionBuilder.makeProjection(
-                skillTest: snapshot.skillTest, results: snapshot.skillTestResults
+                skillTest: snapshot.skillTest,
+                results: snapshot.skillTestResults
             ),
             questions: snapshot.question
         )
@@ -70,6 +69,10 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
     private static func chooseDeckPlayerIDs(from gameState: GameState) -> [PlayerID]? {
         guard case let .chooseDecks(players) = gameState else { return nil }
         return players
+    }
+
+    private static func sortedEnemyIDs(from snapshot: PublicGameSnapshot) -> [EnemyID] {
+        snapshot.enemies.keys.sorted { $0.codingKey.stringValue < $1.codingKey.stringValue }
     }
 
     // MARK: - Scenario / campaign

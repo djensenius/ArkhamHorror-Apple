@@ -60,7 +60,8 @@ enum LiveChooseDeckRestrictionCheck: Sendable, Equatable {
         case .requiresInvestigator where tableState?.hasRequiredInputs != true:
             liveChooseDeckLocalized(
                 "liveChooseDeck.restriction.multiplayerUnavailable",
-                "Side-story investigator requirements cannot be fully checked from the current table state. Make sure one player uses the scenario's required investigator."
+                "Side-story investigator requirements cannot be fully checked from the current "
+                    + "table state. Make sure one player uses the scenario's required investigator."
             )
         case .unrestricted, .requiresInvestigator:
             nil
@@ -138,6 +139,21 @@ enum LiveChooseDeckAnswerability: Sendable, Equatable {
         case .readOnly:
             nil
         }
+    }
+}
+
+extension AppModel {
+    func liveChooseDeckRestrictionTableState(
+        for gameID: GameID
+    ) -> LiveChooseDeckRestrictionTableState? {
+        guard let projection = liveGameStates[gameID]?.lastKnownProjection else { return nil }
+        let chosenInvestigatorCodes = Set(
+            projection.investigators.map { normalizedCardCode($0.cardCode.rawValue) }
+        )
+        return LiveChooseDeckRestrictionTableState(
+            chosenInvestigatorCodes: chosenInvestigatorCodes,
+            isLastPlayerChoosing: projection.chooseDeckPlayerIDs.map { $0.count <= 1 }
+        )
     }
 }
 
