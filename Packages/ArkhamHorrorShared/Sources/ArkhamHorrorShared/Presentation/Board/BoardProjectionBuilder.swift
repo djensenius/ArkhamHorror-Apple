@@ -9,6 +9,7 @@ import Foundation
 /// locale-sensitive comparison. Two snapshots with equal field values always build to an
 /// equal ``BoardProjection`` regardless of map insertion order.
 enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
+    // swiftlint:disable:next function_body_length
     static func makeProjection(from snapshot: PublicGameSnapshot) -> BoardProjection {
         let scenarioContext = makeScenario(from: snapshot.mode)
         let (locations, enemyLocations) = makeLocations(from: snapshot.locations)
@@ -53,6 +54,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             enemiesByLocationID: enemyPlacement.byLocationID,
             engagedEnemiesByInvestigatorID: enemyPlacement.engagedByInvestigatorID,
             chaosBag: makeChaosBag(from: snapshot.mode),
+            focusedChaosTokens: makeFocusedChaosTokenNodes(from: snapshot.focusedChaosTokens),
             counters: makeCounters(from: snapshot),
             skillTest: BoardSkillTestProjectionBuilder.makeProjection(
                 skillTest: snapshot.skillTest,
@@ -294,9 +296,32 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             poolCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.chaosTokens),
             revealedCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.revealedChaosTokens),
             setAsideCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.setAsideChaosTokens),
+            tokens: makeChaosTokenNodes(bag.chaosTokens),
             forceDrawFace: bag.forceDraw,
             hasPendingChoice: bag.choice != nil
         ))
+    }
+
+    private static func makeChaosTokenNodes(_ tokens: [ChaosToken]) -> [BoardChaosTokenNode] {
+        tokens.map { token in
+            BoardChaosTokenNode(
+                id: token.chaosTokenID,
+                face: token.chaosTokenFace,
+                cancelled: token.chaosTokenCancelled,
+                sealed: token.chaosTokenSealed
+            )
+        }
+    }
+
+    private static func makeFocusedChaosTokenNodes(
+        from values: [JSONValue]
+    ) -> [BoardChaosTokenNode] {
+        values.compactMap { value in
+            guard let data = try? ContractJSON.encode(value),
+                  let token = try? ContractJSON.decode(ChaosToken.self, from: data)
+            else { return nil }
+            return makeChaosTokenNodes([token]).first
+        }
     }
 
     // MARK: - Counters

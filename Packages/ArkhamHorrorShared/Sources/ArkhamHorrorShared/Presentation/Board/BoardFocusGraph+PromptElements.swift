@@ -360,7 +360,7 @@ extension BoardFocusGraphBuilder {
         }
     }
 
-    private static func isFocusablePromptElement(
+    static func isFocusablePromptElement(
         _ elementID: BoardPromptElementID,
         choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
     ) -> Bool {

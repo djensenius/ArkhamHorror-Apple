@@ -483,13 +483,13 @@ struct BasicChoicePromptView: View {
     }
 
     private var regularChoices: [BasicChoice] {
-        presentation.displayOrderedChoices().filter {
+        presentation.displayOrderedChoices(in: controller.projection).filter {
             !presentation.isCompletingSelection($0)
         }
     }
 
     private var finishingChoices: [BasicChoice] {
-        presentation.displayOrderedChoices().filter {
+        presentation.displayOrderedChoices(in: controller.projection).filter {
             presentation.isCompletingSelection($0)
         }
     }

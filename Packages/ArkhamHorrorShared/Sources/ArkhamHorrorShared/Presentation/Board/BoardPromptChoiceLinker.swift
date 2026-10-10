@@ -5,12 +5,14 @@ enum BoardPromptElementID: Sendable, Equatable, Hashable {
     case playerCard(BoardPlayerCardID)
     case enemy(EnemyID)
     case treachery(TreacheryID)
+    case chaosToken(ChaosTokenID)
 
     var rawFocusComponent: String {
         switch self {
         case let .playerCard(cardID): "playerCard.\(cardID.rawFocusComponent)"
         case let .enemy(enemyID): "enemy.\(enemyID.codingKey.stringValue)"
         case let .treachery(treacheryID): "treachery.\(treacheryID.codingKey.stringValue)"
+        case let .chaosToken(tokenID): "chaosToken.\(tokenID.codingKey.stringValue)"
         }
     }
 }
@@ -44,13 +46,23 @@ enum BoardPromptChoiceLinker {
     ) -> [BoardPromptElementID: [BoardLinkedChoice]] {
         guard let prompt else { return [:] }
         var result: [BoardPromptElementID: [BoardLinkedChoice]] = [:]
+        var firstMatchedChaosTokenElements: Set<BoardPromptElementID> = []
         for choice in prompt.choices {
-            let linkedChoice = BoardLinkedChoice(
-                choiceIndex: choice.index,
-                title: prompt.displayTitle(for: choice, in: projection),
-                isActionable: prompt.canSubmit && prompt.isChoiceActionable(choice, in: projection)
-            )
-            for elementID in elementIDs(for: choice, prompt: prompt) {
+            let isActionable = prompt.canSubmit
+                && prompt.isChoiceActionable(choice, in: projection)
+            for elementID in elementIDs(for: choice, prompt: prompt, projection: projection) {
+                if case .chaosToken = elementID {
+                    guard firstMatchedChaosTokenElements.insert(elementID).inserted else {
+                        continue
+                    }
+                }
+                let linkedChoice = BoardLinkedChoice(
+                    choiceIndex: choice.index,
+                    title: title(
+                        for: elementID, choice: choice, prompt: prompt, projection: projection
+                    ),
+                    isActionable: isActionable
+                )
                 result[elementID, default: []].append(linkedChoice)
             }
         }
@@ -59,10 +71,18 @@ enum BoardPromptChoiceLinker {
 
     private static func elementIDs(
         for choice: BasicChoice,
-        prompt: BasicChoicePromptPresentation
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection
     ) -> [BoardPromptElementID] {
         if let semanticPresentation = prompt.semanticPresentation {
             let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index)
+            let chaosTokenIDs = actionableChaosTokenElementIDs(
+                for: descriptor,
+                projection: projection
+            )
+            if !chaosTokenIDs.isEmpty {
+                return chaosTokenIDs
+            }
             if let semantic = semanticElementID(for: descriptor?.entity) {
                 return [semantic]
             }
@@ -85,6 +105,15 @@ enum BoardPromptChoiceLinker {
         }
     }
 
+    private static func title(
+        for _: BoardPromptElementID,
+        choice: BasicChoice,
+        prompt: BasicChoicePromptPresentation,
+        projection: BoardProjection
+    ) -> String {
+        prompt.displayTitle(for: choice, in: projection)
+    }
+
     private static func semanticElementID(
         for entity: QuestionPresentation.Entity?
     ) -> BoardPromptElementID? {
@@ -105,6 +134,80 @@ enum BoardPromptChoiceLinker {
         default:
             return nil
         }
+    }
+
+    static func chaosTokenElementIDs(
+        for target: JSONValue?,
+        projection: BoardProjection
+    ) -> [BoardPromptElementID] {
+        guard case let .object(object)? = target,
+              case let .string(tag)? = object["tag"]
+        else { return [] }
+        switch tag {
+        case "ChaosTokenTarget":
+            guard case let .object(contents)? = object["contents"],
+                  let rawID = chaosTokenIDText(in: contents),
+                  let tokenID = uuidIdentifier(rawID, as: ChaosTokenID.self),
+                  projection.targetableChaosTokens.contains(where: { $0.id == tokenID })
+            else { return [] }
+            return [.chaosToken(tokenID)]
+        case "ChaosTokenFaceTarget":
+            guard case let .string(rawFace)? = object["contents"] else { return [] }
+            let face = ChaosTokenFace(rawFace)
+            return projection.targetableChaosTokens
+                .filter { $0.face == face }
+                .map { .chaosToken($0.id) }
+        default:
+            return []
+        }
+    }
+
+    private static func actionableChaosTokenElementIDs(
+        for descriptor: QuestionPresentation.Choice?,
+        projection: BoardProjection
+    ) -> [BoardPromptElementID] {
+        guard let descriptor else { return [] }
+        switch descriptor.kind {
+        case .chaosTokenGroupChoice:
+            return chaosTokenGroupElementIDs(
+                for: descriptor.step,
+                projection: projection
+            )
+        default:
+            guard descriptor.uiTag == "TargetLabel" else { return [] }
+            return chaosTokenElementIDs(for: descriptor.target, projection: projection)
+        }
+    }
+
+    private static func chaosTokenGroupElementIDs(
+        for step: JSONValue?,
+        projection: BoardProjection
+    ) -> [BoardPromptElementID] {
+        guard case let .object(object)? = step,
+              case let .array(groups)? = object["tokenGroups"]
+        else { return [] }
+        let groupedTokenIDs = Set(groups.flatMap { group -> [ChaosTokenID] in
+            guard case let .array(tokens) = group else { return [] }
+            return tokens.compactMap { token in
+                guard case let .object(contents) = token,
+                      let rawID = chaosTokenIDText(in: contents)
+                else { return nil }
+                return uuidIdentifier(rawID, as: ChaosTokenID.self)
+            }
+        })
+        return projection.targetableChaosTokens
+            .filter { groupedTokenIDs.contains($0.id) }
+            .map { .chaosToken($0.id) }
+    }
+
+    private static func chaosTokenIDText(in contents: [String: JSONValue]) -> String? {
+        if case let .string(rawID)? = contents["chaosTokenId"] {
+            return rawID
+        }
+        if case let .string(rawID)? = contents["id"] {
+            return rawID
+        }
+        return nil
     }
 
     private static func uuidIdentifier<Tag: Sendable>(

@@ -126,6 +126,7 @@ func campaignPromptProjection(
         enemiesByLocationID: base.enemiesByLocationID,
         engagedEnemiesByInvestigatorID: base.engagedEnemiesByInvestigatorID,
         chaosBag: base.chaosBag,
+        focusedChaosTokens: base.focusedChaosTokens,
         counters: counters ?? base.counters,
         skillTest: base.skillTest,
         questions: questions

@@ -73,6 +73,7 @@
 "board.linkedChoiceMenu.cancelHint" = "Drücke Zurück oder Sekundäraktion zum Abbrechen.";
 "board.linkedChoice.activateHint" = "Aktiviert %@";
 "board.linkedChoice.chooseHint" = "Wähle, welche Aufforderungsaktion ausgeführt wird.";
+"board.chaosToken.accessibility" = "Chaosmarker %@";
 "board.enemyActions.title" = "Gegneraktionen";
 "board.enemyActions.accessibility" = "Gegner-Aufforderungsaktionen bei %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (Gegner %2$lld)";

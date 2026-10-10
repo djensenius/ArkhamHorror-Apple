@@ -283,6 +283,7 @@ struct BoardChaosBagSummary: Sendable, Equatable {
     let poolCounts: [BoardChaosFaceCount]
     let revealedCounts: [BoardChaosFaceCount]
     let setAsideCounts: [BoardChaosFaceCount]
+    let tokens: [BoardChaosTokenNode]
     let forceDrawFace: ChaosTokenFace?
     /// Whether an in-progress chaos-bag draw/resolution step exists. Deliberately not
     /// further detailed: `ChaosBag.choice`'s payload is broad and out of scope.
@@ -388,6 +389,7 @@ struct BoardProjection: Sendable, Equatable {
     let enemiesByLocationID: [LocationID: [BoardEnemyNode]]
     let engagedEnemiesByInvestigatorID: [InvestigatorID: [BoardEnemyNode]]
     let chaosBag: BoardChaosBagState
+    let focusedChaosTokens: [BoardChaosTokenNode]
     let counters: BoardCounters
     let skillTest: BoardSkillTestProjection?
     /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.

@@ -198,8 +198,13 @@ enum BoardFocusGraphBuilder {
             nodes: &nodes, zoneEntryPoints: &zoneEntryPoints
         )
 
-        nodes.append(FocusNode(id: BoardFocusID.chaosBagSummary, zone: BoardFocusZone.chaosBag))
-        zoneEntryPoints[BoardFocusZone.chaosBag] = BoardFocusID.chaosBagSummary
+        appendHorizontalChain(
+            [BoardFocusID.chaosBagSummary]
+                + chaosTokenFocusIDs(projection: projection, choiceLinks: choiceLinks),
+            zone: BoardFocusZone.chaosBag,
+            nodes: &nodes,
+            zoneEntryPoints: &zoneEntryPoints
+        )
 
         appendInspectorCloseNode(nodes: &nodes, zoneEntryPoints: &zoneEntryPoints)
         appendLinkedChoiceMenuNodes(
@@ -295,7 +300,7 @@ enum BoardFocusGraphBuilder {
                 .filter(\.isActionable)
                 .map(BoardFocusID.promptScarletKeysTravelAction)
         }
-        return prompt.displayOrderedChoices()
+        return prompt.displayOrderedChoices(in: projection)
             .filter { prompt.isChoiceActionable($0, in: projection) }
             .map { BoardFocusID.promptChoice($0.index) }
     }
@@ -346,7 +351,7 @@ enum BoardFocusGraphBuilder {
         spiritDeckSearchText: String = ""
     ) -> [SemanticFocusZone] {
         var populated: Set<SemanticFocusZone> = [BoardFocusZone.scenario, BoardFocusZone.chaosBag]
-        let hasActionableChoice = prompt?.displayOrderedChoices().contains {
+        let hasActionableChoice = prompt?.displayOrderedChoices(in: projection).contains {
             prompt?.isChoiceActionable($0, in: projection) == true
         } == true
         let hasAmountControls = prompt.map {
@@ -404,6 +409,18 @@ enum BoardFocusGraphBuilder {
             return preModalZone
         }
         return zones.first ?? BoardFocusZone.scenario
+    }
+
+    private static func chaosTokenFocusIDs(
+        projection: BoardProjection,
+        choiceLinks: [BoardPromptElementID: [BoardLinkedChoice]]
+    ) -> [SemanticFocusID] {
+        projection.targetableChaosTokens.compactMap { token in
+            let elementID = BoardPromptElementID.chaosToken(token.id)
+            return isFocusablePromptElement(elementID, choiceLinks: choiceLinks)
+                ? BoardFocusID.promptElement(elementID)
+                : nil
+        }
     }
 
     private static func appendVerticalChain(
