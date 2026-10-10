@@ -8,6 +8,7 @@ enum CampaignCatalogLoadFailure: Error, Equatable, Sendable {
     case malformedAdvertisement
     case malformedCatalog
     case tooLarge
+    case unsupportedServer
 
     var message: String {
         switch self {
@@ -25,6 +26,11 @@ enum CampaignCatalogLoadFailure: Error, Equatable, Sendable {
             gameLifecycleLocalized(
                 "create.catalog.failure.unavailable",
                 "The server campaign catalog is unavailable. Showing the built-in starter catalog."
+            )
+        case .unsupportedServer:
+            gameLifecycleLocalized(
+                "create.catalog.failure.unsupportedServer",
+                "This server does not support the campaign catalog. Showing the built-in starter catalog." // swiftlint:disable:this line_length
             )
         }
     }

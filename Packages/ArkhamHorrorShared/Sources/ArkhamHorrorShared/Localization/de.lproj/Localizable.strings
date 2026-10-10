@@ -344,6 +344,7 @@
 "create.catalog.failure.malformed" = "Der Kampagnenkatalog des Servers konnte nicht gelesen werden. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.tooLarge" = "Der Kampagnenkatalog des Servers ist zu groß. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.unavailable" = "Der Kampagnenkatalog des Servers ist nicht verfügbar. Der eingebaute Starterkatalog wird angezeigt.";
+"create.catalog.failure.unsupportedServer" = "Dieser Server unterstützt den Kampagnenkatalog nicht. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.warning.accessibility" = "Warnung zum Kampagnenkatalog: %@";
 "create.section.game" = "Spiel";
 "create.section.options" = "Optionen";

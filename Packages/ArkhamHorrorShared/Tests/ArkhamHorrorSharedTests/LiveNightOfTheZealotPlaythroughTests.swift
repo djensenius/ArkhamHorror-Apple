@@ -607,9 +607,9 @@ struct LiveNightOfTheZealotPlaythroughTests {
         }
     }
 
-    @Test("Catalog flow request assertion rejects target and variant drift")
+    @Test("Catalog flow request assertion rejects target, difficulty and variant drift")
     // swiftlint:disable:next function_body_length
-    func catalogFlowRequestAssertionRejectsTargetAndVariantDrift() throws {
+    func catalogFlowRequestAssertionRejectsTargetDifficultyAndVariantDrift() throws {
         let configuration = try LivePlaythroughConfiguration.fromEnvironment([
             "ARKHAM_LIVE_CAMPAIGN_ID": "02",
             "ARKHAM_LIVE_INVESTIGATOR_CODES": "01001",
@@ -638,6 +638,32 @@ struct LiveNightOfTheZealotPlaythroughTests {
         } catch {
             #expect(String(describing: error).contains("target mismatch"))
             #expect(String(describing: error).contains("campaignId=02"))
+        }
+
+        let wrongDifficultyCampaignOrScenario = try CampaignOrScenario(
+            campaignId: "02", scenarioId: nil
+        )
+        let wrongDifficulty = CreateGameRequest(
+            deckIds: [nil, nil, nil, nil],
+            playerCount: 1,
+            campaignOrScenario: wrongDifficultyCampaignOrScenario,
+            difficulty: .standard,
+            campaignName: "Wrong difficulty",
+            multiplayerVariant: .withFriends,
+            includeTarotReadings: false,
+            options: [.campaignVariant("theDunwichLegacy")],
+            strictAsIfAt: .value(false),
+            asIfRuling: .value(.chapter1),
+            ultimatumsAndBoons: .value([]),
+            achievementsEnabled: .value(true)
+        )
+        do {
+            try assertCatalogFlowRequest(wrongDifficulty, matches: configuration)
+            Issue.record("Catalog flow difficulty drift should fail loudly")
+        } catch {
+            #expect(String(describing: error).contains("difficulty"))
+            #expect(String(describing: error).contains("Easy"))
+            #expect(String(describing: error).contains("Standard"))
         }
 
         let wrongVariantCampaignOrScenario = try CampaignOrScenario(
@@ -2798,6 +2824,12 @@ struct LiveNightOfTheZealotPlaythroughTests {
         let actualVariants = request.options.compactMap { option -> String? in
             guard case let .campaignVariant(id) = option else { return nil }
             return id
+        }
+        guard request.difficulty == configuration.difficulty else {
+            throw PlaythroughError.catalogFlowRequestMismatch(
+                "expected difficulty \(configuration.difficulty.rawValue), got "
+                    + "\(request.difficulty.rawValue)"
+            )
         }
         guard actualVariants == configuration.campaignVariants else {
             throw PlaythroughError.catalogFlowRequestMismatch(
