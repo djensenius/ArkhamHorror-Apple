@@ -88,14 +88,17 @@ extension PublicGameSnapshot: Codable {
         investigators = try container.decode(
             [InvestigatorID: Investigator].self, forKey: .investigators
         )
-        otherInvestigators = try container.decode(
-            [InvestigatorID: Investigator].self, forKey: .otherInvestigators
+        otherInvestigators = try Self.decodeOffBoardInvestigators(
+            from: container,
+            forKey: .otherInvestigators
         )
-        killedInvestigators = try container.decode(
-            [InvestigatorID: Investigator].self, forKey: .killedInvestigators
+        killedInvestigators = try Self.decodeOffBoardInvestigators(
+            from: container,
+            forKey: .killedInvestigators
         )
-        retiredInvestigators = try container.decodeIfPresent(
-            [InvestigatorID: Investigator].self, forKey: .retiredInvestigators
+        retiredInvestigators = try Self.decodeOptionalOffBoardInvestigators(
+            from: container,
+            forKey: .retiredInvestigators
         )
         enemies = try container.decode(UUIDEntityMap<EnemyIDTag>.self, forKey: .enemies)
         assets = try container.decode(UUIDEntityMap<AssetIDTag>.self, forKey: .assets)
@@ -194,6 +197,43 @@ extension PublicGameSnapshot: Codable {
         enemyAttackTargets = try container.decode(
             [EnemyAttackTarget].self, forKey: .enemyAttackTargets
         )
+    }
+
+    private static func decodeOptionalOffBoardInvestigators(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) throws -> [InvestigatorID: Investigator]? {
+        guard container.contains(key) else {
+            return nil
+        }
+        if try container.decodeNil(forKey: key) {
+            return nil
+        }
+        return try decodeOffBoardInvestigators(from: container, forKey: key)
+    }
+
+    private static func decodeOffBoardInvestigators(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) throws -> [InvestigatorID: Investigator] {
+        let investigatorContainer = try container.nestedContainer(
+            keyedBy: AnyCodingKey.self,
+            forKey: key
+        )
+        var investigators: [InvestigatorID: Investigator] = [:]
+        investigators.reserveCapacity(investigatorContainer.allKeys.count)
+        for rawKey in investigatorContainer.allKeys {
+            guard let investigatorID = InvestigatorID(codingKey: rawKey) else { continue }
+            do {
+                investigators[investigatorID] = try investigatorContainer.decode(
+                    Investigator.self,
+                    forKey: rawKey
+                )
+            } catch is DecodingError {
+                continue
+            }
+        }
+        return investigators
     }
 
     // swiftlint:disable:next function_body_length

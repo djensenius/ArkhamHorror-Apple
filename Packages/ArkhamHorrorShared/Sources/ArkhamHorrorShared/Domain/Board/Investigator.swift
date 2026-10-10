@@ -73,7 +73,9 @@ struct Investigator: Sendable {
     let formMeta: JSONValue
     /// Cards currently in hand. Broad card union, out of scope for this contract slice.
     let hand: [JSONValue]
-    let handSize: Int
+    /// Present for in-play investigators; absent for off-board investigator collections that
+    /// the backend publishes without per-connection hand metadata.
+    let handSize: Int?
     let health: Int
     let horrorHealed: Int
     let id: InvestigatorID
