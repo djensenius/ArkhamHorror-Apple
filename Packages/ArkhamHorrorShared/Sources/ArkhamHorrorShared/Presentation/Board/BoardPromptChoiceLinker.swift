@@ -46,10 +46,16 @@ enum BoardPromptChoiceLinker {
     ) -> [BoardPromptElementID: [BoardLinkedChoice]] {
         guard let prompt else { return [:] }
         var result: [BoardPromptElementID: [BoardLinkedChoice]] = [:]
+        var firstMatchedChaosTokenElements: Set<BoardPromptElementID> = []
         for choice in prompt.choices {
             let isActionable = prompt.canSubmit
                 && prompt.isChoiceActionable(choice, in: projection)
             for elementID in elementIDs(for: choice, prompt: prompt, projection: projection) {
+                if case .chaosToken = elementID {
+                    guard firstMatchedChaosTokenElements.insert(elementID).inserted else {
+                        continue
+                    }
+                }
                 let linkedChoice = BoardLinkedChoice(
                     choiceIndex: choice.index,
                     title: title(
@@ -70,8 +76,8 @@ enum BoardPromptChoiceLinker {
     ) -> [BoardPromptElementID] {
         if let semanticPresentation = prompt.semanticPresentation {
             let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index)
-            let chaosTokenIDs = chaosTokenElementIDs(
-                for: descriptor?.target,
+            let chaosTokenIDs = actionableChaosTokenElementIDs(
+                for: descriptor,
                 projection: projection
             )
             if !chaosTokenIDs.isEmpty {
@@ -100,20 +106,12 @@ enum BoardPromptChoiceLinker {
     }
 
     private static func title(
-        for elementID: BoardPromptElementID,
+        for _: BoardPromptElementID,
         choice: BasicChoice,
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection
     ) -> String {
-        switch elementID {
-        case let .chaosToken(tokenID):
-            if let token = projection.targetableChaosTokens.first(where: { $0.id == tokenID }) {
-                return token.displayTitle
-            }
-        case .playerCard, .enemy, .treachery:
-            break
-        }
-        return prompt.displayTitle(for: choice, in: projection)
+        prompt.displayTitle(for: choice, in: projection)
     }
 
     private static func semanticElementID(
@@ -162,6 +160,55 @@ enum BoardPromptChoiceLinker {
         default:
             return []
         }
+    }
+
+    private static func actionableChaosTokenElementIDs(
+        for descriptor: QuestionPresentation.Choice?,
+        projection: BoardProjection
+    ) -> [BoardPromptElementID] {
+        guard let descriptor else { return [] }
+        switch descriptor.kind {
+        case .chaosTokenGroupChoice:
+            return chaosTokenGroupElementIDs(
+                for: descriptor.step,
+                projection: projection
+            )
+        default:
+            guard descriptor.uiTag == "TargetLabel" else { return [] }
+            return chaosTokenElementIDs(for: descriptor.target, projection: projection)
+                .filter { isActionableChaosTokenElement($0, projection: projection) }
+        }
+    }
+
+    private static func chaosTokenGroupElementIDs(
+        for step: JSONValue?,
+        projection: BoardProjection
+    ) -> [BoardPromptElementID] {
+        guard case let .object(object)? = step,
+              case let .array(groups)? = object["tokenGroups"]
+        else { return [] }
+        let groupedTokenIDs = Set(groups.flatMap { group -> [ChaosTokenID] in
+            guard case let .array(tokens) = group else { return [] }
+            return tokens.compactMap { token in
+                guard case let .object(contents) = token,
+                      let rawID = chaosTokenIDText(in: contents)
+                else { return nil }
+                return uuidIdentifier(rawID, as: ChaosTokenID.self)
+            }
+        })
+        return projection.targetableChaosTokens
+            .filter { !$0.cancelled && groupedTokenIDs.contains($0.id) }
+            .map { .chaosToken($0.id) }
+    }
+
+    private static func isActionableChaosTokenElement(
+        _ elementID: BoardPromptElementID,
+        projection: BoardProjection
+    ) -> Bool {
+        guard case let .chaosToken(tokenID) = elementID,
+              let token = projection.targetableChaosTokens.first(where: { $0.id == tokenID })
+        else { return false }
+        return !token.cancelled
     }
 
     private static func chaosTokenIDText(in contents: [String: JSONValue]) -> String? {
