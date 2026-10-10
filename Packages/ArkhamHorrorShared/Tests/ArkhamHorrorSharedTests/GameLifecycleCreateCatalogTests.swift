@@ -767,7 +767,8 @@ struct GameLifecycleCreateCatalogTests {
             Issue.record("Expected compatible outcome for 0.1.51, got \(outcome)")
             compatibility = .legacy
         }
-        let service = RecordingCampaignCatalogService(result: .success(try loadVendoredCatalog()))
+        let catalog = try loadVendoredCatalog()
+        let service = RecordingCampaignCatalogService(result: .success(catalog))
         let model = await appModel(
             compatibility: compatibility,
             campaignCatalogService: service
@@ -800,7 +801,8 @@ struct GameLifecycleCreateCatalogTests {
         }
         """.utf8)
         let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
-        let service = RecordingCampaignCatalogService(result: .success(try loadVendoredCatalog()))
+        let catalog = try loadVendoredCatalog()
+        let service = RecordingCampaignCatalogService(result: .success(catalog))
         let model = await appModel(
             compatibility: .modern(
                 capabilities: capabilities.capabilities,
