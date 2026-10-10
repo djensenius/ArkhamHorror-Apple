@@ -81,6 +81,7 @@ struct CreateGameViewModelTests {
             campaigns: [
                 CreateGameCampaignOption(id: "01", title: "The Night of the Zealot"),
                 CreateGameCampaignOption(id: "02", title: "The Dunwich Legacy"),
+                CreateGameCampaignOption(id: "04", title: "The Forgotten Age"),
             ],
             standaloneScenarios: [
                 CreateGameScenarioOption(
@@ -88,6 +89,9 @@ struct CreateGameViewModelTests {
                 ),
                 CreateGameScenarioOption(
                     id: "02043", title: "Extracurricular Activity", campaignID: "02"
+                ),
+                CreateGameScenarioOption(
+                    id: "04043", title: "The Untamed Wilds", campaignID: "04"
                 ),
             ]
         )
@@ -100,13 +104,16 @@ struct CreateGameViewModelTests {
                 CreateGameScenarioOption(
                     id: "02043", title: "Extracurricular Activity", campaignID: "02"
                 ),
+                CreateGameScenarioOption(
+                    id: "04043", title: "The Untamed Wilds", campaignID: "04"
+                ),
             ]
         )
         let viewModel = CreateGameViewModel(
             catalog: initial,
             isCatalogLoading: true,
-            selectedCampaignID: "02",
-            selectedScenarioID: "02043"
+            selectedCampaignID: "04",
+            selectedScenarioID: "04043"
         )
         #expect(!viewModel.canSubmit)
         let submitted = await viewModel.submit { _ in
@@ -117,9 +124,41 @@ struct CreateGameViewModelTests {
 
         viewModel.replaceCatalog(replacement, warningMessage: nil)
         viewModel.setCatalogLoading(false)
-        #expect(viewModel.selectedCampaignID == "02")
-        #expect(viewModel.selectedScenarioID == "02043")
+        #expect(viewModel.selectedCampaignID == "04")
+        #expect(viewModel.selectedScenarioID == "04043")
         #expect(viewModel.canSubmit)
+    }
+
+    @Test("Campaign changes reset recommended option defaults")
+    func campaignChangesResetRecommendedOptionDefaults() throws {
+        let sharedOption = CreateGameRecommendedOption(
+            id: "PlayersDoNotControlStoryAssetClues",
+            label: "Story assets",
+            defaultEnabled: false,
+            flag: .playersDoNotControlStoryAssetClues
+        )
+        let catalog = CreateGameCatalog(
+            campaigns: [
+                CreateGameCampaignOption(
+                    id: "02", title: "The Dunwich Legacy", nameKey: nil,
+                    recommendedOptions: [sharedOption]
+                ),
+                CreateGameCampaignOption(
+                    id: "04", title: "The Forgotten Age", nameKey: nil,
+                    recommendedOptions: [sharedOption]
+                ),
+            ],
+            standaloneScenarios: []
+        )
+        let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "02")
+
+        viewModel.setRecommendedOption(sharedOption, enabled: true)
+        #expect(try viewModel.makeRequest().options == [.flag(.playersDoNotControlStoryAssetClues)]) // swiftlint:disable:this line_length
+
+        viewModel.selectedCampaignID = "04"
+
+        #expect(!viewModel.isRecommendedOptionEnabled(sharedOption))
+        #expect(try viewModel.makeRequest().options == [])
     }
 
     @Test("Unknown recommended option flags are hidden and not sent")

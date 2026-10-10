@@ -457,7 +457,7 @@ final class CreateGameViewModel {
         selectedVariantID = campaign.variants.first?.id
         var next: [String: Bool] = [:]
         for option in campaign.recommendedOptions {
-            next[option.id] = recommendedOptionEnabled[option.id] ?? option.defaultEnabled
+            next[option.id] = option.defaultEnabled
         }
         recommendedOptionEnabled = next
         normalizeDifficulty()
@@ -466,7 +466,7 @@ final class CreateGameViewModel {
     private func applyScenarioDefaults() {
         var next: [String: Bool] = [:]
         for option in selectedScenario?.recommendedOptions ?? [] {
-            next[option.id] = recommendedOptionEnabled[option.id] ?? option.defaultEnabled
+            next[option.id] = option.defaultEnabled
         }
         if mode == .standaloneScenario {
             recommendedOptionEnabled = next
