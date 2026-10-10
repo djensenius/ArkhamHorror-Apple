@@ -19,7 +19,16 @@ final class CreateGameViewModel {
     var isCatalogLoading: Bool
 
     var mode: CreateGameMode = .campaign {
-        didSet { normalizeSelection() }
+        didSet {
+            normalizeSelection()
+            guard mode != oldValue else { return }
+            switch mode {
+            case .campaign:
+                applyCampaignDefaults()
+            case .standaloneScenario:
+                applyScenarioDefaults()
+            }
+        }
     }
 
     var selectedCampaignID: String {

@@ -162,6 +162,41 @@ struct CreateGameViewModelTests {
         #expect(try viewModel.makeRequest().options == [])
     }
 
+    @Test("Mode changes reset recommended option defaults for the newly active selection")
+    func modeChangesResetRecommendedOptionDefaults() throws {
+        let option = CreateGameRecommendedOption(
+            id: "PlayersDoNotControlStoryAssetClues",
+            label: "Story assets",
+            defaultEnabled: true,
+            flag: .playersDoNotControlStoryAssetClues
+        )
+        let catalog = CreateGameCatalog(
+            campaigns: [CreateGameCampaignOption(
+                id: "02", title: "The Dunwich Legacy", nameKey: nil,
+                recommendedOptions: [option]
+            )],
+            standaloneScenarios: [CreateGameScenarioOption(
+                id: "02043", title: "Extracurricular Activity", nameKey: nil,
+                campaignID: "02", recommendedOptions: [option]
+            )]
+        )
+        let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "02")
+
+        viewModel.setRecommendedOption(option, enabled: false)
+        #expect(try viewModel.makeRequest().options == [])
+
+        viewModel.mode = .standaloneScenario
+        #expect(viewModel.isRecommendedOptionEnabled(option))
+        #expect(try viewModel.makeRequest().options == [.flag(.playersDoNotControlStoryAssetClues)]) // swiftlint:disable:this line_length
+
+        viewModel.setRecommendedOption(option, enabled: false)
+        #expect(try viewModel.makeRequest().options == [])
+
+        viewModel.mode = .campaign
+        #expect(viewModel.isRecommendedOptionEnabled(option))
+        #expect(try viewModel.makeRequest().options == [.flag(.playersDoNotControlStoryAssetClues)]) // swiftlint:disable:this line_length
+    }
+
     @Test("Unknown recommended option flags are hidden and not sent")
     func unknownRecommendedOptionsAreHiddenAndNotSent() throws {
         let known = CreateGameRecommendedOption(
