@@ -50,9 +50,4 @@ extension AppModel {
 
 extension ServerCompatibility {
     static let campaignCatalogCapability = "arkham.campaign-catalog.v1"
-
-    var advertisesCampaignCatalog: Bool {
-        modernCapabilities.contains(Self.campaignCatalogCapability)
-            && campaignCatalogAdvertisement != nil
-    }
 }

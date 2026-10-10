@@ -526,6 +526,46 @@ struct GameLifecycleCreateCatalogTests {
         #expect(requests[2].value(forHTTPHeaderField: "If-None-Match") == "W/\"catalog-a\"")
     }
 
+    @Test("Campaign catalog service rejects revision drift from the advertisement")
+    func serviceRejectsDocumentRevisionMismatch() async throws {
+        let url = ServerProfile.hosted.endpointURL(path: "/arkham/campaign-catalog")
+        let transport = try CampaignCatalogQueuedTransport(responses: [
+            (
+                catalogBytes(revision: "1.11111111111111111111111111111111"),
+                httpResponse(url: url, status: 200)
+            ),
+        ])
+        let service = CampaignCatalogService(transport: transport)
+
+        await #expect(throws: CampaignCatalogLoadFailure.malformedCatalog) {
+            _ = try await service.load(
+                on: .hosted,
+                advertisement: advertisement(revision: "1.00000000000000000000000000000000")
+            )
+        }
+        #expect(await transport.requests.count == 1)
+    }
+
+    @Test("Campaign catalog service rejects unexpected advertised endpoint before fetch")
+    func serviceRejectsUnexpectedAdvertisementEndpoint() async throws {
+        let url = ServerProfile.hosted.endpointURL(path: "/arkham/campaign-catalog")
+        let transport = try CampaignCatalogQueuedTransport(responses: [
+            (vendoredCatalogBytes(), httpResponse(url: url, status: 200)),
+        ])
+        let service = CampaignCatalogService(transport: transport)
+        let unexpectedEndpoint = CampaignCatalogAdvertisement(
+            endpoint: "/wrong",
+            catalogRevision: "1.00000000000000000000000000000000",
+            schemaVersion: "1.0.0",
+            digestAlgorithm: "sha256"
+        )
+
+        await #expect(throws: CampaignCatalogLoadFailure.malformedAdvertisement) {
+            _ = try await service.load(on: .hosted, advertisement: unexpectedEndpoint)
+        }
+        #expect(await transport.requests.isEmpty)
+    }
+
     @Test("Malformed campaign catalog metadata disables feature detection")
     func malformedCampaignCatalogMetadataDisablesFeatureDetection() throws {
         let data = Data("""
@@ -544,13 +584,102 @@ struct GameLifecycleCreateCatalogTests {
         }
         """.utf8)
         let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
-        let compatibility = ServerCompatibility.modern(
-            capabilities: capabilities.capabilities,
-            campaignCatalog: capabilities.campaignCatalog
-        )
         #expect(capabilities.capabilities.contains(CampaignCatalogAdvertisement.capabilityIdentifier)) // swiftlint:disable:this line_length
         #expect(capabilities.campaignCatalog == nil)
-        #expect(!compatibility.advertisesCampaignCatalog)
+    }
+
+    @Test("Create sheet warns without fetching when catalog metadata is missing")
+    @MainActor
+    func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogMetadataMissing() async {
+        let service = RecordingCampaignCatalogService(result: .failure(TestFailure()))
+        let model = await appModel(
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: nil
+            ),
+            campaignCatalogService: service
+        )
+
+        let result = await model.createGameCatalogForSheet()
+
+        #expect(result.catalog == .default)
+        #expect(result.warningMessage == CampaignCatalogLoadFailure.malformedAdvertisement.message)
+        #expect(await service.requests.isEmpty)
+    }
+
+    @Test("Create sheet warns without fetching when catalog metadata is malformed")
+    @MainActor
+    func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogMetadataMalformed() async throws {
+        let data = Data("""
+        {
+          "schemaRevision": "0.1.52",
+          "status": "ok",
+          "apiBasePath": "/api/v1",
+          "nativeClientMinimumRevision": "0.1.48",
+          "capabilities": ["arkham.campaign-catalog.v1"],
+          "campaignCatalog": {
+            "endpoint": "/wrong",
+            "catalogRevision": "not-a-revision",
+            "schemaVersion": "1.0.0",
+            "digestAlgorithm": "sha256"
+          }
+        }
+        """.utf8)
+        let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
+        let service = RecordingCampaignCatalogService(result: .failure(TestFailure()))
+        let model = await appModel(
+            compatibility: .modern(
+                capabilities: capabilities.capabilities,
+                campaignCatalog: capabilities.campaignCatalog
+            ),
+            campaignCatalogService: service
+        )
+
+        let result = await model.createGameCatalogForSheet()
+
+        #expect(result.catalog == .default)
+        #expect(result.warningMessage == CampaignCatalogLoadFailure.malformedAdvertisement.message)
+        #expect(await service.requests.isEmpty)
+    }
+
+    @Test("Create sheet includes beta catalog entries only for beta users")
+    @MainActor
+    func createSheetCatalogLoadHonorsUserBetaFlag() async throws {
+        var json = try jsonObject(from: vendoredCatalogBytes())
+        json["campaigns"] = [
+            ["id": "01", "nameKey": "catalogNames.campaigns.01.name"],
+            ["id": "11", "nameKey": "catalogNames.campaigns.11.name", "beta": true],
+        ]
+        json["scenarios"] = []
+        json["sideStories"] = []
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        let document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+        let compatibility = ServerCompatibility.modern(
+            capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+            campaignCatalog: advertisement(revision: "1.00000000000000000000000000000000")
+        )
+        let standardService = RecordingCampaignCatalogService(result: .success(document))
+        let standardModel = await appModel(
+            compatibility: compatibility,
+            user: CurrentUser(username: "standard", email: "standard@example.test", beta: false, admin: false), // swiftlint:disable:this line_length
+            campaignCatalogService: standardService
+        )
+        let betaService = RecordingCampaignCatalogService(result: .success(document))
+        let betaModel = await appModel(
+            compatibility: compatibility,
+            user: CurrentUser(username: "beta", email: "beta@example.test", beta: true, admin: false), // swiftlint:disable:this line_length
+            campaignCatalogService: betaService
+        )
+
+        let standardResult = await standardModel.createGameCatalogForSheet()
+        let betaResult = await betaModel.createGameCatalogForSheet()
+
+        #expect(standardResult.warningMessage == nil)
+        #expect(betaResult.warningMessage == nil)
+        #expect(standardResult.catalog.campaigns.map(\.id) == ["01"])
+        #expect(betaResult.catalog.campaigns.map(\.id) == ["01", "11"])
+        #expect(await standardService.requests.count == 1)
+        #expect(await betaService.requests.count == 1)
     }
 
     @Test("Capabilities fixture advertises the campaign catalog metadata")
@@ -706,6 +835,43 @@ struct GameLifecycleCreateCatalogTests {
             return String(text[range])
         }
         return Set(keys)
+    }
+
+    @MainActor
+    private func appModel(
+        compatibility: ServerCompatibility,
+        user: CurrentUser = .sample,
+        campaignCatalogService: any CampaignCatalogServicing
+    ) async -> AppModel {
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            campaignCatalogService: campaignCatalogService
+        )
+        await model.flowTask?.value
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: compatibility,
+            user: user
+        )
+        return model
+    }
+}
+
+private actor RecordingCampaignCatalogService: CampaignCatalogServicing {
+    private let result: Result<CampaignCatalogDocument, any Error>
+    private(set) var requests: [(profile: ServerProfile, advertisement: CampaignCatalogAdvertisement)] = [] // swiftlint:disable:this line_length
+
+    init(result: Result<CampaignCatalogDocument, any Error>) {
+        self.result = result
+    }
+
+    func load(
+        on profile: ServerProfile,
+        advertisement: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument {
+        requests.append((profile: profile, advertisement: advertisement))
+        return try result.get()
     }
 }
 
