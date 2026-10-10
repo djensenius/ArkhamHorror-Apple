@@ -66,7 +66,8 @@ extension AppModelLiveChooseDeckTests {
         ownerID: PlayerID,
         rawQuestion: JSONValue = .object(["tag": .string("ChooseDeck")]),
         scenarioID: String? = nil,
-        isSideStory: Bool = true
+        isSideStory: Bool = true,
+        includesScenario: Bool = true
     ) -> BoardProjection {
         var questions = UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>()
         questions[ownerID] = BasicChoiceQuestionPayload(
@@ -74,9 +75,14 @@ extension AppModelLiveChooseDeckTests {
             state: .updateRequired(tag: "ChooseDeck")
         )
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
-        let scenario = scenarioID.map {
-            replacementScenarioSummary(from: projection, id: $0, isSideStory: isSideStory)
-        } ?? projection.scenario
+        let scenario: BoardScenarioSummary?
+        if includesScenario {
+            scenario = scenarioID.map {
+                replacementScenarioSummary(from: projection, id: $0, isSideStory: isSideStory)
+            } ?? projection.scenario
+        } else {
+            scenario = nil
+        }
         return BoardProjection(
             gameName: projection.gameName,
             hasCampaignContext: projection.hasCampaignContext,
@@ -128,12 +134,14 @@ extension AppModelLiveChooseDeckTests {
         ownerID: PlayerID,
         connection: FakeGameSocketConnection,
         scenarioID: String? = nil,
-        isSideStory: Bool = true
+        isSideStory: Bool = true,
+        includesScenario: Bool = true
     ) -> InstalledLiveChooseDeckPrompt {
         let projection = chooseDeckProjection(
             ownerID: ownerID,
             scenarioID: scenarioID,
-            isSideStory: isSideStory
+            isSideStory: isSideStory,
+            includesScenario: includesScenario
         )
         let attempt = makeLiveChooseDeckAttempt(on: model, gameID: gameID)
         let connectionID = UUID()
@@ -733,6 +741,44 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == nil)
+    }
+
+    @Test("Nil-scenario campaign deck prompts skip side-story restriction checks")
+    func nilScenarioDeckPromptSkipsRestrictionChecks() async throws {
+        let service = try CountingCatalogService(document: loadLiveCampaignCatalog())
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(capabilities: []),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        let deck = try sampleRejectedDeck()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            includesScenario: false
+        )
+        let promptKey = try #require(model.canAnswerLiveChooseDeck(for: gameID).promptKey)
+
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == nil)
+        #expect(await service.loadCount() == 0)
+        #expect(model.liveChooseDeckRestrictionDeckError(for: deck, in: gameID) == nil)
+        #expect(model.liveChooseDeckPickerEnabled(
+            for: gameID,
+            promptKey: promptKey,
+            validation: .valid,
+            deck: deck
+        ))
     }
 
     @Test("Cancellation leaves live deck restriction unavailable notice unset")

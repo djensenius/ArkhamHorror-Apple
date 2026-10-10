@@ -20,12 +20,11 @@ struct LiveChooseDeckRestrictionContext: Sendable, Equatable {
         normalizedScenarioID(rawScenarioID)
     }
 
-    /// A known campaign scenario cannot have a side-story required-investigator rule, so
-    /// it should not show checking/unavailable copy or touch the catalog. When the board
-    /// has no scenario classification yet, keep the fail-open check path so a live prompt
-    /// from an older/partial payload does not silently skip a possible side-story rule.
+    /// Only a known side-story-or-unclassified scenario can have this catalog-backed
+    /// rule. A campaign start asks `ChooseDeck` before any scenario exists, matching the
+    /// web's `game.scenario?.id` path: no scenario id means no restriction check.
     var shouldCheckCatalog: Bool {
-        isSideStory != false
+        rawScenarioID != nil && isSideStory != false
     }
 }
 
