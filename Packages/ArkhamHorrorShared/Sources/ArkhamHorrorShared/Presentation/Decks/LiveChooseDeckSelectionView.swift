@@ -83,6 +83,11 @@ struct LiveChooseDeckSelectionView: View {
                     .font(.headline)
                     .foregroundStyle(ArkhamTheme.bone)
                 content
+                if let restrictionNotice {
+                    Text(restrictionNotice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 if let failureMessage {
                     ArkhamFailureText(message: failureMessage)
                 }
@@ -91,11 +96,18 @@ struct LiveChooseDeckSelectionView: View {
         .task {
             await viewModel.load()
         }
+        .task(id: gameID) {
+            await model.refreshLiveChooseDeckRestriction(for: gameID)
+        }
     }
 
     private var failureMessage: String? {
         model.liveChooseDeckServerFeedback(for: gameID, promptKey: promptKey) ??
             submissionState.sendFailure
+    }
+
+    private var restrictionNotice: String? {
+        model.liveChooseDeckRestrictionNotice(for: gameID)
     }
 
     @ViewBuilder
@@ -132,8 +144,10 @@ struct LiveChooseDeckSelectionView: View {
         let pickerEnabled = model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,
-            validation: state
+            validation: state,
+            deck: deck
         )
+        let restrictionError = model.liveChooseDeckRestrictionDeckError(for: deck, in: gameID)
         return Button {
             guard pickerEnabled,
                   let attempt = submissionState.beginSending(deckID: deck.id)
@@ -150,7 +164,7 @@ struct LiveChooseDeckSelectionView: View {
                     Text(deck.investigatorName)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    validationText(for: state)
+                    validationText(for: state, restrictionError: restrictionError)
                 }
                 Spacer()
                 if submissionState.isSending(deckID: deck.id) || state == .pending {
@@ -166,6 +180,20 @@ struct LiveChooseDeckSelectionView: View {
 
     @ViewBuilder
     private func validationText(
+        for state: LobbyDeckSelectionViewModel.ValidationState,
+        restrictionError: String?
+    ) -> some View {
+        if let restrictionError {
+            Text(restrictionError)
+                .font(.caption)
+                .foregroundStyle(.red)
+        } else {
+            validationStateText(for: state)
+        }
+    }
+
+    @ViewBuilder
+    private func validationStateText(
         for state: LobbyDeckSelectionViewModel.ValidationState
     ) -> some View {
         switch state {

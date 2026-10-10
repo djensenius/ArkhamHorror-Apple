@@ -544,7 +544,8 @@ enum GameLifecycleTestModel {
     @MainActor
     static func makeSignedIn(
         gameService: ScriptedGameLifecycleService,
-        token: String = "session-token"
+        token: String = "session-token",
+        campaignCatalogService: any CampaignCatalogServicing = CampaignCatalogService()
     ) async -> AppModel {
         let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: token])
         let auth = ScriptedAuthenticating(currentUserResult: .success(.sample))
@@ -554,7 +555,8 @@ enum GameLifecycleTestModel {
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
             authenticationSession: auth,
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
-            gameLifecycleService: gameService
+            gameLifecycleService: gameService,
+            campaignCatalogService: campaignCatalogService
         )
         await model.flowTask?.value
         return model

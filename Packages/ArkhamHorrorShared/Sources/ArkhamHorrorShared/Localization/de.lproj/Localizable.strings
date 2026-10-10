@@ -211,6 +211,9 @@
 "campaign.error.signInUpgrade" = "Melde dich erneut an, um dieses Deck zu verbessern.";
 "campaign.error.updateDeckFailed" = "Der Server konnte dieses Deck nicht aktualisieren. Versuche es erneut.";
 "liveChooseDeck.heading.generic" = "Deck wählen";
+"liveChooseDeck.error.requiresInvestigator" = "Dieses Szenario erfordert %@";
+"liveChooseDeck.restriction.checking" = "Anforderungen an Ermittlerdecks für Nebengeschichten werden geprüft …";
+"liveChooseDeck.restriction.unavailable" = "Anforderungen an Ermittlerdecks für Nebengeschichten konnten nicht geprüft werden. Der Server prüft dieses Deck beim Absenden.";
 "campaign.upgrade.investigator" = "Ermittler";
 "campaign.upgrade.availableXp" = "Verfügbare EP";
 "campaign.upgrade.totalXp" = "EP gesamt / ausgegeben";

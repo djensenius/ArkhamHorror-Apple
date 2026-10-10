@@ -211,6 +211,9 @@
 "campaign.error.signInUpgrade" = "Sign in again to upgrade this deck.";
 "campaign.error.updateDeckFailed" = "The server could not update that deck. Try again.";
 "liveChooseDeck.heading.generic" = "Choose a Deck";
+"liveChooseDeck.error.requiresInvestigator" = "This scenario requires %@";
+"liveChooseDeck.restriction.checking" = "Checking side-story deck requirements…";
+"liveChooseDeck.restriction.unavailable" = "Side-story investigator requirements could not be verified. The server will check this deck when you submit it.";
 "campaign.upgrade.investigator" = "Investigator";
 "campaign.upgrade.availableXp" = "Available XP";
 "campaign.upgrade.totalXp" = "Total / spent XP";
