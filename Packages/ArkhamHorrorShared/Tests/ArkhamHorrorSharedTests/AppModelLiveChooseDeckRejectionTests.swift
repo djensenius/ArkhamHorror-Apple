@@ -580,7 +580,10 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
-        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker")
+        #expect(
+            model.liveChooseDeckRestrictionNotice(for: gameID) ==
+                "This scenario requires Agnes Baker"
+        )
         #expect(model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,
@@ -653,7 +656,10 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
-        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker")
+        #expect(
+            model.liveChooseDeckRestrictionNotice(for: gameID) ==
+                "This scenario requires Agnes Baker"
+        )
         #expect(model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,
@@ -715,11 +721,12 @@ extension AppModelLiveChooseDeckTests {
         await model.refreshLiveChooseDeckRestriction(for: gameID)
 
         #expect(model.liveChooseDeckRestrictionDeckError(for: wrongDeck, in: gameID) == nil)
-        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == "This scenario requires Agnes Baker\n" + liveChooseDeckLocalized(
+        let expectedNotice = "This scenario requires Agnes Baker\n" + liveChooseDeckLocalized(
             "liveChooseDeck.restriction.multiplayerUnavailable",
             "Side-story investigator requirements cannot be fully checked from the current table "
                 + "state. Make sure one player uses the scenario's required investigator."
-        ))
+        )
+        #expect(model.liveChooseDeckRestrictionNotice(for: gameID) == expectedNotice)
         #expect(model.liveChooseDeckPickerEnabled(
             for: gameID,
             promptKey: promptKey,

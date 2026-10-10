@@ -62,12 +62,7 @@ extension AppModel {
         liveChooseDeckRestrictionChecks[gameID] = .loading
         do {
             let check = try await loadLiveChooseDeckRestriction(for: context)
-            if Task.isCancelled {
-                guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
-                liveChooseDeckRestrictionChecks[gameID] = nil
-                liveChooseDeckRestrictionCacheKeys[gameID] = nil
-                return
-            }
+            try Task.checkCancellation()
             guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
             guard liveChooseDeckRestrictionCacheKey(
                 for: liveChooseDeckRestrictionContext(for: gameID)
