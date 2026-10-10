@@ -73,7 +73,6 @@ extension AppModel {
                 message: liveChooseDeckRestrictionUnavailableMessage(),
                 scenarioID: context.scenarioID
             )
-            liveChooseDeckRestrictionCacheKeys[gameID] = cacheKey
         }
     }
 

@@ -763,6 +763,38 @@ extension AppModelLiveChooseDeckTests {
         #expect(await connection.sentData.count == 1)
     }
 
+    @Test("Catalog fetch errors are retried on later deck restriction refreshes")
+    func catalogFetchErrorsAreRetriedOnLaterRestrictionRefreshes() async throws {
+        let service = FailingCountingCatalogService(error: TestFailure())
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: "1.retry-failure")
+            ),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020"
+        )
+
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+        await model.refreshLiveChooseDeckRestriction(for: gameID)
+
+        #expect(await service.loadCount() == 2)
+    }
+
     @Test("Alternate-front matching ignores other non-string metadata values")
     func alternateFrontMatchingIgnoresOtherMetadataValues() async throws {
         let catalog = try loadLiveCampaignCatalog()
@@ -1333,6 +1365,27 @@ private actor LiveChooseDeckCampaignCatalogService: CampaignCatalogServicing {
         advertisement _: CampaignCatalogAdvertisement
     ) async throws -> CampaignCatalogDocument {
         try result.get()
+    }
+}
+
+private actor FailingCountingCatalogService: CampaignCatalogServicing {
+    private let error: any Error
+    private var loads = 0
+
+    init(error: any Error) {
+        self.error = error
+    }
+
+    func load(
+        on _: ServerProfile,
+        advertisement _: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument {
+        loads += 1
+        throw error
+    }
+
+    func loadCount() -> Int {
+        loads
     }
 }
 
