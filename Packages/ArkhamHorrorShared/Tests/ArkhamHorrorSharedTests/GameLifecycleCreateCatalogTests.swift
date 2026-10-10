@@ -155,6 +155,7 @@ struct GameLifecycleCreateCatalogTests {
 
     @Test("Scenario return-to pairs and catalog name keys are validated per entry")
     @MainActor
+    // swiftlint:disable:next function_body_length
     func scenarioReturnToPairsAndNameKeysAreValidated() throws {
         var json = try jsonObject(from: vendoredCatalogBytes())
         json["campaigns"] = [[
@@ -245,6 +246,7 @@ struct GameLifecycleCreateCatalogTests {
     }
 
     @Test("Duplicate scenario identifiers keep the first standalone or side-story entry")
+    // swiftlint:disable:next function_body_length
     func duplicateScenarioIdentifiersKeepFirstEntryAcrossLists() throws {
         var json = try jsonObject(from: vendoredCatalogBytes())
         json["campaigns"] = [[
@@ -811,6 +813,7 @@ struct GameLifecycleCreateCatalogTests {
 
     @Test("Create sheet waits for in-flight locale catalog before resolving catalog titles")
     @MainActor
+    // swiftlint:disable:next function_body_length
     func createSheetWaitsForLocaleCatalogBeforeResolvingTitles() async throws {
         let localeDocuments = try SyntheticLocaleCatalogDocuments.make(
             pack: "create",
