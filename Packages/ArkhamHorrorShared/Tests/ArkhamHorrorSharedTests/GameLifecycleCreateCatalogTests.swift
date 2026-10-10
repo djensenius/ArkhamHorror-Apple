@@ -304,6 +304,57 @@ struct GameLifecycleCreateCatalogTests {
         ])
     }
 
+    @Test("Duplicate ids are rejected before release filtering")
+    func duplicateIDsAreRejectedBeforeReleaseFiltering() throws {
+        var json = try jsonObject(from: vendoredCatalogBytes())
+        json["campaigns"] = [
+            ["id": "01", "nameKey": "catalogNames.campaigns.01.hidden.name", "alpha": true],
+            ["id": "01", "nameKey": "catalogNames.campaigns.01.public.name"],
+            ["id": "02", "nameKey": "catalogNames.campaigns.02.name"],
+        ]
+        json["scenarios"] = [
+            [
+                "id": "02123",
+                "nameKey": "catalogNames.scenarios.02123.hidden.name",
+                "campaign": "02",
+                "beta": true,
+            ],
+            [
+                "id": "02123",
+                "nameKey": "catalogNames.scenarios.02123.public.name",
+                "campaign": "02",
+            ],
+            [
+                "id": "02124",
+                "nameKey": "catalogNames.scenarios.02124.name",
+                "campaign": "02",
+            ],
+        ]
+        json["sideStories"] = [
+            ["id": "99001", "nameKey": "catalogNames.sideStories.99001.hidden.name", "beta": true],
+            ["id": "99001", "nameKey": "catalogNames.sideStories.99001.public.name"],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        let resolver = Self.syntheticResolver(entries: [
+            "catalogNames.campaigns.01.hidden.name": "Hidden Zealot",
+            "catalogNames.campaigns.01.public.name": "Public Zealot",
+            "catalogNames.campaigns.02.name": "Dunwich",
+            "catalogNames.scenarios.02123.hidden.name": "Hidden Scenario",
+            "catalogNames.scenarios.02123.public.name": "Public Scenario",
+            "catalogNames.scenarios.02124.name": "Visible Scenario",
+            "catalogNames.sideStories.99001.hidden.name": "Hidden Side Story",
+            "catalogNames.sideStories.99001.public.name": "Public Side Story",
+        ])
+
+        let document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+        let catalog = CreateGameCatalog.from(document: document, resolver: resolver)
+
+        #expect(catalog.campaigns.map(\.id) == ["02"])
+        #expect(catalog.campaigns.map(\.title) == ["Dunwich"])
+        #expect(catalog.standaloneScenarios.map(\.id) == ["02124"])
+        #expect(catalog.standaloneScenarios.map(\.title) == ["Visible Scenario"])
+    }
+
     @Test("Create requests echo catalog ids and web create-game fields")
     @MainActor
     // swiftlint:disable:next function_body_length

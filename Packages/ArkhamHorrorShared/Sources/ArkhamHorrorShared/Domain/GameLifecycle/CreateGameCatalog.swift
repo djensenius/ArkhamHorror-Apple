@@ -279,60 +279,52 @@ extension CreateGameCatalog {
         // Native has no `?alpha` opt-in. Match the web's `filterDisplayable` policy with
         // alpha/dev disabled; dev entries would require both a dev build and alpha opt-in.
         let displayRules = CreateGameDisplayRules(includeBeta: includeBeta)
-        let campaignOptionsByID = Dictionary(
-            document.campaigns
-                .filter { displayRules.shouldDisplay(alpha: $0.alpha, beta: $0.beta, dev: $0.dev) }
-                .map { campaign in
-                    let option = campaignOption(
-                        from: campaign,
-                        resolver: resolver,
-                        displayRules: displayRules
-                    )
-                    return (campaign.id, option)
-                },
-            uniquingKeysWith: { first, _ in first }
-        )
-        var emittedCampaignIDs: Set<String> = []
-        let campaigns = document.campaigns.compactMap { campaign -> CreateGameCampaignOption? in
-            guard emittedCampaignIDs.insert(campaign.id).inserted else { return nil }
-            return campaignOptionsByID[campaign.id]
+        let uniqueCampaigns = firstEntriesByID(document.campaigns, id: \.id)
+        let campaigns = uniqueCampaigns.compactMap { campaign -> CreateGameCampaignOption? in
+            guard displayRules.shouldDisplay(
+                alpha: campaign.alpha, beta: campaign.beta, dev: campaign.dev
+            ) else { return nil }
+            return campaignOption(
+                from: campaign,
+                resolver: resolver,
+                displayRules: displayRules
+            )
         }
+        let campaignOptionsByID = Dictionary(uniqueKeysWithValues: campaigns.map { ($0.id, $0) })
 
-        let campaignScenarios = document.scenarios
+        var emittedRawScenarioIDs: Set<String> = []
+        let campaignScenarios = document.scenarios.compactMap { scenario -> CreateGameScenarioOption? in
+            guard emittedRawScenarioIDs.insert(scenario.id).inserted else { return nil }
             // Mirrors `frontend/src/arkham/views/NewCampaign.vue:118-129`: hidden scenarios,
             // non-standalone scenarios, hidden parent campaigns and The Scarlet Keys campaign
             // are not reachable as individual standalone scenarios.
-            .filter { $0.show && $0.standalone }
-            .filter { $0.campaignID != "09" }
-            .filter { scenario in
-                guard displayRules.shouldDisplay(
-                    alpha: scenario.alpha, beta: scenario.beta, dev: scenario.dev
-                ) else { return false }
-                guard let campaignID = scenario.campaignID else { return true }
-                return campaignOptionsByID[campaignID] != nil
-            }
-            .map { scenario in
-                scenarioOption(
-                    from: scenario,
-                    resolver: resolver,
-                    isSideStory: false,
-                    parentCampaign: scenario.campaignID.flatMap { campaignOptionsByID[$0] }
-                )
-            }
-        let sideStories = document.sideStories
-            .filter { displayRules.shouldDisplay(alpha: $0.alpha, beta: $0.beta, dev: $0.dev) }
-            .map { scenario in
-                scenarioOption(
-                    from: scenario,
-                    resolver: resolver,
-                    isSideStory: true,
-                    parentCampaign: scenario.campaignID.flatMap { campaignOptionsByID[$0] }
-                )
-            }
-        var emittedScenarioIDs: Set<String> = []
-        let standaloneScenarios = (campaignScenarios + sideStories).filter { scenario in
-            emittedScenarioIDs.insert(scenario.id).inserted
+            guard scenario.show && scenario.standalone else { return nil }
+            guard scenario.campaignID != "09" else { return nil }
+            guard displayRules.shouldDisplay(
+                alpha: scenario.alpha, beta: scenario.beta, dev: scenario.dev
+            ) else { return nil }
+            let parentCampaign = scenario.campaignID.flatMap { campaignOptionsByID[$0] }
+            guard scenario.campaignID == nil || parentCampaign != nil else { return nil }
+            return scenarioOption(
+                from: scenario,
+                resolver: resolver,
+                isSideStory: false,
+                parentCampaign: parentCampaign
+            )
         }
+        let sideStories = document.sideStories.compactMap { scenario -> CreateGameScenarioOption? in
+            guard emittedRawScenarioIDs.insert(scenario.id).inserted else { return nil }
+            guard displayRules.shouldDisplay(
+                alpha: scenario.alpha, beta: scenario.beta, dev: scenario.dev
+            ) else { return nil }
+            return scenarioOption(
+                from: scenario,
+                resolver: resolver,
+                isSideStory: true,
+                parentCampaign: scenario.campaignID.flatMap { campaignOptionsByID[$0] }
+            )
+        }
+        let standaloneScenarios = campaignScenarios + sideStories
         return CreateGameCatalog(
             catalogRevision: document.catalogRevision,
             campaigns: campaigns,
@@ -417,6 +409,16 @@ extension CreateGameCatalog {
                 )
             }
         )
+    }
+
+    private static func firstEntriesByID<Entry>(
+        _ entries: [Entry],
+        id keyPath: KeyPath<Entry, String>
+    ) -> [Entry] {
+        var emittedIDs: Set<String> = []
+        return entries.filter { entry in
+            emittedIDs.insert(entry[keyPath: keyPath]).inserted
+        }
     }
 
     private static func recommendedOptions(
