@@ -821,6 +821,19 @@ struct LiveNightOfTheZealotPlaythroughTests {
         #expect(configuration.investigators.map(\.name) == ["Jim Culver"])
     }
 
+    @Test("Live harness accepts Monterey Jack required-investigator fixture")
+    func montereyJackRequiredInvestigatorFixtureConfiguration() throws {
+        let configuration = try LivePlaythroughConfiguration.fromEnvironment([
+            "ARKHAM_LIVE_SCENARIO_ID": "90065",
+            "ARKHAM_LIVE_INVESTIGATOR_CODES": "08007",
+        ])
+
+        #expect(configuration.investigators.map(\.code) == ["08007"])
+        #expect(configuration.investigators.map(\.name) == ["Monterey Jack"])
+        #expect(configuration.investigators.first?.deckSlots["08008"] == 1)
+        #expect(configuration.investigators.first?.deckSlots["08009"] == 1)
+    }
+
     @Test("Live harness rejects invalid boolean settings")
     func invalidBooleanIsConfigurationError() {
         #expect(throws: LiveHarnessConfigurationError.invalidBoolean(
@@ -4729,6 +4742,11 @@ private struct InvestigatorFixture: Sendable, Equatable {
             code: "02005", name: "\"Ashcan\" Pete", weakness: "02015",
             requiredCards: ["02014"], ordinaryCards: survivor0 + neutralCore,
             secondCopies: ["01072", "01073"]
+        ),
+        InvestigatorFixture(
+            code: "08007", name: "Monterey Jack", weakness: "08009",
+            requiredCards: ["08008"], ordinaryCards: rogue0 + neutralCore,
+            secondCopies: ["01047", "01048"]
         ),
     ]
 
