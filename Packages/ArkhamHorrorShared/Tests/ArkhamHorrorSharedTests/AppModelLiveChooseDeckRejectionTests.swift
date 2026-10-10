@@ -1076,6 +1076,49 @@ extension AppModelLiveChooseDeckTests {
         #expect(model.liveChooseDeckRestrictionDeckError(for: deck, in: gameID) == nil)
     }
 
+    @Test("Dropped restriction refresh clears loading state")
+    func droppedRestrictionRefreshClearsLoadingState() async throws {
+        let catalog = try loadLiveCampaignCatalog()
+        let service = SuspendedCatalogService(document: catalog)
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: ScriptedGameLifecycleService(),
+            campaignCatalogService: service
+        )
+        model.sessionState = .signedIn(
+            profile: .hosted,
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: catalog.catalogRevision)
+            ),
+            user: .sample
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try sampleOwnerID()
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90020"
+        )
+        let refresh = Task { await model.refreshLiveChooseDeckRestriction(for: gameID) }
+        await service.waitForLoadCount(1)
+        #expect(model.liveChooseDeckRestrictionChecks[gameID] == .loading)
+
+        _ = installRejectedLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            connection: connection,
+            scenarioID: "c90004"
+        )
+        await service.resumeLoad(at: 0)
+        await refresh.value
+
+        #expect(model.liveChooseDeckRestrictionChecks[gameID] == nil)
+    }
+
     @Test("Restriction checks are cached per game scenario and catalog revision")
     func restrictionChecksAreCachedPerGameScenarioAndRevision() async throws {
         let catalog = try loadLiveCampaignCatalog()

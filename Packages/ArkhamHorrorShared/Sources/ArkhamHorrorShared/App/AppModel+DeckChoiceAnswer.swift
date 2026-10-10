@@ -27,12 +27,14 @@ extension AppModel {
     func refreshLiveChooseDeckRestriction(for gameID: GameID) async {
         let context = liveChooseDeckRestrictionContext(for: gameID)
         let cacheKey = liveChooseDeckRestrictionCacheKey(for: context)
-        let refreshID = UUID()
-        liveChooseDeckRestrictionRefreshIDs[gameID] = refreshID
 
         guard liveChooseDeckRestrictionCacheKeys[gameID] != cacheKey ||
-            liveChooseDeckRestrictionChecks[gameID] == nil
+            liveChooseDeckRestrictionChecks[gameID] == nil ||
+            liveChooseDeckRestrictionChecks[gameID] == .loading
         else { return }
+
+        let refreshID = UUID()
+        liveChooseDeckRestrictionRefreshIDs[gameID] = refreshID
 
         guard context.shouldCheckCatalog else {
             liveChooseDeckRestrictionChecks[gameID] = .unrestricted(scenarioID: context.scenarioID)
@@ -44,11 +46,15 @@ extension AppModel {
         do {
             let check = try await loadLiveChooseDeckRestriction(for: context)
             guard !Task.isCancelled,
-                  liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID,
-                  liveChooseDeckRestrictionCacheKey(
-                      for: liveChooseDeckRestrictionContext(for: gameID)
-                  ) == cacheKey
+                  liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID
             else { return }
+            guard liveChooseDeckRestrictionCacheKey(
+                for: liveChooseDeckRestrictionContext(for: gameID)
+            ) == cacheKey else {
+                liveChooseDeckRestrictionChecks[gameID] = nil
+                liveChooseDeckRestrictionCacheKeys[gameID] = nil
+                return
+            }
             liveChooseDeckRestrictionChecks[gameID] = check
             liveChooseDeckRestrictionCacheKeys[gameID] = cacheKey
         } catch is CancellationError {
@@ -56,6 +62,13 @@ extension AppModel {
             liveChooseDeckRestrictionChecks[gameID] = nil
         } catch {
             guard liveChooseDeckRestrictionRefreshIDs[gameID] == refreshID else { return }
+            guard liveChooseDeckRestrictionCacheKey(
+                for: liveChooseDeckRestrictionContext(for: gameID)
+            ) == cacheKey else {
+                liveChooseDeckRestrictionChecks[gameID] = nil
+                liveChooseDeckRestrictionCacheKeys[gameID] = nil
+                return
+            }
             liveChooseDeckRestrictionChecks[gameID] = .unavailable(
                 message: liveChooseDeckRestrictionUnavailableMessage(),
                 scenarioID: context.scenarioID
