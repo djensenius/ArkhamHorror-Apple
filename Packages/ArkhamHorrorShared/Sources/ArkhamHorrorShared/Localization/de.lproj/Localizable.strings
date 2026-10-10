@@ -322,6 +322,7 @@
 "create.submit.accessibility" = "Spiel erstellen";
 "create.submitting.accessibility" = "Spiel wird erstellt";
 "create.failure.generic" = "Spiel konnte nicht erstellt werden. Versuche es erneut.";
+"create.failure.accessibility" = "Fehler beim neuen Spiel: %@";
 "create.catalog.failure.malformed" = "Der Kampagnenkatalog des Servers konnte nicht gelesen werden. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.tooLarge" = "Der Kampagnenkatalog des Servers ist zu groß. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.unavailable" = "Der Kampagnenkatalog des Servers ist nicht verfügbar. Der eingebaute Starterkatalog wird angezeigt.";

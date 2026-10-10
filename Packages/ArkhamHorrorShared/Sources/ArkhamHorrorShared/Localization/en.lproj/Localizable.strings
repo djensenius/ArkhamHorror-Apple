@@ -322,6 +322,7 @@
 "create.submit.accessibility" = "Create game";
 "create.submitting.accessibility" = "Creating game";
 "create.failure.generic" = "Couldn't create game. Try again.";
+"create.failure.accessibility" = "New game error: %@";
 "create.catalog.failure.malformed" = "The server campaign catalog could not be decoded. Showing the built-in starter catalog.";
 "create.catalog.failure.tooLarge" = "The server campaign catalog is too large. Showing the built-in starter catalog.";
 "create.catalog.failure.unavailable" = "The server campaign catalog is unavailable. Showing the built-in starter catalog.";

@@ -34,7 +34,11 @@ struct CreateGameSheetView: View {
             if let failure = viewModel.failureMessage {
                 Section {
                     ArkhamFailureText(message: failure)
-                        .accessibilityLabel("New game error: \(failure)")
+                        .accessibilityLabel(gameLifecycleLocalizedFormat(
+                            "create.failure.accessibility",
+                            "New game error: %@",
+                            failure
+                        ))
                         .accessibilityIdentifier(AccountAccessibilityID.createGameFailureText)
                 }
             }
