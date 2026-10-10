@@ -5,12 +5,13 @@ enum CampaignCatalogLoadFailure: Error, Equatable, Sendable {
     case unexpectedStatus(Int)
     case nonHTTPResponse
     case transportFailure
+    case malformedAdvertisement
     case malformedCatalog
     case tooLarge
 
     var message: String {
         switch self {
-        case .malformedCatalog:
+        case .malformedAdvertisement, .malformedCatalog:
             gameLifecycleLocalized(
                 "create.catalog.failure.malformed",
                 "The server campaign catalog could not be decoded. Showing the built-in starter catalog." // swiftlint:disable:this line_length
@@ -31,6 +32,7 @@ enum CampaignCatalogLoadFailure: Error, Equatable, Sendable {
 
 private struct CampaignCatalogCacheKey: Hashable, Sendable {
     let endpoint: String
+    let catalogRevision: String
 }
 
 private struct CachedCampaignCatalog: Sendable, Equatable {
@@ -55,7 +57,7 @@ private actor CampaignCatalogMemoryCache {
 ///
 /// The endpoint is advertised by `arkham.campaign-catalog.v1`. It supports weak ETags and
 /// `If-None-Match`; a 304 response reuses the cached document, while a 200 response is decoded
-/// from its exact captured bytes and cached under the endpoint identity with its
+/// from its exact captured bytes and cached under the advertised endpoint and
 /// `catalogRevision`.
 struct CampaignCatalogService: Sendable {
     private static let maxBytes = 4 * 1024 * 1024
@@ -74,9 +76,18 @@ struct CampaignCatalogService: Sendable {
     }
 
     // swiftlint:disable:next function_body_length cyclomatic_complexity
-    func load(on profile: ServerProfile) async throws -> CampaignCatalogDocument {
+    func load(
+        on profile: ServerProfile,
+        advertisement: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument {
+        guard advertisement.endpoint == "/api/v1/arkham/campaign-catalog" else {
+            throw CampaignCatalogLoadFailure.malformedAdvertisement
+        }
         let url = profile.endpointURL(path: "/arkham/campaign-catalog", pin: pin)
-        let key = CampaignCatalogCacheKey(endpoint: url.absoluteString)
+        let key = CampaignCatalogCacheKey(
+            endpoint: url.absoluteString,
+            catalogRevision: advertisement.catalogRevision
+        )
         let cached = await cache.entry(for: key)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
@@ -116,6 +127,9 @@ struct CampaignCatalogService: Sendable {
                 document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
             } catch {
                 try Task.checkCancellation()
+                throw CampaignCatalogLoadFailure.malformedCatalog
+            }
+            guard document.catalogRevision == advertisement.catalogRevision else {
                 throw CampaignCatalogLoadFailure.malformedCatalog
             }
             await cache.store(

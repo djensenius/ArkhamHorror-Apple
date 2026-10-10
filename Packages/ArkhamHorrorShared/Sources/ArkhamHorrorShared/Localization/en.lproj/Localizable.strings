@@ -325,6 +325,7 @@
 "create.catalog.failure.malformed" = "The server campaign catalog could not be decoded. Showing the built-in starter catalog.";
 "create.catalog.failure.tooLarge" = "The server campaign catalog is too large. Showing the built-in starter catalog.";
 "create.catalog.failure.unavailable" = "The server campaign catalog is unavailable. Showing the built-in starter catalog.";
+"create.catalog.warning.accessibility" = "Campaign catalog warning: %@";
 "create.section.game" = "Game";
 "create.section.options" = "Options";
 "create.section.players" = "Players";
@@ -365,3 +366,4 @@
 "create.name.accessibility" = "Game name";
 "create.name.hint" = "Optional. Leave blank to use %@.";
 "create.name.footer" = "Leave blank to use %@.";
+"create.name.requiresCustom" = "Enter a custom name because localized catalog names are unavailable.";

@@ -325,6 +325,7 @@
 "create.catalog.failure.malformed" = "Der Kampagnenkatalog des Servers konnte nicht gelesen werden. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.tooLarge" = "Der Kampagnenkatalog des Servers ist zu groß. Der eingebaute Starterkatalog wird angezeigt.";
 "create.catalog.failure.unavailable" = "Der Kampagnenkatalog des Servers ist nicht verfügbar. Der eingebaute Starterkatalog wird angezeigt.";
+"create.catalog.warning.accessibility" = "Warnung zum Kampagnenkatalog: %@";
 "create.section.game" = "Spiel";
 "create.section.options" = "Optionen";
 "create.section.players" = "Spieler";
@@ -365,3 +366,4 @@
 "create.name.accessibility" = "Spielname";
 "create.name.hint" = "Optional. Leer lassen, um %@ zu verwenden.";
 "create.name.footer" = "Leer lassen, um %@ zu verwenden.";
+"create.name.requiresCustom" = "Gib einen eigenen Namen ein, weil lokalisierte Katalognamen nicht verfügbar sind.";

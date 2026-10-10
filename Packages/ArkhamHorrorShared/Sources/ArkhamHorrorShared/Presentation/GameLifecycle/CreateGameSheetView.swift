@@ -6,7 +6,7 @@ struct CreateGameSheetView: View {
     let onCreated: (GameID) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var viewModel = CreateGameViewModel()
+    @State private var viewModel = CreateGameViewModel(isCatalogLoading: true)
     @State private var didLoadCatalog = false
     @FocusState private var focusedField: Field?
 
@@ -19,7 +19,11 @@ struct CreateGameSheetView: View {
             if let warning = viewModel.catalogWarningMessage {
                 Section {
                     ArkhamFailureText(message: warning)
-                        .accessibilityLabel("Campaign catalog warning: \(warning)")
+                        .accessibilityLabel(gameLifecycleLocalizedFormat(
+                            "create.catalog.warning.accessibility",
+                            "Campaign catalog warning: %@",
+                            warning
+                        ))
                         .accessibilityIdentifier(AccountAccessibilityID.createGameCatalogWarningText) // swiftlint:disable:this line_length
                 }
             }
@@ -176,27 +180,30 @@ struct CreateGameSheetView: View {
                     .accessibilityLabel(badge)
             }
 
-            Picker(
-                gameLifecycleLocalized("create.difficulty", "Difficulty"),
-                selection: Binding(get: { viewModel.difficulty }, set: { viewModel.difficulty = $0 }) // swiftlint:disable:this line_length
-            ) {
-                ForEach(viewModel.availableDifficulties, id: \.self) { difficulty in
-                    Text(difficulty.displayName).tag(difficulty)
+            if !viewModel.availableDifficulties.isEmpty {
+                Picker(
+                    gameLifecycleLocalized("create.difficulty", "Difficulty"),
+                    selection: Binding(get: { viewModel.difficulty }, set: { viewModel.difficulty = $0 }) // swiftlint:disable:this line_length
+                ) {
+                    ForEach(viewModel.availableDifficulties, id: \.self) { difficulty in
+                        Text(difficulty.displayName).tag(difficulty)
+                    }
                 }
+                .accessibilityLabel(gameLifecycleLocalized("create.difficulty.accessibility", "Difficulty")) // swiftlint:disable:this line_length
+                .accessibilityIdentifier(AccountAccessibilityID.createGameDifficultyPicker)
             }
-            .accessibilityLabel(gameLifecycleLocalized("create.difficulty.accessibility", "Difficulty")) // swiftlint:disable:this line_length
-            .accessibilityIdentifier(AccountAccessibilityID.createGameDifficultyPicker)
         }
         .disabled(viewModel.isSubmitting)
     }
 
     @ViewBuilder
     private var optionsSection: some View {
-        let hasOptions = !viewModel.selectedCampaignVariants.isEmpty
-            || !viewModel.selectedCampaignRecommendedOptions.isEmpty
-        if viewModel.mode == .campaign, hasOptions {
+        let hasOptions = (
+            viewModel.mode == .campaign && !viewModel.selectedCampaignVariants.isEmpty
+        ) || !viewModel.selectedRecommendedOptions.isEmpty
+        if hasOptions {
             Section(gameLifecycleLocalized("create.section.options", "Options")) {
-                if !viewModel.selectedCampaignVariants.isEmpty {
+                if viewModel.mode == .campaign, !viewModel.selectedCampaignVariants.isEmpty {
                     Picker(
                         gameLifecycleLocalized("create.variant", "Variant"),
                         selection: Binding(
@@ -210,7 +217,7 @@ struct CreateGameSheetView: View {
                     }
                     .accessibilityIdentifier(AccountAccessibilityID.createGameVariantOptionPicker)
                 }
-                ForEach(viewModel.selectedCampaignRecommendedOptions) { option in
+                ForEach(viewModel.selectedRecommendedOptions) { option in
                     Toggle(
                         option.label,
                         isOn: Binding(
@@ -296,18 +303,25 @@ struct CreateGameSheetView: View {
         } header: {
             Text(gameLifecycleLocalized("create.section.name", "Name"))
         } footer: {
-            Text(gameLifecycleLocalizedFormat(
-                "create.name.footer", "Leave blank to use %@.", viewModel.selectedTitle
-            ))
+            if viewModel.requiresCustomName {
+                Text(gameLifecycleLocalized(
+                    "create.name.requiresCustom",
+                    "Enter a custom name because localized catalog names are unavailable."
+                ))
+            } else {
+                Text(gameLifecycleLocalizedFormat(
+                    "create.name.footer", "Leave blank to use %@.", viewModel.selectedTitle
+                ))
+            }
         }
     }
 
     private func releaseLabel(_ title: String, alpha: Bool, beta: Bool) -> String {
-        if alpha {
-            return "\(title) (\(gameLifecycleLocalized("create.release.alpha", "Alpha")))"
-        }
         if beta {
             return "\(title) (\(gameLifecycleLocalized("create.release.beta", "Beta")))"
+        }
+        if alpha {
+            return "\(title) (\(gameLifecycleLocalized("create.release.alpha", "Alpha")))"
         }
         return title
     }
@@ -315,8 +329,10 @@ struct CreateGameSheetView: View {
     private func loadCatalogIfNeeded() async {
         guard !didLoadCatalog else { return }
         didLoadCatalog = true
+        viewModel.setCatalogLoading(true)
         let result = await model.createGameCatalogForSheet()
         viewModel.replaceCatalog(result.catalog, warningMessage: result.warningMessage)
+        viewModel.setCatalogLoading(false)
     }
 
     private func submit() async {

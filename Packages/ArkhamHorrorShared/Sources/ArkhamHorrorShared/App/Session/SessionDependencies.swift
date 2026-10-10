@@ -101,7 +101,10 @@ extension GameLifecycleService: GameLifecycleServicing {}
 
 /// A narrow, injectable campaign-catalog interface used by the create-game sheet.
 protocol CampaignCatalogServicing: Sendable {
-    func load(on profile: ServerProfile) async throws -> CampaignCatalogDocument
+    func load(
+        on profile: ServerProfile,
+        advertisement: CampaignCatalogAdvertisement
+    ) async throws -> CampaignCatalogDocument
 }
 
 extension CampaignCatalogService: CampaignCatalogServicing {}

@@ -7,20 +7,17 @@ enum CompatibilityOutcome: Equatable, Sendable {
     /// the two are one negotiated answer from one endpoint: carrying it here is what binds a
     /// catalog to the exact profile probe that advertised it, so a later profile switch can
     /// never leave a previous server's catalog reachable.
-    case compatible(capabilities: Set<String>, localeCatalog: LocaleCatalogAdvertisement?)
+    case compatible(
+        capabilities: Set<String>,
+        localeCatalog: LocaleCatalogAdvertisement? = nil,
+        campaignCatalog: CampaignCatalogAdvertisement? = nil
+    )
     /// Client and server are incompatible for the stated reason.
     case incompatible(reason: CompatibilityRejection)
     /// The capabilities endpoint returned HTTP 404; the server pre-dates the contract.
     ///
     /// Treat conservatively: no modern capabilities are assumed.
     case legacyFallback
-
-    /// A compatible outcome with no advertised catalog: the shape a deployment that publishes
-    /// no locale catalog produces, and the one every call site that is not about catalog
-    /// discovery uses.
-    static func compatible(capabilities: Set<String>) -> CompatibilityOutcome {
-        .compatible(capabilities: capabilities, localeCatalog: nil)
-    }
 }
 
 /// The specific reason a ``CompatibilityOutcome/incompatible(reason:)`` was produced.
@@ -79,7 +76,8 @@ struct CompatibilityEvaluator: Sendable {
             : nil
         return .compatible(
             capabilities: serverCapabilities.capabilities,
-            localeCatalog: catalog
+            localeCatalog: catalog,
+            campaignCatalog: serverCapabilities.campaignCatalog
         )
     }
 

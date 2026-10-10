@@ -22,6 +22,8 @@ struct CampaignCatalogCampaign: Sendable, Equatable, Hashable {
     let nameKey: String
     let alpha: Bool
     let beta: Bool
+    let dev: Bool
+    let chapter: Int?
     let returnTo: CampaignCatalogReturnToCampaign?
     let variants: [CampaignCatalogVariant]
     let recommendedOptions: [CampaignCatalogRecommendedOption]
@@ -33,6 +35,7 @@ struct CampaignCatalogReturnToCampaign: Sendable, Equatable, Hashable {
     let nameKey: String
     let alpha: Bool
     let beta: Bool
+    let dev: Bool
 }
 
 struct CampaignCatalogScenario: Sendable, Equatable, Hashable {
@@ -41,10 +44,13 @@ struct CampaignCatalogScenario: Sendable, Equatable, Hashable {
     let campaignID: String?
     let alpha: Bool
     let beta: Bool
+    let dev: Bool
+    let show: Bool
+    let standalone: Bool
     let returnToID: String?
     let returnToNameKey: String?
     let returnToVariant: Bool
-    let standaloneDifficulties: [RequestDifficulty]
+    let standaloneDifficulties: [RequestDifficulty]?
     let requiredInvestigator: String?
     let requiredInvestigatorCodes: [String]
     let deckRequirements: [String]
@@ -132,6 +138,8 @@ extension CampaignCatalogCampaign: Decodable {
         case nameKey
         case alpha
         case beta
+        case dev
+        case chapter
         case returnTo
         case variants
         case recommendedOptions
@@ -144,6 +152,9 @@ extension CampaignCatalogCampaign: Decodable {
         nameKey = try Self.requireCatalogNameKey(container.decode(String.self, forKey: .nameKey))
         alpha = try container.decodeIfPresent(Bool.self, forKey: .alpha) ?? false
         beta = try container.decodeIfPresent(Bool.self, forKey: .beta) ?? false
+        dev = try container.decodeIfPresent(Bool.self, forKey: .dev) ?? false
+        let decodedChapter = try container.decodeIfPresent(Int.self, forKey: .chapter)
+        chapter = decodedChapter == 1 || decodedChapter == 2 ? decodedChapter : nil
         returnTo = try container.decodeIfPresent(CampaignCatalogReturnToCampaign.self, forKey: .returnTo) // swiftlint:disable:this line_length
         variants = try Self.decodeJSONList(
             container.decodeIfPresent([JSONValue].self, forKey: .variants) ?? []
@@ -161,6 +172,7 @@ extension CampaignCatalogReturnToCampaign: Decodable {
         case nameKey
         case alpha
         case beta
+        case dev
     }
 
     init(from decoder: any Decoder) throws {
@@ -171,6 +183,7 @@ extension CampaignCatalogReturnToCampaign: Decodable {
         )
         alpha = try container.decodeIfPresent(Bool.self, forKey: .alpha) ?? false
         beta = try container.decodeIfPresent(Bool.self, forKey: .beta) ?? false
+        dev = try container.decodeIfPresent(Bool.self, forKey: .dev) ?? false
     }
 }
 
@@ -181,6 +194,9 @@ extension CampaignCatalogScenario: Decodable {
         case campaign
         case alpha
         case beta
+        case dev
+        case show
+        case standalone
         case returnTo
         case returnToNameKey
         case returnToVariant
@@ -201,6 +217,9 @@ extension CampaignCatalogScenario: Decodable {
         campaignID = try container.decodeIfPresent(String.self, forKey: .campaign)
         alpha = try container.decodeIfPresent(Bool.self, forKey: .alpha) ?? false
         beta = try container.decodeIfPresent(Bool.self, forKey: .beta) ?? false
+        dev = try container.decodeIfPresent(Bool.self, forKey: .dev) ?? false
+        show = try container.decodeIfPresent(Bool.self, forKey: .show) ?? true
+        standalone = try container.decodeIfPresent(Bool.self, forKey: .standalone) ?? true
         returnToID = try container.decodeIfPresent(String.self, forKey: .returnTo)
         returnToNameKey = try container.decodeIfPresent(String.self, forKey: .returnToNameKey)
         returnToVariant = try container.decodeIfPresent(
@@ -208,7 +227,7 @@ extension CampaignCatalogScenario: Decodable {
         ) ?? false
         standaloneDifficulties = try container.decodeIfPresent(
             [RequestDifficulty].self, forKey: .standaloneDifficulties
-        ) ?? RequestDifficulty.allCases
+        )
         requiredInvestigator = try container.decodeIfPresent(String.self, forKey: .requiredInvestigator) // swiftlint:disable:this line_length
         requiredInvestigatorCodes = try container.decodeIfPresent(
             [String].self, forKey: .requiredInvestigatorCodes

@@ -59,8 +59,8 @@ struct CreateGameViewModelTests {
         #expect(request.campaignOrScenario.scenarioId == "01104")
     }
 
-    @Test("Release badges expose alpha before beta for selected catalog entries")
-    func releaseBadgesExposeAlphaBeforeBeta() {
+    @Test("Release badges expose beta before alpha for selected catalog entries")
+    func releaseBadgesExposeBetaBeforeAlpha() {
         let catalog = CreateGameCatalog(
             campaigns: [CreateGameCampaignOption(
                 id: "11", title: "Alpha Campaign", nameKey: nil, alpha: true, beta: true
@@ -70,9 +70,83 @@ struct CreateGameViewModelTests {
             )]
         )
         let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "11")
-        #expect(viewModel.selectionBadge == "Alpha")
+        #expect(viewModel.selectionBadge == "Beta")
         viewModel.mode = .standaloneScenario
         #expect(viewModel.selectionBadge == "Beta")
+    }
+
+    @Test("Loading state disables submit without resetting matching choices")
+    func loadingStateDisablesSubmitAndCatalogReplacementPreservesSelections() async {
+        let initial = CreateGameCatalog(
+            campaigns: [
+                CreateGameCampaignOption(id: "01", title: "The Night of the Zealot"),
+                CreateGameCampaignOption(id: "02", title: "The Dunwich Legacy"),
+            ],
+            standaloneScenarios: [
+                CreateGameScenarioOption(
+                    id: "01104", title: "The Gathering", campaignID: "01"
+                ),
+                CreateGameScenarioOption(
+                    id: "02043", title: "Extracurricular Activity", campaignID: "02"
+                ),
+            ]
+        )
+        let replacement = CreateGameCatalog(
+            campaigns: [
+                CreateGameCampaignOption(id: "02", title: "The Dunwich Legacy"),
+                CreateGameCampaignOption(id: "04", title: "The Forgotten Age"),
+            ],
+            standaloneScenarios: [
+                CreateGameScenarioOption(
+                    id: "02043", title: "Extracurricular Activity", campaignID: "02"
+                ),
+            ]
+        )
+        let viewModel = CreateGameViewModel(
+            catalog: initial,
+            isCatalogLoading: true,
+            selectedCampaignID: "02",
+            selectedScenarioID: "02043"
+        )
+        #expect(!viewModel.canSubmit)
+        let submitted = await viewModel.submit { _ in
+            Issue.record("Loading catalog should disable submit")
+            return GameID(UUID())
+        }
+        #expect(submitted == nil)
+
+        viewModel.replaceCatalog(replacement, warningMessage: nil)
+        viewModel.setCatalogLoading(false)
+        #expect(viewModel.selectedCampaignID == "02")
+        #expect(viewModel.selectedScenarioID == "02043")
+        #expect(viewModel.canSubmit)
+    }
+
+    @Test("Unknown recommended option flags are hidden and not sent")
+    func unknownRecommendedOptionsAreHiddenAndNotSent() throws {
+        let known = CreateGameRecommendedOption(
+            id: "PlayersDoNotControlStoryAssetClues",
+            label: "Known",
+            defaultEnabled: true,
+            flag: .playersDoNotControlStoryAssetClues
+        )
+        let unknown = CreateGameRecommendedOption(
+            id: "FutureOption",
+            label: "Future",
+            defaultEnabled: true,
+            flag: nil
+        )
+        let catalog = CreateGameCatalog(
+            campaigns: [CreateGameCampaignOption(
+                id: "02", title: "The Dunwich Legacy", nameKey: nil,
+                recommendedOptions: [known, unknown]
+            )],
+            standaloneScenarios: []
+        )
+        let viewModel = CreateGameViewModel(catalog: catalog, selectedCampaignID: "02")
+
+        #expect(viewModel.selectedRecommendedOptions.map(\.id) == ["PlayersDoNotControlStoryAssetClues"]) // swiftlint:disable:this line_length
+        #expect(try viewModel.makeRequest().options == [.flag(.playersDoNotControlStoryAssetClues)]) // swiftlint:disable:this line_length
     }
 
     @Test("Player count is constrained to 1...4 and controls multiplayer variant")
@@ -148,7 +222,7 @@ struct CreateGameViewModelTests {
         #expect(viewModel.failureMessage == nil)
     }
 
-    @Test("Submit reports validation failure for empty campaign catalog")
+    @Test("Submit does not call create for empty campaign catalog")
     func submitEmptyCampaignCatalog() async {
         let viewModel = CreateGameViewModel(
             catalog: CreateGameCatalog(campaigns: [], standaloneScenarios: [])
@@ -161,10 +235,10 @@ struct CreateGameViewModelTests {
 
         #expect(returnedID == nil)
         #expect(viewModel.isSubmitting == false)
-        #expect(viewModel.failureMessage == "Couldn't create game. Try again.")
+        #expect(viewModel.failureMessage == nil)
     }
 
-    @Test("Submit reports validation failure for empty standalone scenario catalog")
+    @Test("Submit does not call create for empty standalone scenario catalog")
     func submitEmptyScenarioCatalog() async {
         let viewModel = CreateGameViewModel(
             catalog: CreateGameCatalog(campaigns: [], standaloneScenarios: [])
@@ -178,10 +252,10 @@ struct CreateGameViewModelTests {
 
         #expect(returnedID == nil)
         #expect(viewModel.isSubmitting == false)
-        #expect(viewModel.failureMessage == "Couldn't create game. Try again.")
+        #expect(viewModel.failureMessage == nil)
     }
 
-    @Test("Submit reports validation failure for unknown catalog selections")
+    @Test("Submit does not call create for unknown catalog selections")
     func submitUnknownSelections() async {
         let unknownCampaign = CreateGameViewModel(selectedCampaignID: "missing-campaign")
         let campaignID = await unknownCampaign.submit { _ in
@@ -189,7 +263,7 @@ struct CreateGameViewModelTests {
             return GameID(UUID())
         }
         #expect(campaignID == nil)
-        #expect(unknownCampaign.failureMessage == "Couldn't create game. Try again.")
+        #expect(unknownCampaign.failureMessage == nil)
 
         let unknownScenario = CreateGameViewModel(
             mode: .standaloneScenario,
@@ -200,7 +274,7 @@ struct CreateGameViewModelTests {
             return GameID(UUID())
         }
         #expect(scenarioID == nil)
-        #expect(unknownScenario.failureMessage == "Couldn't create game. Try again.")
+        #expect(unknownScenario.failureMessage == nil)
     }
 
     @Test("Submit cancellation clears in-flight state without showing an inline error")

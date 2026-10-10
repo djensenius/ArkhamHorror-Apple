@@ -11,10 +11,12 @@ final class CreateGameViewModel {
         case emptyScenarioCatalog
         case unknownCampaignSelection(String)
         case unknownScenarioSelection(String)
+        case unresolvedCatalogName(String)
     }
 
     private(set) var catalog: CreateGameCatalog
     var catalogWarningMessage: String?
+    var isCatalogLoading: Bool
 
     var mode: CreateGameMode = .campaign {
         didSet { normalizeSelection() }
@@ -72,12 +74,14 @@ final class CreateGameViewModel {
     init(
         catalog: CreateGameCatalog = .default,
         catalogWarningMessage: String? = nil,
+        isCatalogLoading: Bool = false,
         mode: CreateGameMode = .campaign,
         selectedCampaignID: String? = nil,
         selectedScenarioID: String? = nil
     ) {
         self.catalog = catalog
         self.catalogWarningMessage = catalogWarningMessage
+        self.isCatalogLoading = isCatalogLoading
         self.mode = mode
         self.selectedCampaignID = selectedCampaignID ?? catalog.campaigns.first?.id ?? ""
         self.selectedScenarioID = selectedScenarioID ?? catalog.standaloneScenarios.first?.id ?? ""
@@ -117,6 +121,11 @@ final class CreateGameViewModel {
     var resolvedGameName: String {
         let trimmed = customName.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? selectedTitle : trimmed
+    }
+
+    var requiresCustomName: Bool {
+        customName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && Self.isUnresolvedCatalogName(selectedTitle)
     }
 
     var shouldShowMultiplayerVariant: Bool {
@@ -182,7 +191,21 @@ final class CreateGameViewModel {
     }
 
     var selectedCampaignRecommendedOptions: [CreateGameRecommendedOption] {
-        selectedCampaign?.recommendedOptions ?? []
+        selectedCampaign?.recommendedOptions.filter { $0.flag != nil } ?? []
+    }
+
+    var selectedScenarioRecommendedOptions: [CreateGameRecommendedOption] {
+        guard mode == .standaloneScenario else { return [] }
+        return selectedScenario?.recommendedOptions.filter { $0.flag != nil } ?? []
+    }
+
+    var selectedRecommendedOptions: [CreateGameRecommendedOption] {
+        switch mode {
+        case .campaign:
+            selectedCampaignRecommendedOptions
+        case .standaloneScenario:
+            selectedScenarioRecommendedOptions
+        }
     }
 
     var selectionBadge: String? {
@@ -196,17 +219,17 @@ final class CreateGameViewModel {
             alpha = selectedScenario?.alpha == true
             beta = selectedScenario?.beta == true
         }
-        if alpha {
-            return gameLifecycleLocalized("create.release.alpha", "Alpha")
-        }
         if beta {
             return gameLifecycleLocalized("create.release.beta", "Beta")
+        }
+        if alpha {
+            return gameLifecycleLocalized("create.release.alpha", "Alpha")
         }
         return nil
     }
 
     var canSubmit: Bool {
-        !isSubmitting && hasValidSelection
+        !isSubmitting && !isCatalogLoading && hasValidSelection && !requiresCustomName
     }
 
     var hasValidSelection: Bool {
@@ -218,15 +241,13 @@ final class CreateGameViewModel {
         }
     }
 
+    func setCatalogLoading(_ loading: Bool) {
+        isCatalogLoading = loading
+    }
+
     func replaceCatalog(_ catalog: CreateGameCatalog, warningMessage: String?) {
         self.catalog = catalog
         catalogWarningMessage = warningMessage
-        selectedCampaignID = catalog.campaigns.first?.id ?? ""
-        selectedScenarioID = catalog.standaloneScenarios.first?.id ?? ""
-        selectedSideStoryPartID = nil
-        useReturnTo = false
-        selectedVariantID = nil
-        recommendedOptionEnabled = [:]
         normalizeSelection()
         applyCampaignDefaults()
         applyScenarioDefaults()
@@ -275,12 +296,15 @@ final class CreateGameViewModel {
                 effectiveScenarioID = selectedSideStoryPartID
                     ?? (useReturnTo ? scenario.returnTo?.id ?? scenario.id : scenario.id)
             }
-            strictAsIfAt = false
+            strictAsIfAt = scenario.strictAsIfAtDefault
         }
         campaignOrScenario = try CampaignOrScenario(
             campaignId: effectiveCampaignID,
             scenarioId: effectiveScenarioID
         )
+        guard !requiresCustomName else {
+            throw Failure.unresolvedCatalogName(selectedTitle)
+        }
 
         return CreateGameRequest(
             deckIds: Array(repeating: nil, count: 4),
@@ -300,7 +324,7 @@ final class CreateGameViewModel {
 
     @discardableResult
     func submit(createGame: (CreateGameRequest) async throws -> GameID) async -> GameID? {
-        guard !isSubmitting else { return nil }
+        guard canSubmit else { return nil }
         isSubmitting = true
         failureMessage = nil
         defer { isSubmitting = false }
@@ -358,10 +382,14 @@ final class CreateGameViewModel {
 
     private func selectedScenarioOptions() -> [CampaignOption] {
         guard let scenario = selectedScenario else { return [] }
-        if useReturnTo, scenario.returnToVariant {
-            return [.flag(.playWithTheBlobThatAteEverythingElse)]
+        var options = selectedScenarioRecommendedOptions.compactMap { option -> CampaignOption? in
+            guard isRecommendedOptionEnabled(option), let flag = option.flag else { return nil }
+            return .flag(flag)
         }
-        return []
+        if useReturnTo, scenario.returnToVariant {
+            options.append(.flag(.playWithTheBlobThatAteEverythingElse))
+        }
+        return options
     }
 
     private func normalizeSelection() {
@@ -398,7 +426,10 @@ final class CreateGameViewModel {
 
     private func normalizeDifficulty() {
         guard !availableDifficulties.contains(difficulty) else { return }
-        difficulty = availableDifficulties.first ?? .easy
+        let fallback = availableDifficulties.first ?? .easy
+        if difficulty != fallback {
+            difficulty = fallback
+        }
     }
 
     private func normalizePlayerCount() {
@@ -433,10 +464,21 @@ final class CreateGameViewModel {
     }
 
     private func applyScenarioDefaults() {
+        var next: [String: Bool] = [:]
+        for option in selectedScenario?.recommendedOptions ?? [] {
+            next[option.id] = recommendedOptionEnabled[option.id] ?? option.defaultEnabled
+        }
+        if mode == .standaloneScenario {
+            recommendedOptionEnabled = next
+        }
         normalizeDifficulty()
     }
 
     private static func normalizedInvestigatorCode(_ code: String) -> String {
         code.hasPrefix("c") ? String(code.dropFirst()) : code
+    }
+
+    private static func isUnresolvedCatalogName(_ value: String) -> Bool {
+        value.hasPrefix("catalogNames.")
     }
 }

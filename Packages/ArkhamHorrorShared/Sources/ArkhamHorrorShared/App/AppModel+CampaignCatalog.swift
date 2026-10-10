@@ -13,16 +13,26 @@ extension AppModel {
     /// but the fetch or decode fails, the malformed/unavailable catalog is not trusted; the
     /// same safe starter catalog is returned with an honest warning.
     func createGameCatalogForSheet() async -> CreateGameCatalogLoadResult {
-        guard case let .signedIn(profile, compatibility, _) = sessionState,
-              compatibility.advertisesCampaignCatalog
-        else {
+        guard case let .signedIn(profile, compatibility, user) = sessionState else {
             return CreateGameCatalogLoadResult(catalog: .default, warningMessage: nil)
         }
+        guard compatibility.modernCapabilities.contains(
+            ServerCompatibility.campaignCatalogCapability
+        ) else {
+            return CreateGameCatalogLoadResult(catalog: .default, warningMessage: nil)
+        }
+        guard let advertisement = compatibility.campaignCatalogAdvertisement else {
+            return CreateGameCatalogLoadResult(
+                catalog: .default,
+                warningMessage: CampaignCatalogLoadFailure.malformedAdvertisement.message
+            )
+        }
         do {
-            let document = try await campaignCatalogService.load(on: profile)
+            let document = try await campaignCatalogService.load(on: profile, advertisement: advertisement) // swiftlint:disable:this line_length
             let catalog = CreateGameCatalog.from(
                 document: document,
-                resolver: localeCatalogResolver
+                resolver: localeCatalogResolver,
+                includeBeta: user.beta
             )
             return CreateGameCatalogLoadResult(catalog: catalog, warningMessage: nil)
         } catch is CancellationError {
@@ -42,11 +52,7 @@ extension ServerCompatibility {
     static let campaignCatalogCapability = "arkham.campaign-catalog.v1"
 
     var advertisesCampaignCatalog: Bool {
-        switch self {
-        case let .modern(capabilities):
-            capabilities.contains(Self.campaignCatalogCapability)
-        case .legacy:
-            false
-        }
+        modernCapabilities.contains(Self.campaignCatalogCapability)
+            && campaignCatalogAdvertisement != nil
     }
 }

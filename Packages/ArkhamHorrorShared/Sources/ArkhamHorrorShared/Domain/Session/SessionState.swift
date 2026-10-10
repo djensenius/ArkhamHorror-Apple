@@ -93,9 +93,29 @@ extension PendingCleanupFailure {
 /// capabilities endpoint) and assumes no modern capability.
 enum ServerCompatibility: Equatable, Sendable {
     /// The server declared a contract-compatible capability set.
-    case modern(capabilities: Set<String>)
+    case modern(capabilities: Set<String>, campaignCatalog: CampaignCatalogAdvertisement? = nil)
     /// The server pre-dates the capability contract; treated conservatively.
     case legacy
+}
+
+extension ServerCompatibility {
+    var modernCapabilities: Set<String> {
+        switch self {
+        case let .modern(capabilities, _):
+            capabilities
+        case .legacy:
+            []
+        }
+    }
+
+    var campaignCatalogAdvertisement: CampaignCatalogAdvertisement? {
+        switch self {
+        case let .modern(_, campaignCatalog):
+            campaignCatalog
+        case .legacy:
+            nil
+        }
+    }
 }
 
 /// The top-level, non-secret snapshot of the app's server and authentication session.

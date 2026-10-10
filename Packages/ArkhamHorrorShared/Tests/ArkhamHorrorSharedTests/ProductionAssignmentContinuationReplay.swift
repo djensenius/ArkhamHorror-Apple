@@ -651,10 +651,10 @@ enum AssignmentContinuationReplayRunner {
             throw ProductionAssignmentReplayError.sessionNotSignedIn
         }
         let sessionCapabilities: Set<String>
-        guard case let .modern(capabilities) = compatibility else {
+        guard case .modern = compatibility else {
             throw ProductionAssignmentReplayError.serverNotModern
         }
-        sessionCapabilities = capabilities
+        sessionCapabilities = compatibility.modernCapabilities
         let serverCapabilities = try await capabilityTransport.decodedCapabilities()
         guard serverCapabilities.capabilities == sessionCapabilities,
               serverCapabilities.schemaRevision
