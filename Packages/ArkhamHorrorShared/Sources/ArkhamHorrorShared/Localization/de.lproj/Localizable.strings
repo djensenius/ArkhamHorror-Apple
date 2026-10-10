@@ -219,7 +219,7 @@
 "liveChooseDeck.readOnly.notChoosingDeck" = "Dieses Spiel fordert dich derzeit nicht auf, ein Deck zu wählen.";
 "liveChooseDeck.readOnly.spectator" = "Zuschauer können für dieses Spiel keine Decks wählen.";
 "liveChooseDeck.readOnly.otherPlayer" = "Diese Deckwahl gehört einem anderen Spieler.";
-"liveChooseDeck.readOnly.incompatibleServer" = "Aktualisiere die Verbindung oder verbinde dich erneut mit einem vertragskompatiblen Server, um ein Deck zu wählen.";
+"liveChooseDeck.readOnly.incompatibleServer" = "Aktualisiere die App oder verbinde dich erneut mit einem vertragskompatiblen Server, um ein Deck zu wählen.";
 "liveChooseDeck.readOnly.reconnect" = "Verbinde dich erneut, um ein Deck zu wählen.";
 "liveChooseDeck.sendFailure" = "Dieses Deck konnte nicht gesendet werden. Stelle die Verbindung wieder her und versuche es erneut.";
 "liveChooseDeck.loadingSavedDecks" = "Gespeicherte Decks werden geladen …";

@@ -64,7 +64,7 @@ struct LiveChooseDeckLocalizationTests {
             "liveChooseDeck.readOnly.otherPlayer":
                 "Diese Deckwahl gehört einem anderen Spieler.",
             "liveChooseDeck.readOnly.incompatibleServer":
-                "Aktualisiere die Verbindung oder verbinde dich erneut mit einem "
+                "Aktualisiere die App oder verbinde dich erneut mit einem "
                 + "vertragskompatiblen Server, um ein Deck zu wählen.",
             "liveChooseDeck.readOnly.reconnect":
                 "Verbinde dich erneut, um ein Deck zu wählen.",
