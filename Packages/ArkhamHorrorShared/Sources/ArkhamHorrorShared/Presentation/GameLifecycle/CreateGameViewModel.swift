@@ -22,6 +22,7 @@ final class CreateGameViewModel {
         didSet {
             normalizeSelection()
             guard mode != oldValue else { return }
+            resetModeSpecificToggles()
             switch mode {
             case .campaign:
                 applyCampaignDefaults()
@@ -399,6 +400,18 @@ final class CreateGameViewModel {
             options.append(.flag(.playWithTheBlobThatAteEverythingElse))
         }
         return options
+    }
+
+    private func resetModeSpecificToggles() {
+        if useReturnTo {
+            useReturnTo = false
+        }
+        if selectedSideStoryPartID != nil {
+            selectedSideStoryPartID = nil
+        }
+        if selectedVariantID != nil {
+            selectedVariantID = nil
+        }
     }
 
     private func normalizeSelection() {
