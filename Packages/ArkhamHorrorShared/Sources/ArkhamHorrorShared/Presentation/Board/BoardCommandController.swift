@@ -435,7 +435,8 @@ final class BoardCommandController {
     }
 
     /// Jumps to retry when recovery is required, then the first supported authorized
-    /// choice, or the scenario header for an otherwise unsupported pending prompt.
+    /// visible choice, a hidden actionable chaos-token target, or the scenario header for
+    /// an otherwise unsupported pending prompt.
     private func jumpToActivePrompt() -> Bool {
         guard !coordinator.isModalPresented else { return false }
         if prompt == nil, projection.counters.pendingPromptCount > 0 {
@@ -463,17 +464,41 @@ final class BoardCommandController {
             coordinator.syncExternalFocus(entry)
             return true
         }
-        guard prompt?.canSubmit == true,
-              let choice = prompt?.displayOrderedChoices(in: projection).first(where: {
-                  prompt?.isChoiceActionable($0, in: projection) == true
-              })
-        else {
+        guard prompt?.canSubmit == true else {
             guard prompt?.canRetryCatalog == true else { return false }
             coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
             return true
         }
-        coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
+        if let choice = prompt?.displayOrderedChoices(in: projection).first(where: {
+            prompt?.isChoiceActionable($0, in: projection) == true
+        }) {
+            coordinator.syncExternalFocus(BoardFocusID.promptChoice(choice.index))
+            return true
+        }
+        if let focusID = firstActionableChaosTokenPromptElementFocusID() {
+            coordinator.syncExternalFocus(focusID)
+            return true
+        }
+        guard prompt?.canRetryCatalog == true else { return false }
+        coordinator.syncExternalFocus(BoardFocusID.promptCatalogRetry)
         return true
+    }
+
+    private func firstActionableChaosTokenPromptElementFocusID() -> SemanticFocusID? {
+        guard let prompt else { return nil }
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        let actionableChaosTokenFocusIDs = Set(projection.targetableChaosTokens.compactMap { token in
+            let elementID = BoardPromptElementID.chaosToken(token.id)
+            switch BoardLinkedChoicePresentationPolicy.decision(for: links[elementID] ?? []) {
+            case .submit, .menu:
+                return BoardFocusID.promptElement(elementID)
+            case .highlightOnly:
+                return nil
+            }
+        })
+        return coordinator.graph.order.first { focusID in
+            actionableChaosTokenFocusIDs.contains(focusID) && coordinator.graph.contains(focusID)
+        }
     }
 
     @discardableResult

@@ -83,6 +83,32 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
         #expect(links[.chaosToken(plusOneB.chaosTokenID)]?.map(\.choiceIndex) == [1])
     }
 
+    @MainActor
+    @Test("jumpToActivePrompt focuses a hidden actionable chaos-token target")
+    func jumpToActivePromptFocusesHiddenActionableChaosTokenTarget() {
+        let plusOneA = chaosToken(.plusOne)
+        let plusOneB = chaosToken(.plusOne)
+        let projection = chaosTokenProjection(
+            bagTokens: [plusOneA, plusOneB],
+            focusedTokens: [plusOneA, plusOneB]
+        )
+        let prompt = chaosTokenPrompt(targets: [chaosTokenFaceTarget(.plusOne)])
+        let expectedFocus = BoardFocusID.promptElement(.chaosToken(plusOneA.chaosTokenID))
+        var submitted: [Int] = []
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            onChoice: { submitted.append($0) }
+        )
+
+        #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
+        #expect(controller.coordinator.graph.contains(expectedFocus))
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == expectedFocus)
+        #expect(controller.handle(.command(.primaryAction)))
+        #expect(submitted == [0])
+    }
+
     @Test("Chaos-token group choices use the first matching focused token choice")
     func chaosTokenGroupChoicesUseFirstMatchingChoice() {
         let plusOne = chaosToken(.plusOne)
