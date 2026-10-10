@@ -45,14 +45,42 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
         #expect(BoardPromptChoiceLinker.links(prompt: prompt, projection: projection).isEmpty)
     }
 
-    @Test("Cancelled focused chaos tokens are hidden but not linked")
-    func cancelledFocusedChaosTokensAreNotLinked() {
+    @Test("Cancelled focused chaos tokens are hidden and linked")
+    func cancelledFocusedChaosTokensAreLinked() {
         let token = chaosToken(.skull, cancelled: true)
         let projection = chaosTokenProjection(bagTokens: [token], focusedTokens: [token])
         let prompt = chaosTokenPrompt(targets: [chaosTokenTarget(token)])
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
 
         #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
-        #expect(BoardPromptChoiceLinker.links(prompt: prompt, projection: projection).isEmpty)
+        #expect(links[.chaosToken(token.chaosTokenID)]?.map(\.choiceIndex) == [0])
+    }
+
+    @Test("Hidden chaos-token target labels remain reachable on focused tokens")
+    func hiddenChaosTokenTargetLabelsRemainReachableOnFocusedTokens() {
+        let cancelledSkull = chaosToken(.skull, cancelled: true)
+        let plusOneA = chaosToken(.plusOne)
+        let plusOneB = chaosToken(.plusOne)
+        let projection = chaosTokenProjection(
+            bagTokens: [cancelledSkull, plusOneA, plusOneB],
+            focusedTokens: [cancelledSkull, plusOneA, plusOneB]
+        )
+        let prompt = chaosTokenPrompt(targets: [
+            chaosTokenTarget(cancelledSkull),
+            chaosTokenFaceTarget(.plusOne),
+            chaosTokenFaceTarget(.cultist),
+        ])
+        let displayedIndices = prompt.displayOrderedChoices(in: projection).map(\.index)
+        let links = BoardPromptChoiceLinker.links(prompt: prompt, projection: projection)
+        let hiddenIndices = Set(prompt.choices.map(\.index)).subtracting(displayedIndices)
+        let reachableIndices = Set(links.values.flatMap { $0.map(\.choiceIndex) })
+
+        #expect(displayedIndices == [2])
+        #expect(hiddenIndices == Set([0, 1]))
+        #expect(hiddenIndices.isSubset(of: reachableIndices))
+        #expect(links[.chaosToken(cancelledSkull.chaosTokenID)]?.map(\.choiceIndex) == [0])
+        #expect(links[.chaosToken(plusOneA.chaosTokenID)]?.map(\.choiceIndex) == [1])
+        #expect(links[.chaosToken(plusOneB.chaosTokenID)]?.map(\.choiceIndex) == [1])
     }
 
     @Test("Chaos-token group choices use the first matching focused token choice")

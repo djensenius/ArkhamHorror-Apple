@@ -176,7 +176,6 @@ enum BoardPromptChoiceLinker {
         default:
             guard descriptor.uiTag == "TargetLabel" else { return [] }
             return chaosTokenElementIDs(for: descriptor.target, projection: projection)
-                .filter { isActionableChaosTokenElement($0, projection: projection) }
         }
     }
 
@@ -197,18 +196,8 @@ enum BoardPromptChoiceLinker {
             }
         })
         return projection.targetableChaosTokens
-            .filter { !$0.cancelled && groupedTokenIDs.contains($0.id) }
+            .filter { groupedTokenIDs.contains($0.id) }
             .map { .chaosToken($0.id) }
-    }
-
-    private static func isActionableChaosTokenElement(
-        _ elementID: BoardPromptElementID,
-        projection: BoardProjection
-    ) -> Bool {
-        guard case let .chaosToken(tokenID) = elementID,
-              let token = projection.targetableChaosTokens.first(where: { $0.id == tokenID })
-        else { return false }
-        return !token.cancelled
     }
 
     private static func chaosTokenIDText(in contents: [String: JSONValue]) -> String? {
