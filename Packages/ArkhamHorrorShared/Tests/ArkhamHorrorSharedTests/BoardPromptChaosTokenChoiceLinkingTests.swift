@@ -170,8 +170,10 @@ struct BoardPromptChaosTokenChoiceLinkingTests {
         #expect(prompt.displayOrderedChoices(in: projection).isEmpty)
         #expect(links[.chaosToken(token.chaosTokenID)]?.map(\.choiceIndex) == [0])
     }
+}
 
-    private func chaosTokenPrompt(targets: [JSONValue]) -> BasicChoicePromptPresentation {
+private extension BoardPromptChaosTokenChoiceLinkingTests {
+    func chaosTokenPrompt(targets: [JSONValue]) -> BasicChoicePromptPresentation {
         chaosTokenPrompt(descriptors: targets.enumerated().map { index, target in
             QuestionPresentation.Choice(
                 sourceIndex: index,
