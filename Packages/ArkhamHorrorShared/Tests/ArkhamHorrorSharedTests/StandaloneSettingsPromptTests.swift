@@ -359,6 +359,51 @@ struct StandaloneSettingsPromptTests {
         #expect(submitted == spiritDeck.answer(selectedCodes: controller.spiritDeckSelection))
     }
 
+    @Test("Laid to Rest at-limit additions are disabled and not handled")
+    @MainActor
+    func laidToRestAtLimitAdditionsAreDisabledAndNotHandled() throws {
+        let projection = Self.projection(scenarioID: "c90054")
+        let prompt = try Self.laidToRestPromptWithCatalog()
+        let spiritDeck = try #require(prompt.laidToRestSpiritDeckPrompt)
+        let controller = BoardCommandController(projection: projection, prompt: prompt)
+        let selectedEntries = Array(spiritDeck.entries.prefix(spiritDeck.count))
+        let selectedCodes = try selectedEntries.map { entry in
+            try #require(entry.code)
+        }
+        let unselectedEntry = try #require(spiritDeck.entries.dropFirst(spiritDeck.count).first)
+        let unselectedCode = try #require(unselectedEntry.code)
+        let unselectedFocusID = BoardFocusID.promptScenarioSpecificCard(unselectedEntry.id)
+
+        let selectedEntriesAreSelectable = Array(repeating: true, count: selectedEntries.count)
+        #expect(selectedEntries.map(\.isSelectable) == selectedEntriesAreSelectable)
+        #expect(spiritDeck.canToggle(entry: unselectedEntry, selectedCodes: []))
+        for entry in selectedEntries {
+            #expect(controller.toggleSpiritDeckCard(at: entry.id))
+        }
+        #expect(controller.spiritDeckSelection == selectedCodes)
+        #expect(!spiritDeck.canToggle(
+            entry: unselectedEntry,
+            selectedCodes: controller.spiritDeckSelection
+        ))
+        #expect(spiritDeck.toggledSelection(
+            controller.spiritDeckSelection,
+            entryAt: unselectedEntry.id
+        ) == nil)
+        #expect(!controller.toggleSpiritDeckCard(at: unselectedEntry.id))
+        #expect(controller.spiritDeckSelection == selectedCodes)
+        #expect(!controller.coordinator.graph.contains(unselectedFocusID))
+        #expect(controller.coordinator.graph.contains(
+            BoardFocusID.promptScenarioSpecificCard(selectedEntries[0].id)
+        ))
+        #expect(controller.coordinator.graph.contains(BoardFocusID.promptScenarioSpecificSubmit))
+
+        #expect(controller.toggleSpiritDeckCard(at: selectedEntries[0].id))
+        #expect(!controller.spiritDeckSelection.contains(selectedCodes[0]))
+        #expect(controller.coordinator.graph.contains(unselectedFocusID))
+        #expect(controller.toggleSpiritDeckCard(at: unselectedEntry.id))
+        #expect(controller.spiritDeckSelection.contains(unselectedCode))
+    }
+
     @Test("Laid to Rest search survives snapshot and same-key prompt focus graph rebuilds")
     @MainActor
     func laidToRestSearchSurvivesControllerRebuilds() throws {
@@ -416,6 +461,7 @@ struct StandaloneSettingsPromptTests {
             "scenarioSpecific.spiritDeck.malformedCard",
             "scenarioSpecific.spiritDeck.fixed.hint",
             "scenarioSpecific.spiritDeck.unselectable.hint",
+            "scenarioSpecific.spiritDeck.atLimit.hint",
             "scenarioSpecific.spiritDeck.selected.hint",
             "scenarioSpecific.spiritDeck.unselected.hint",
             "scenarioSpecific.spiritDeck.accessibility.fixed",
@@ -446,6 +492,16 @@ struct StandaloneSettingsPromptTests {
             locale: "de",
             arguments: [2, 9]
         ) == "Ausgewählte Karten: 2 von 9")
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.atLimit.hint",
+            fallback: "__missing__",
+            locale: "en"
+        ) == "Deselect a spirit deck card before adding another.")
+        #expect(Self.localizedModuleString(
+            "scenarioSpecific.spiritDeck.atLimit.hint",
+            fallback: "__missing__",
+            locale: "de"
+        ) == "Wähle zuerst eine Geist-Deck-Karte ab, bevor du eine weitere hinzufügst.")
         #expect(Self.localizedModuleString(
             "scenarioSpecific.spiritDeck.accessibility.fixed",
             fallback: "__missing__",
