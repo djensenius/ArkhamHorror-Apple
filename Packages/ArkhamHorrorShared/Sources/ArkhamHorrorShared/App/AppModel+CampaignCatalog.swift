@@ -28,10 +28,11 @@ extension AppModel {
             )
         }
         do {
+            let resolver = await localeCatalogResolverForCreateGameCatalog(profileID: profile.id)
             let document = try await campaignCatalogService.load(on: profile, advertisement: advertisement) // swiftlint:disable:this line_length
             let catalog = CreateGameCatalog.from(
                 document: document,
-                resolver: localeCatalogResolver,
+                resolver: resolver,
                 includeBeta: user.beta
             )
             return CreateGameCatalogLoadResult(catalog: catalog, warningMessage: nil)
@@ -45,6 +46,22 @@ extension AppModel {
                 warningMessage: CampaignCatalogLoadFailure.malformedCatalog.message
             )
         }
+    }
+
+    private func localeCatalogResolverForCreateGameCatalog(
+        profileID: UUID
+    ) async -> LocaleCatalogResolver? {
+        if let resolver = localeCatalogResolver {
+            return resolver
+        }
+        guard isLocaleCatalogLoading,
+              localeCatalogRequest?.profileID == profileID,
+              let task = localeCatalogTask
+        else {
+            return localeCatalogResolver
+        }
+        await task.value
+        return localeCatalogResolver
     }
 }
 

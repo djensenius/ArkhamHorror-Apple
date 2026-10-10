@@ -682,6 +682,66 @@ struct GameLifecycleCreateCatalogTests {
         #expect(await betaService.requests.count == 1)
     }
 
+    @Test("Create sheet waits for in-flight locale catalog before resolving catalog titles")
+    @MainActor
+    func createSheetWaitsForLocaleCatalogBeforeResolvingTitles() async throws {
+        let localeDocuments = try SyntheticLocaleCatalogDocuments.make(
+            pack: "create",
+            entryKeys: ["catalogNames.campaigns.02.name"],
+            chunkEntries: """
+            {
+              "catalogNames.campaigns.02.name": {
+                "form": "message",
+                "nodes": [{"type": "text", "value": "Localized Dunwich"}],
+                "variables": []
+              }
+            }
+            """
+        )
+        let localeSnapshot = try await localeDocuments.loadSnapshot()
+        let campaignDocument = try loadVendoredCatalog()
+        let service = RecordingCampaignCatalogService(result: .success(campaignDocument))
+        let model = await appModel(
+            compatibility: .modern(
+                capabilities: [CampaignCatalogAdvertisement.capabilityIdentifier],
+                campaignCatalog: advertisement(revision: "1.00000000000000000000000000000000")
+            ),
+            profile: localeDocuments.profile,
+            campaignCatalogService: service
+        )
+        let localeRequest = LocaleCatalogRequest(
+            profileID: localeDocuments.profile.id,
+            advertisement: localeDocuments.advertisement
+        )
+        let gate = AsyncGate()
+        model.localeCatalogRequest = localeRequest
+        model.localeCatalogGeneration += 1
+        let localeGeneration = model.localeCatalogGeneration
+        model.isLocaleCatalogLoading = true
+        model.localeCatalogTask = Task { @MainActor in
+            await gate.wait()
+            model.applyLocaleCatalogResult(
+                .success(localeSnapshot),
+                request: localeRequest,
+                catalogGeneration: localeGeneration
+            )
+        }
+
+        let resultTask = Task { @MainActor in
+            await model.createGameCatalogForSheet()
+        }
+        await Task.yield()
+        #expect(await service.requests.isEmpty)
+
+        await gate.open()
+        let result = await resultTask.value
+
+        #expect(result.warningMessage == nil)
+        let dunwich = try #require(result.catalog.campaigns.first { $0.id == "02" })
+        #expect(dunwich.title == "Localized Dunwich")
+        #expect(await service.requests.count == 1)
+    }
+
     @Test("Capabilities fixture advertises the campaign catalog metadata")
     func capabilitiesAdvertiseCampaignCatalog() throws {
         let url = try #require(Bundle.module.url(
@@ -840,6 +900,7 @@ struct GameLifecycleCreateCatalogTests {
     @MainActor
     private func appModel(
         compatibility: ServerCompatibility,
+        profile: ServerProfile = .hosted,
         user: CurrentUser = .sample,
         campaignCatalogService: any CampaignCatalogServicing
     ) async -> AppModel {
@@ -849,12 +910,31 @@ struct GameLifecycleCreateCatalogTests {
             campaignCatalogService: campaignCatalogService
         )
         await model.flowTask?.value
+        model.selectedProfile = profile
         model.sessionState = .signedIn(
-            profile: .hosted,
+            profile: profile,
             compatibility: compatibility,
             user: user
         )
         return model
+    }
+}
+
+private actor AsyncGate {
+    private var isOpen = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func open() {
+        isOpen = true
+        continuation?.resume()
+        continuation = nil
     }
 }
 
