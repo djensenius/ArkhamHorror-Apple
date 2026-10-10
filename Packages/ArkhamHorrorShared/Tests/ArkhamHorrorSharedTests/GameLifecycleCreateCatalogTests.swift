@@ -244,6 +244,64 @@ struct GameLifecycleCreateCatalogTests {
         #expect(catalog.campaigns.map(\.title) == ["First Zealot Entry", "Dunwich"])
     }
 
+    @Test("Duplicate scenario identifiers keep the first standalone or side-story entry")
+    func duplicateScenarioIdentifiersKeepFirstEntryAcrossLists() throws {
+        var json = try jsonObject(from: vendoredCatalogBytes())
+        json["campaigns"] = [[
+            "id": "01",
+            "nameKey": "catalogNames.campaigns.01.name",
+        ]]
+        json["scenarios"] = [
+            [
+                "id": "01104",
+                "nameKey": "catalogNames.scenarios.01104.first.name",
+                "campaign": "01",
+            ],
+            [
+                "id": "01104",
+                "nameKey": "catalogNames.scenarios.01104.second.name",
+                "campaign": "01",
+            ],
+            [
+                "id": "shared",
+                "nameKey": "catalogNames.scenarios.shared.name",
+                "campaign": "01",
+            ],
+        ]
+        json["sideStories"] = [
+            [
+                "id": "shared",
+                "nameKey": "catalogNames.sideStories.shared.name",
+            ],
+            [
+                "id": "side-dup",
+                "nameKey": "catalogNames.sideStories.sideDup.first.name",
+            ],
+            [
+                "id": "side-dup",
+                "nameKey": "catalogNames.sideStories.sideDup.second.name",
+            ],
+        ]
+        let data = try JSONSerialization.data(withJSONObject: json, options: [.sortedKeys])
+        let resolver = Self.syntheticResolver(entries: [
+            "catalogNames.campaigns.01.name": "The Night of the Zealot",
+            "catalogNames.scenarios.01104.first.name": "First Gathering",
+            "catalogNames.scenarios.01104.second.name": "Second Gathering",
+            "catalogNames.scenarios.shared.name": "Campaign Shared",
+            "catalogNames.sideStories.shared.name": "Side Shared",
+            "catalogNames.sideStories.sideDup.first.name": "First Side Story",
+            "catalogNames.sideStories.sideDup.second.name": "Second Side Story",
+        ])
+
+        let document = try ContractJSON.decode(CampaignCatalogDocument.self, from: data)
+        let catalog = CreateGameCatalog.from(document: document, resolver: resolver)
+
+        #expect(catalog.standaloneScenarios.map(\.id) == ["01104", "shared", "side-dup"])
+        #expect(catalog.standaloneScenarios.map(\.title) == [
+            "First Gathering", "Campaign Shared", "First Side Story",
+        ])
+    }
+
     @Test("Create requests echo catalog ids and web create-game fields")
     @MainActor
     // swiftlint:disable:next function_body_length

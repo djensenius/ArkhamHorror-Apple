@@ -323,10 +323,14 @@ extension CreateGameCatalog {
                     parentCampaign: scenario.campaignID.flatMap { campaignOptionsByID[$0] }
                 )
             }
+        var emittedScenarioIDs: Set<String> = []
+        let standaloneScenarios = (campaignScenarios + sideStories).filter { scenario in
+            emittedScenarioIDs.insert(scenario.id).inserted
+        }
         return CreateGameCatalog(
             catalogRevision: document.catalogRevision,
             campaigns: campaigns,
-            standaloneScenarios: campaignScenarios + sideStories
+            standaloneScenarios: standaloneScenarios
         )
     }
 
