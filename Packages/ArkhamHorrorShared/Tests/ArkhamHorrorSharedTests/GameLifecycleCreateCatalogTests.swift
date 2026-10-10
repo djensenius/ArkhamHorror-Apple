@@ -739,6 +739,42 @@ struct GameLifecycleCreateCatalogTests {
         #expect(capabilities.campaignCatalog == nil)
     }
 
+    @Test("Create sheet rejects campaign catalog metadata with unknown members before fetching")
+    @MainActor
+    func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogMetadataHasUnknownMember() async throws {
+        let data = Data("""
+        {
+          "schemaRevision": "0.1.52",
+          "status": "ok",
+          "apiBasePath": "/api/v1",
+          "nativeClientMinimumRevision": "0.1.48",
+          "capabilities": ["arkham.campaign-catalog.v1"],
+          "campaignCatalog": {
+            "endpoint": "/api/v1/arkham/campaign-catalog",
+            "catalogRevision": "1.00000000000000000000000000000000",
+            "schemaVersion": "1.0.0",
+            "digestAlgorithm": "sha256",
+            "unexpectedAuthority": true
+          }
+        }
+        """.utf8)
+        let capabilities = try ContractJSON.decode(ServerCapabilities.self, from: data)
+        let service = RecordingCampaignCatalogService(result: .success(try loadVendoredCatalog()))
+        let model = await appModel(
+            compatibility: .modern(
+                capabilities: capabilities.capabilities,
+                campaignCatalog: capabilities.campaignCatalog
+            ),
+            campaignCatalogService: service
+        )
+
+        let result = await model.createGameCatalogForSheet()
+
+        #expect(result.catalog == .default)
+        #expect(result.warningMessage == CampaignCatalogLoadFailure.malformedAdvertisement.message)
+        #expect(await service.requests.isEmpty)
+    }
+
     @Test("Create sheet warns without fetching when catalog metadata is missing")
     @MainActor
     func createSheetWarnsAndDoesNotFetchWhenCampaignCatalogMetadataMissing() async {

@@ -15,7 +15,9 @@ struct CampaignCatalogAdvertisement: Sendable, Equatable, Hashable {
     let digestAlgorithm: String
 
     static func decode(from raw: JSONValue) -> CampaignCatalogAdvertisement? {
-        guard case let .object(object) = raw,
+        guard case let .object(object) = raw else { return nil }
+        let required: Set = ["endpoint", "catalogRevision", "schemaVersion", "digestAlgorithm"]
+        guard Set(object.keys) == required,
               case let .string(endpoint)? = object["endpoint"],
               endpoint == "/api/v1/arkham/campaign-catalog",
               case let .string(catalogRevision)? = object["catalogRevision"],
