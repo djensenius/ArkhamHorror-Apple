@@ -724,7 +724,10 @@ enum StoryInlineTextStyle: Equatable, Sendable {
 }
 
 enum StoryWebGlyphFontMetrics {
-    static func pointSize(forIconNamed iconName: String, textStyle: StoryInlineTextStyle) -> CGFloat {
+    static func pointSize(
+        forIconNamed iconName: String,
+        textStyle: StoryInlineTextStyle
+    ) -> CGFloat {
         platformPreferredPointSize(for: textStyle) * scale(forIconNamed: iconName)
     }
 

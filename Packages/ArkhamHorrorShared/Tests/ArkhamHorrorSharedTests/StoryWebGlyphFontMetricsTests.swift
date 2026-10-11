@@ -9,7 +9,10 @@ struct StoryWebGlyphFontMetricsTests {
         let headline = StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .headline)
         let caption = StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .caption)
 
-        #expect(StoryWebGlyphFontMetrics.pointSize(forIconNamed: "willpower", textStyle: .body) == body)
+        #expect(
+            StoryWebGlyphFontMetrics.pointSize(forIconNamed: "willpower", textStyle: .body)
+                == body
+        )
         #expect(
             StoryWebGlyphFontMetrics.pointSize(forIconNamed: "willpower", textStyle: .headline)
                 == headline

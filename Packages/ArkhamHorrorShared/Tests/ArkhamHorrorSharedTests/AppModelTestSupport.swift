@@ -272,7 +272,9 @@ actor RecordingWebIconFontLoader: WebIconFontLoading {
 
 actor GatedWebIconFontLoader: WebIconFontLoading {
     private var continuations: [CheckedContinuation<WebIconFontLoadReport, Never>] = []
-    private var pendingWaiters: [(threshold: Int, continuation: CheckedContinuation<Void, Never>)] = []
+    private var pendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
     private(set) var requestedProfileIDs: [UUID] = []
 
     func loadFonts(for profile: ServerProfile) async -> WebIconFontLoadReport {

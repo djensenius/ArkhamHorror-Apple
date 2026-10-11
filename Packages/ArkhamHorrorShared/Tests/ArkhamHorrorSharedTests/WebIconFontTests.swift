@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import CryptoKit
 import Foundation
@@ -127,6 +128,7 @@ private struct WebIconFontFixtureMapping: Decodable, Equatable {
 }
 
 @Suite("Web icon font loader")
+// swiftlint:disable:next type_body_length
 struct WebIconFontLoaderTests {
     @Test("Loader resolves fonts on the configured server origin")
     func fontURLsUseConfiguredServerOrigin() throws {
@@ -335,7 +337,9 @@ struct WebIconFontLoaderTests {
             diskCache: cache
         )
         let offlineReport = try await offlineLoader.loadFonts(for: profile())
-        #expect(offlineReport.availability.registrations[.arkham]?.postScriptName == "cached-arkham")
+        #expect(
+            offlineReport.availability.registrations[.arkham]?.postScriptName == "cached-arkham"
+        )
     }
 
     @Test("A valid 200 revalidation replaces the disk cache payload")
@@ -403,7 +407,9 @@ struct WebIconFontLoaderTests {
         )
         try cache.store(
             data: cachedData,
-            key: WebIconFontCacheKey(url: url, etag: "\"kept\"", lastModified: nil, data: cachedData)
+            key: WebIconFontCacheKey(
+                url: url, etag: "\"kept\"", lastModified: nil, data: cachedData
+            )
         )
         let refreshedData = FakeWebIconFontTransport.syntheticFontData(
             family: .arkham,
@@ -466,9 +472,13 @@ struct WebIconFontLoaderTests {
 
         let report = try await loader.loadFonts(for: profile())
 
-        #expect(report.availability.registrations[.arkham]?.postScriptName == "redownloaded-arkham")
+        #expect(
+            report.availability.registrations[.arkham]?.postScriptName == "redownloaded-arkham"
+        )
         #expect(await transport.requests(for: "/fonts/arkham.ttf").count == 1)
-        #expect(!FileManager.default.fileExists(atPath: payloadURL(root: root, key: corruptKey).path))
+        #expect(!FileManager.default.fileExists(
+            atPath: payloadURL(root: root, key: corruptKey).path
+        ))
     }
 
     @Test("URLSession transport enforces the streaming font size cap")
@@ -700,7 +710,12 @@ private extension WebIconFontFamily {
 
 private actor FakeWebIconFontTransport: WebIconFontTransporting {
     enum Response: Sendable {
-        case success(data: Data, etag: String? = nil, lastModified: String? = nil, status: Int = 200)
+        case success(
+            data: Data,
+            etag: String? = nil,
+            lastModified: String? = nil,
+            status: Int = 200
+        )
         case failure(WebIconFontFailure)
     }
 
@@ -725,7 +740,10 @@ private actor FakeWebIconFontTransport: WebIconFontTransporting {
         self.defaultResponse = defaultResponse
     }
 
-    func fetch(_ request: WebIconFontHTTPRequest, maxBytes: Int) async throws -> WebIconFontHTTPResponse {
+    func fetch(
+        _ request: WebIconFontHTTPRequest,
+        maxBytes: Int
+    ) async throws -> WebIconFontHTTPResponse {
         capturedRequests.append(request)
         let path = request.url.path
         fetchCounts[path, default: 0] += 1

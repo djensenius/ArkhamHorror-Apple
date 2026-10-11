@@ -20,7 +20,9 @@ struct AppModelWebIconFontTests {
         await probe.waitUntilPending(1)
         #expect(await loader.callCount == 0)
 
-        await probe.resumeOldest(with: .compatible(capabilities: ["websockets.authorization-header"]))
+        await probe.resumeOldest(with: .compatible(
+            capabilities: ["websockets.authorization-header"]
+        ))
         await model.flowTask?.value
         await model.webIconFontTask?.value
 
@@ -42,13 +44,17 @@ struct AppModelWebIconFontTests {
         )
 
         await probe.waitUntilPending(1)
-        await probe.resumeOldest(with: .compatible(capabilities: ["websockets.authorization-header"]))
+        await probe.resumeOldest(with: .compatible(
+            capabilities: ["websockets.authorization-header"]
+        ))
         await loader.waitUntilPending(1)
         let staleTask = model.webIconFontTask
 
         model.selectProfile(sampleCustomProfile)
         await probe.waitUntilPending(1)
-        await probe.resumeNewest(with: .compatible(capabilities: ["websockets.authorization-header"]))
+        await probe.resumeNewest(with: .compatible(
+            capabilities: ["websockets.authorization-header"]
+        ))
         await loader.waitUntilPending(2)
 
         let staleReport = WebIconFontLoadReport(registrations: [
@@ -66,7 +72,9 @@ struct AppModelWebIconFontTests {
 
         let glyph = try #require(StoryIconGlyph.all.first { $0.family == .arkham })
         #expect(model.webIconFontAvailability.postScriptName(for: glyph) == "CurrentArkham")
-        #expect(await loader.requestedProfileIDs == [ServerProfile.hosted.id, sampleCustomProfile.id])
+        #expect(await loader.requestedProfileIDs == [
+            ServerProfile.hosted.id, sampleCustomProfile.id,
+        ])
     }
 
     private func registration(
