@@ -589,13 +589,21 @@ extension BasicChoicePromptPresentation {
         _ resolution: BasicChoiceResolvedChoiceLabel,
         addingCost costSummary: String
     ) -> BasicChoiceResolvedChoiceLabel {
-        let title = semanticLocalized(
+        let titleFormat = semanticLocalizedFormat(
             "semantic.choice.title.withCost",
-            value: "\(resolution.title) (\(costSummary))",
+            defaultValue: "%1$@ (%2$@)"
+        )
+        let title = Self.formatSemanticLocalized(
+            titleFormat,
+            locale: semanticLocale,
             arguments: [resolution.title, costSummary]
         )
-        let titleNodes = resolution.titleNodes.map { nodes in
-            nodes + [.text(" (\(costSummary))")]
+        let titleNodes = resolution.titleNodes.flatMap { nodes in
+            Self.semanticCostTitleNodes(
+                format: titleFormat,
+                titleNodes: nodes,
+                costSummary: costSummary
+            )
         }
         return BasicChoiceResolvedChoiceLabel(
             title: title,
@@ -608,6 +616,55 @@ extension BasicChoicePromptPresentation {
                 arguments: [resolution.accessibilityLabel, costSummary]
             )
         )
+    }
+
+    static func semanticCostTitleNodes(
+        format: String,
+        titleNodes: [StoryNode],
+        costSummary: String
+    ) -> [StoryNode]? {
+        guard let titleRange = format.range(of: "%1$@") else { return nil }
+        let prefix = String(format[..<titleRange.lowerBound])
+        let suffix = String(format[titleRange.upperBound...])
+        var nodes: [StoryNode] = []
+        guard appendSemanticCostTitleText(prefix, costSummary: costSummary, to: &nodes) else {
+            return nil
+        }
+        for node in titleNodes {
+            appendStoryNode(node, to: &nodes)
+        }
+        guard appendSemanticCostTitleText(suffix, costSummary: costSummary, to: &nodes) else {
+            return nil
+        }
+        return nodes
+    }
+
+    private static func appendSemanticCostTitleText(
+        _ text: String,
+        costSummary: String,
+        to nodes: inout [StoryNode]
+    ) -> Bool {
+        let resolved = text.replacingOccurrences(of: "%2$@", with: costSummary)
+        guard !resolved.contains("%1$@"), !resolved.contains("%@") else { return false }
+        appendText(resolved, to: &nodes)
+        return true
+    }
+
+    private static func appendStoryNode(_ node: StoryNode, to nodes: inout [StoryNode]) {
+        if case let .text(text) = node {
+            appendText(text, to: &nodes)
+        } else {
+            nodes.append(node)
+        }
+    }
+
+    private static func appendText(_ text: String, to nodes: inout [StoryNode]) {
+        guard !text.isEmpty else { return }
+        if case let .text(existing)? = nodes.last {
+            nodes[nodes.count - 1] = .text(existing + text)
+        } else {
+            nodes.append(.text(text))
+        }
     }
 
     // swiftlint:disable:next cyclomatic_complexity
@@ -1087,7 +1144,10 @@ extension BasicChoicePromptPresentation {
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
-        guard let labelText = descriptor.label?.text, !labelText.hasPrefix("$") else {
+        guard let labelText = descriptor.label?.text,
+              !labelText.hasPrefix("$"),
+              semanticInlineLabel(labelText) == title
+        else {
             return nil
         }
         let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1448,7 +1508,7 @@ extension BasicChoicePromptPresentation {
         localeIdentifier: String?,
         arguments: [CVarArg] = []
     ) -> String {
-        let locale = localeIdentifier.map(Locale.init(identifier:)) ?? .current
+        let locale = semanticLocale(localeIdentifier: localeIdentifier)
         guard let bundle = semanticLocalizationBundle(localeIdentifier: localeIdentifier) else {
             return String(
                 localized: key,
@@ -1476,7 +1536,43 @@ extension BasicChoicePromptPresentation {
         return Self.formatSemanticLocalized(format, locale: locale, arguments: arguments)
     }
 
-    private static func formatSemanticLocalized(
+    func semanticLocalizedFormat(
+        _ key: StaticString,
+        defaultValue: String
+    ) -> String {
+        Self.semanticLocalizedFormat(
+            key,
+            defaultValue: defaultValue,
+            localeIdentifier: semanticLocaleIdentifier
+        )
+    }
+
+    static func semanticLocalizedFormat(
+        _ key: StaticString,
+        defaultValue: String,
+        localeIdentifier: String?
+    ) -> String {
+        guard let bundle = semanticLocalizationBundle(localeIdentifier: localeIdentifier) else {
+            return defaultValue
+        }
+        let keyString = String(describing: key)
+        let format = bundle.localizedString(
+            forKey: keyString,
+            value: nil,
+            table: nil
+        )
+        return format == keyString ? defaultValue : format
+    }
+
+    private var semanticLocale: Locale {
+        Self.semanticLocale(localeIdentifier: semanticLocaleIdentifier)
+    }
+
+    private static func semanticLocale(localeIdentifier: String?) -> Locale {
+        localeIdentifier.map(Locale.init(identifier:)) ?? .current
+    }
+
+    static func formatSemanticLocalized(
         _ format: String,
         locale: Locale,
         arguments: [CVarArg]

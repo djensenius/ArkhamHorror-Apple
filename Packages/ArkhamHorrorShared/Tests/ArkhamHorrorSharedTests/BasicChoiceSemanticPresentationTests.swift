@@ -236,6 +236,82 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(first != second)
         #expect(first.promptKey != second.promptKey)
     }
+
+    @Test("Skill labels only use inline nodes when nodes render the whole title")
+    func skillLabelIconNodesDoNotReplaceSkillTitlePrefix() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .skillLabel,
+            label: .init(kind: .embeddedI18n, text: "Commit {willpower}"),
+            skillType: .willpower
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Use Willpower: Commit {willpower}")
+        #expect(resolved.titleNodes == nil)
+        #expect(resolved.accessibilityLabel == "Use Willpower: Commit {willpower}")
+    }
+
+    @Test("Non-catalog labels equal to their title use inline glyph nodes")
+    func nonCatalogLabelEqualToTitleUsesInlineGlyphNodes() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "Choose {skull}")
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choose Skull")
+        #expect(resolved.titleNodes == [.text("Choose "), .semanticIcon(.chaosToken(.skull))])
+        #expect(resolved.accessibilityLabel == "Choose Skull")
+    }
+
+    @Test("Unresolved catalog labels stay plain and unpressable")
+    func unresolvedCatalogLabelHasNoTitleNodesAndIsNotActionable() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "$missing.choice")
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choice 1")
+        #expect(resolved.titleNodes == nil)
+        #expect(!prompt.isChoiceActionable(choice, in: projection))
+    }
+
+    @Test("Cost suffix uses the localized title format for inline nodes")
+    func inlineGlyphTitleCostUsesLocalizedTitleFormat() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "Choose {skull}"),
+            cost: .resource(1)
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Choose Skull (1 resource)")
+        #expect(resolved.titleNodes == [
+            .text("Choose "),
+            .semanticIcon(.chaosToken(.skull)),
+            .text(" (1 resource)"),
+        ])
+        #expect(
+            BasicChoicePromptPresentation.semanticCostTitleNodes(
+                format: "%2$@ — %1$@",
+                titleNodes: [.text("Choose "), .semanticIcon(.chaosToken(.skull))],
+                costSummary: "1 resource"
+            ) == [.text("1 resource — Choose "), .semanticIcon(.chaosToken(.skull))]
+        )
+    }
 }
 
 extension BasicChoiceSemanticPresentationTests {
@@ -281,6 +357,27 @@ extension BasicChoiceSemanticPresentationTests {
         return makePrompt(
             payload: payload,
             presentation: bound,
+            semanticLocaleIdentifier: semanticLocaleIdentifier
+        )
+    }
+
+    func singleChoicePrompt(
+        choice: QuestionPresentation.Choice,
+        semanticLocaleIdentifier: String? = "en"
+    ) throws -> BasicChoicePromptPresentation {
+        let presentation = QuestionPresentation(
+            protocolVersion: QuestionPresentation.supportedProtocolVersion,
+            questionVersion: 992,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [choice]
+        )
+        return try prompt(
+            rawQuestion: GenericSingleChoiceRawQuestionFixtures.directQuestion(
+                tag: "ChooseOne",
+                count: 1
+            ),
+            presentation: presentation,
             semanticLocaleIdentifier: semanticLocaleIdentifier
         )
     }
