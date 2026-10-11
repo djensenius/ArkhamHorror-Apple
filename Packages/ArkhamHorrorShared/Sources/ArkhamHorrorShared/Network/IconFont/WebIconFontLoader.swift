@@ -3,11 +3,15 @@ import CryptoKit
 import Foundation
 
 struct WebIconFontLoadReport: Sendable, Equatable {
-    let loadedFamilies: Set<WebIconFontFamily>
+    let registrations: [WebIconFontFamily: WebIconFontRegistration]
     let failures: [WebIconFontFamily: WebIconFontFailure]
 
+    var loadedFamilies: Set<WebIconFontFamily> {
+        Set(registrations.keys)
+    }
+
     var availability: WebIconFontAvailability {
-        WebIconFontAvailability(loadedFamilies: loadedFamilies)
+        WebIconFontAvailability(registrations: registrations)
     }
 }
 
@@ -36,7 +40,11 @@ struct WebIconFontHTTPResponse: Sendable, Equatable {
 }
 
 protocol WebIconFontRegistering: Sendable {
-    func validateAndRegister(_ data: Data, expectedFamily: WebIconFontFamily) throws
+    func validateAndRegister(
+        _ data: Data,
+        expectedFamily: WebIconFontFamily,
+        requiredGlyphs: [StoryIconGlyph]
+    ) throws -> WebIconFontRegistration
 }
 
 /// Loads the same icon fonts the web origin serves, without bundling any font binary.
@@ -68,29 +76,34 @@ actor WebIconFontLoader: WebIconFontLoading {
     }
 
     func loadFonts(for profile: ServerProfile) async -> WebIconFontLoadReport {
-        var loaded: Set<WebIconFontFamily> = []
+        var registrations: [WebIconFontFamily: WebIconFontRegistration] = [:]
         var failures: [WebIconFontFamily: WebIconFontFailure] = [:]
         for source in WebIconFontSources.required {
             do {
-                try await load(source, for: profile)
-                loaded.insert(source.family)
+                registrations[source.family] = try await load(source, for: profile)
             } catch let failure as WebIconFontFailure {
                 failures[source.family] = failure
             } catch {
                 failures[source.family] = .transportFailure
             }
         }
-        return WebIconFontLoadReport(loadedFamilies: loaded, failures: failures)
+        return WebIconFontLoadReport(registrations: registrations, failures: failures)
     }
 
-    private func load(_ source: WebIconFontSource, for profile: ServerProfile) async throws {
+    private func load(
+        _ source: WebIconFontSource,
+        for profile: ServerProfile
+    ) async throws -> WebIconFontRegistration {
         guard let url = Self.url(for: source, profile: profile) else {
             throw WebIconFontFailure.invalidURL
         }
         if let data = await cachedData(for: url) {
             do {
-                try registrar.validateAndRegister(data, expectedFamily: source.family)
-                return
+                return try registrar.validateAndRegister(
+                    data,
+                    expectedFamily: source.family,
+                    requiredGlyphs: Self.requiredGlyphs(for: source.family)
+                )
             } catch {
                 latestKeyByURL[url] = nil
                 try? diskCache?.remove(url: url)
@@ -108,11 +121,20 @@ actor WebIconFontLoader: WebIconFontLoading {
         guard response.statusCode == 200 else {
             throw WebIconFontFailure.unexpectedStatus(response.statusCode)
         }
-        try registrar.validateAndRegister(response.data, expectedFamily: source.family)
+        let registration = try registrar.validateAndRegister(
+            response.data,
+            expectedFamily: source.family,
+            requiredGlyphs: Self.requiredGlyphs(for: source.family)
+        )
         let key = WebIconFontCacheKey(url: url, etag: response.etag, data: response.data)
         memoryCache[key] = response.data
         latestKeyByURL[url] = key
         try? diskCache?.store(data: response.data, key: key)
+        return registration
+    }
+
+    private static func requiredGlyphs(for family: WebIconFontFamily) -> [StoryIconGlyph] {
+        StoryIconGlyph.all.filter { $0.family == family }
     }
 
     private func cachedData(for url: URL) async -> Data? {
@@ -224,23 +246,55 @@ struct URLSessionWebIconFontTransport: WebIconFontTransporting {
 }
 
 struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
-    func validateAndRegister(_ data: Data, expectedFamily _: WebIconFontFamily) throws {
+    func validateAndRegister(
+        _ data: Data,
+        expectedFamily: WebIconFontFamily,
+        requiredGlyphs: [StoryIconGlyph]
+    ) throws -> WebIconFontRegistration {
         let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData)
             as? [CTFontDescriptor]
         let provider = CGDataProvider(data: data as CFData)
-        let font = provider.flatMap(CGFont.init)
-        guard descriptors?.isEmpty == false || font != nil else {
+        let cgFont = provider.flatMap(CGFont.init)
+        guard descriptors?.isEmpty == false || cgFont != nil else {
             throw WebIconFontFailure.invalidFont
         }
-        guard let font else { throw WebIconFontFailure.invalidFont }
-        var error: Unmanaged<CFError>?
-        guard CTFontManagerRegisterGraphicsFont(font, &error) else {
-            let registrationError = error?.takeRetainedValue() as NSError?
-            if registrationError?.code == CTFontManagerError.alreadyRegistered.rawValue {
-                return
-            }
-            throw WebIconFontFailure.registrationFailed(registrationError?.code)
+        guard let cgFont, let postScriptName = cgFont.postScriptName as String? else {
+            throw WebIconFontFailure.invalidFont
         }
+        let ctFont = CTFontCreateWithGraphicsFont(cgFont, 17, nil, nil)
+        let supportedScalars = Self.supportedScalars(
+            requiredGlyphs.map(\.scalar),
+            in: ctFont
+        )
+        guard !supportedScalars.isEmpty else { throw WebIconFontFailure.invalidFont }
+
+        var error: Unmanaged<CFError>?
+        if !CTFontManagerRegisterGraphicsFont(cgFont, &error) {
+            let registrationError = error?.takeRetainedValue() as NSError?
+            if registrationError?.code != CTFontManagerError.alreadyRegistered.rawValue {
+                throw WebIconFontFailure.registrationFailed(registrationError?.code)
+            }
+        }
+        return WebIconFontRegistration(
+            family: expectedFamily,
+            postScriptName: postScriptName,
+            supportedScalars: supportedScalars
+        )
+    }
+
+    private static func supportedScalars(
+        _ scalars: [UnicodeScalar],
+        in font: CTFont
+    ) -> Set<UInt32> {
+        Set(scalars.compactMap { scalar in
+            let utf16 = Array(String(scalar).utf16)
+            var glyphs = Array(repeating: CGGlyph(), count: utf16.count)
+            var characters = utf16
+            guard CTFontGetGlyphsForCharacters(font, &characters, &glyphs, utf16.count),
+                  glyphs.allSatisfy({ $0 != 0 })
+            else { return nil }
+            return scalar.value
+        })
     }
 }
 

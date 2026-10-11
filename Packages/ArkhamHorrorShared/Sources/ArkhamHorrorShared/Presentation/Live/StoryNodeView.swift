@@ -370,7 +370,7 @@ private struct StoryInlineTextView: View {
 }
 
 enum StoryInlineSemanticIconRun: Equatable {
-    case webGlyph(iconName: String, family: WebIconFontFamily, glyph: String)
+    case webGlyph(iconName: String, fontName: String, glyph: String)
     case systemImage(name: String)
 }
 
@@ -391,8 +391,10 @@ enum StoryInlineTextRenderer {
         for icon: StoryIcon,
         iconFonts: WebIconFontAvailability
     ) -> StoryInlineSemanticIconRun {
-        if let glyph = icon.webGlyph, iconFonts.contains(glyph.family) {
-            return .webGlyph(iconName: glyph.iconName, family: glyph.family, glyph: glyph.string)
+        if let glyph = icon.webGlyph {
+            if let fontName = iconFonts.postScriptName(for: glyph) {
+                return .webGlyph(iconName: glyph.iconName, fontName: fontName, glyph: glyph.string)
+            }
         }
         return .systemImage(name: icon.systemImage)
     }
@@ -432,9 +434,9 @@ enum StoryInlineTextRenderer {
         iconFonts: WebIconFontAvailability
     ) -> Text {
         switch semanticIconRun(for: icon, iconFonts: iconFonts) {
-        case let .webGlyph(_, family, glyph):
+        case let .webGlyph(_, fontName, glyph):
             Text(verbatim: glyph)
-                .font(.custom(family.rawValue, size: 17, relativeTo: .body))
+                .font(.custom(fontName, size: 17, relativeTo: .body))
         case let .systemImage(name):
             Text(Image(systemName: name))
         }

@@ -18,20 +18,42 @@ struct WebIconFontGlyphMappingTests {
         #expect(actual == fixture.mappings)
     }
 
-    @Test("Renderer uses registered web glyphs and falls back per family")
-    func rendererUsesGlyphsWhenFamilyLoadedAndSystemFallbackOtherwise() {
-        let onlyArkhamIcons = WebIconFontAvailability(loadedFamilies: [.arkhamIcons])
+    @Test("Renderer uses the resolved PostScript name rather than the CSS family")
+    func rendererUsesResolvedPostScriptName() {
+        let postScriptName = "RealArkhamIconsPS"
+        #expect(postScriptName != WebIconFontFamily.arkhamIcons.rawValue)
+        let onlyArkhamIcons = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: postScriptName),
+        ])
         #expect(
             StoryInlineTextRenderer.semanticIconRun(
                 for: .chaosToken(.skull),
                 iconFonts: onlyArkhamIcons
-            ) == .webGlyph(iconName: "skull", family: .arkhamIcons, glyph: "\u{E910}")
+            ) == .webGlyph(iconName: "skull", fontName: postScriptName, glyph: "\u{E910}")
+        )
+    }
+
+    @Test("Renderer falls back for a missing glyph inside a registered family")
+    func rendererFallsBackForMissingGlyphInRegisteredFamily() {
+        let postScriptName = "PartialArkhamIconsPS"
+        let withoutSkull = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(
+                .arkhamIcons,
+                postScriptName: postScriptName,
+                excluding: ["skull"]
+            ),
+        ])
+        #expect(
+            StoryInlineTextRenderer.semanticIconRun(
+                for: .chaosToken(.skull),
+                iconFonts: withoutSkull
+            ) == .systemImage(name: "circle.hexagongrid.fill")
         )
         #expect(
             StoryInlineTextRenderer.semanticIconRun(
-                for: .chaosToken(.blood),
-                iconFonts: onlyArkhamIcons
-            ) == .systemImage(name: "circle.hexagongrid.fill")
+                for: .chaosToken(.cultist),
+                iconFonts: withoutSkull
+            ) == .webGlyph(iconName: "cultist", fontName: postScriptName, glyph: "\u{E911}")
         )
     }
 
@@ -47,6 +69,23 @@ struct WebIconFontGlyphMappingTests {
         #expect(
             StoryNodePresentation.accessibilityLabel(for: nodes)
                 == "Resolve elder thing and willpower."
+        )
+    }
+
+    private func registration(
+        _ family: WebIconFontFamily,
+        postScriptName: String,
+        excluding excludedIconNames: Set<String> = []
+    ) -> WebIconFontRegistration {
+        WebIconFontRegistration(
+            family: family,
+            postScriptName: postScriptName,
+            supportedScalars: Set(StoryIconGlyph.all.compactMap { glyph in
+                guard glyph.family == family, !excludedIconNames.contains(glyph.iconName) else {
+                    return nil
+                }
+                return glyph.scalar.value
+            })
         )
     }
 
@@ -179,18 +218,53 @@ struct WebIconFontLoaderTests {
         let report = try await loader.loadFonts(for: profile())
         #expect(report.loadedFamilies == [.arkham, .arkhamIcons, .arkhamSlim])
         #expect(report.failures[.icons] == .invalidFont)
+        #expect(
+            report.availability.registrations[.arkhamIcons]?.postScriptName
+                == "arkhamicons"
+        )
+        #expect(report.availability.registrations[.arkhamIcons]?.postScriptName != "ArkhamIcons")
 
         #expect(
             StoryInlineTextRenderer.semanticIconRun(
                 for: .chaosToken(.skull),
                 iconFonts: report.availability
-            ) == .webGlyph(iconName: "skull", family: .arkhamIcons, glyph: "\u{E910}")
+            ) == .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}")
         )
         #expect(
             StoryInlineTextRenderer.semanticIconRun(
                 for: .chaosToken(.blood),
                 iconFonts: report.availability
             ) == .systemImage(name: "circle.hexagongrid.fill")
+        )
+    }
+
+    @Test("Loader keeps registered family but falls back for its missing glyph")
+    func loaderPublishesOnlySupportedGlyphs() async throws {
+        var responses = FakeWebIconFontTransport.validFontResponses()
+        responses["/fonts/arkhamicons.ttf"] = .success(
+            data: FakeWebIconFontTransport.syntheticFontData(
+                family: .arkhamIcons,
+                excluding: ["skull"]
+            )
+        )
+        let loader = WebIconFontLoader(
+            transport: FakeWebIconFontTransport(responses: responses),
+            registrar: PrefixWebIconFontRegistrar()
+        )
+        let report = try await loader.loadFonts(for: profile())
+        #expect(report.loadedFamilies.contains(.arkhamIcons))
+        #expect(report.availability.registrations[.arkhamIcons]?.postScriptName == "arkhamicons")
+        #expect(
+            StoryInlineTextRenderer.semanticIconRun(
+                for: .chaosToken(.skull),
+                iconFonts: report.availability
+            ) == .systemImage(name: "circle.hexagongrid.fill")
+        )
+        #expect(
+            StoryInlineTextRenderer.semanticIconRun(
+                for: .chaosToken(.cultist),
+                iconFonts: report.availability
+            ) == .webGlyph(iconName: "cultist", fontName: "arkhamicons", glyph: "\u{E911}")
         )
     }
 
@@ -205,11 +279,45 @@ struct WebIconFontLoaderTests {
 }
 
 private struct PrefixWebIconFontRegistrar: WebIconFontRegistering {
-    func validateAndRegister(_ data: Data, expectedFamily: WebIconFontFamily) throws {
-        let expected = "font:\(expectedFamily.rawValue)"
-        guard let decoded = String(data: data, encoding: .utf8),
-              decoded.hasPrefix(expected)
+    func validateAndRegister(
+        _ data: Data,
+        expectedFamily: WebIconFontFamily,
+        requiredGlyphs: [StoryIconGlyph]
+    ) throws -> WebIconFontRegistration {
+        guard let decoded = String(data: data, encoding: .utf8) else {
+            throw WebIconFontFailure.invalidFont
+        }
+        let parts = decoded.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count == 4,
+              parts[0] == "font",
+              parts[1] == Substring(expectedFamily.rawValue),
+              parts[2].hasPrefix("ps="),
+              parts[3].hasPrefix("glyphs=")
         else { throw WebIconFontFailure.invalidFont }
+        let postScriptName = String(parts[2].dropFirst(3))
+        let scalars = Set(parts[3].dropFirst(7).split(separator: ",").compactMap { value in
+            UInt32(value, radix: 16)
+        })
+        let required = Set(requiredGlyphs.map(\.scalar.value))
+        guard !postScriptName.isEmpty, !scalars.isDisjoint(with: required) else {
+            throw WebIconFontFailure.invalidFont
+        }
+        return WebIconFontRegistration(
+            family: expectedFamily,
+            postScriptName: postScriptName,
+            supportedScalars: scalars
+        )
+    }
+}
+
+private extension WebIconFontFamily {
+    var syntheticPostScriptName: String {
+        switch self {
+        case .arkham: "AHLCG"
+        case .arkhamIcons: "arkhamicons"
+        case .arkhamSlim: "arkhamslim"
+        case .icons: "icon"
+        }
     }
 }
 
@@ -255,9 +363,22 @@ private actor FakeWebIconFontTransport: WebIconFontTransporting {
     static func validFontResponses() -> [String: Response] {
         Dictionary(uniqueKeysWithValues: WebIconFontSources.required.map { source in
             (source.path, Response.success(
-                data: Data("font:\(source.family.rawValue):test".utf8),
+                data: syntheticFontData(family: source.family),
                 etag: "\"\(source.family.rawValue)\""
             ))
         })
+    }
+
+    static func syntheticFontData(
+        family: WebIconFontFamily,
+        excluding excludedIconNames: Set<String> = []
+    ) -> Data {
+        let glyphs = StoryIconGlyph.all
+            .filter { $0.family == family && !excludedIconNames.contains($0.iconName) }
+            .map { String(format: "%04X", $0.scalar.value) }
+            .joined(separator: ",")
+        return Data(
+            "font:\(family.rawValue):ps=\(family.syntheticPostScriptName):glyphs=\(glyphs)".utf8
+        )
     }
 }

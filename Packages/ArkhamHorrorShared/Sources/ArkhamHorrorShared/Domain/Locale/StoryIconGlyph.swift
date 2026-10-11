@@ -33,15 +33,34 @@ enum WebIconFontSources {
     ]
 }
 
-struct WebIconFontAvailability: Sendable, Equatable {
-    var loadedFamilies: Set<WebIconFontFamily>
+struct WebIconFontRegistration: Sendable, Equatable {
+    let family: WebIconFontFamily
+    /// The actual CoreText/PostScript font name. This intentionally is not the CSS name:
+    /// the web font files use internal names such as `AH LCG`, `arkhamicons`, and `icon`.
+    let postScriptName: String
+    let supportedScalars: Set<UInt32>
 
-    init(loadedFamilies: Set<WebIconFontFamily> = []) {
-        self.loadedFamilies = loadedFamilies
+    func supports(_ glyph: StoryIconGlyph) -> Bool {
+        glyph.family == family && supportedScalars.contains(glyph.scalar.value)
+    }
+}
+
+struct WebIconFontAvailability: Sendable, Equatable {
+    var registrations: [WebIconFontFamily: WebIconFontRegistration]
+
+    init(registrations: [WebIconFontFamily: WebIconFontRegistration] = [:]) {
+        self.registrations = registrations
     }
 
-    func contains(_ family: WebIconFontFamily) -> Bool {
-        loadedFamilies.contains(family)
+    var loadedFamilies: Set<WebIconFontFamily> {
+        Set(registrations.keys)
+    }
+
+    func postScriptName(for glyph: StoryIconGlyph) -> String? {
+        guard let registration = registrations[glyph.family], registration.supports(glyph) else {
+            return nil
+        }
+        return registration.postScriptName
     }
 }
 
