@@ -84,6 +84,7 @@ actor WebIconFontLoader: WebIconFontLoading {
     private let diskCache: WebIconFontDiskCache?
     private var memoryCache: [WebIconFontCacheKey: Data] = [:]
     private var latestKeyByURL: [URL: WebIconFontCacheKey] = [:]
+    private var memoryRevalidatedURLs: Set<URL> = []
     private var pendingRevalidations: [Task<Void, Never>] = []
 
     init(
@@ -133,9 +134,7 @@ actor WebIconFontLoader: WebIconFontLoading {
                     expectedFamily: source.family,
                     requiredGlyphs: Self.requiredGlyphs(for: source.family)
                 )
-                if cached.origin == .disk {
-                    startDiskCacheRevalidation(source: source, url: url, cached: cached)
-                }
+                startCacheRevalidationIfNeeded(source: source, url: url, cached: cached)
                 return registration
             } catch {
                 latestKeyByURL[url] = nil
@@ -220,22 +219,28 @@ actor WebIconFontLoader: WebIconFontLoading {
         try? diskCache?.store(data: data, key: key)
     }
 
-    private func startDiskCacheRevalidation(
+    private func startCacheRevalidationIfNeeded(
         source: WebIconFontSource,
         url: URL,
         cached: CachedWebIconFont
     ) {
+        switch cached.origin {
+        case .disk:
+            _ = memoryRevalidatedURLs.insert(url)
+        case .memory:
+            guard memoryRevalidatedURLs.insert(url).inserted else { return }
+        }
         let task = Task { [source, url, cached] in
-            await self.revalidateDiskCache(source: source, url: url, cached: cached)
+            await self.revalidateCache(source: source, url: url, cached: cached)
         }
         pendingRevalidations.append(task)
     }
 
-    /// Mirrors `AssetCacheService.performRevalidation`: a disk hit is served immediately,
+    /// Mirrors `AssetCacheService.performRevalidation`: a cache hit is served immediately,
     /// then its exact URL is conditionally re-requested with the stored validators.
     /// `304` keeps the existing payload; a valid `200` atomically replaces it; all other
     /// statuses or failures leave the cached font in place.
-    private func revalidateDiskCache(
+    private func revalidateCache(
         source: WebIconFontSource,
         url: URL,
         cached: CachedWebIconFont

@@ -395,6 +395,68 @@ struct WebIconFontLoaderTests {
         #expect(offlineReport.availability.registrations[.arkham]?.postScriptName == "new-arkham")
     }
 
+    @Test("Memory cache hits revalidate once and a valid 200 replaces the cache")
+    func memoryCacheHitRevalidatesAndStoresValid200() async throws {
+        let oldData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "old-memory-arkham"
+        )
+        let newData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "new-memory-arkham"
+        )
+        let scriptedResponses = Dictionary(
+            uniqueKeysWithValues: WebIconFontSources.required.map { source in
+                let initialData = source.family == .arkham
+                    ? oldData
+                    : FakeWebIconFontTransport.syntheticFontData(family: source.family)
+                let initialETag = source.family == .arkham
+                    ? "\"old-memory\""
+                    : "\"\(source.family.rawValue)-memory\""
+                let revalidation: FakeWebIconFontTransport.Response = source.family == .arkham
+                    ? .success(data: newData, etag: "\"new-memory\"")
+                    : .success(data: Data(), status: 304)
+                return (
+                    source.path,
+                    [
+                        .success(data: initialData, etag: initialETag),
+                        revalidation,
+                    ]
+                )
+            }
+        )
+        let transport = FakeWebIconFontTransport(scriptedResponses: scriptedResponses)
+        let loader = WebIconFontLoader(
+            transport: transport,
+            registrar: PrefixWebIconFontRegistrar()
+        )
+
+        let firstReport = try await loader.loadFonts(for: profile())
+        #expect(
+            firstReport.availability.registrations[.arkham]?.postScriptName
+                == "old-memory-arkham"
+        )
+        #expect(await transport.totalFetchCount() == WebIconFontSources.required.count)
+
+        let secondReport = try await loader.loadFonts(for: profile())
+        #expect(
+            secondReport.availability.registrations[.arkham]?.postScriptName
+                == "old-memory-arkham"
+        )
+        await loader.awaitPendingRevalidations()
+
+        let arkhamRequests = await transport.requests(for: "/fonts/arkham.ttf")
+        #expect(arkhamRequests.count == 2)
+        #expect(arkhamRequests.last?.ifNoneMatch == "\"old-memory\"")
+
+        let thirdReport = try await loader.loadFonts(for: profile())
+        #expect(
+            thirdReport.availability.registrations[.arkham]?.postScriptName
+                == "new-memory-arkham"
+        )
+        #expect(await transport.requests(for: "/fonts/arkham.ttf").count == 2)
+    }
+
     @Test("A failed revalidation keeps the disk cache payload")
     func failedRevalidationKeepsDiskCachePayload() async throws {
         let root = temporaryDirectory()
