@@ -41,6 +41,12 @@ struct LiveNotZTypedLabelVariableTests {
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
         #expect(resolved.title == "Discard 2 cards with wild icons")
+        #expect(resolved.accessibilityLabel == "Discard 2 cards with wild icons")
+        #expect(resolved.titleNodes == [
+            .text("Discard 2 cards with "),
+            .semanticIcon(.skill(.wild)),
+            .text(" icons"),
+        ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
         #expect(prompt.choiceLabelResolutions[0] == .resolved("Discard 2 cards with wild icons"))
     }
@@ -59,6 +65,11 @@ struct LiveNotZTypedLabelVariableTests {
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
         #expect(resolved.title == "Choose an investigator to take seal e")
+        #expect(resolved.accessibilityLabel == "Choose an investigator to take seal e")
+        #expect(resolved.titleNodes == [
+            .text("Choose an investigator to take "),
+            .semanticIcon(.seal(.sealE)),
+        ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
         #expect(
             prompt.choiceLabelResolutions[0]

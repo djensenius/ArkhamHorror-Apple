@@ -3,9 +3,24 @@ import Foundation
 
 struct BasicChoiceResolvedChoiceLabel: Sendable, Equatable {
     let title: String
+    let titleNodes: [StoryNode]?
     let subtitle: String?
     let systemImage: String
     let accessibilityLabel: String
+
+    init(
+        title: String,
+        titleNodes: [StoryNode]? = nil,
+        subtitle: String?,
+        systemImage: String,
+        accessibilityLabel: String
+    ) {
+        self.title = title
+        self.titleNodes = titleNodes
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.accessibilityLabel = accessibilityLabel
+    }
 }
 
 struct BasicChoiceSelectionProgress: Sendable, Equatable {
@@ -574,12 +589,17 @@ extension BasicChoicePromptPresentation {
         _ resolution: BasicChoiceResolvedChoiceLabel,
         addingCost costSummary: String
     ) -> BasicChoiceResolvedChoiceLabel {
-        BasicChoiceResolvedChoiceLabel(
-            title: semanticLocalized(
-                "semantic.choice.title.withCost",
-                value: "\(resolution.title) (\(costSummary))",
-                arguments: [resolution.title, costSummary]
-            ),
+        let title = semanticLocalized(
+            "semantic.choice.title.withCost",
+            value: "\(resolution.title) (\(costSummary))",
+            arguments: [resolution.title, costSummary]
+        )
+        let titleNodes = resolution.titleNodes.map { nodes in
+            nodes + [.text(" (\(costSummary))")]
+        }
+        return BasicChoiceResolvedChoiceLabel(
+            title: title,
+            titleNodes: titleNodes,
             subtitle: resolution.subtitle,
             systemImage: resolution.systemImage,
             accessibilityLabel: semanticLocalized(
@@ -720,9 +740,15 @@ extension BasicChoicePromptPresentation {
             labelResolution: labelResolution,
             revealsHandCardFaces: revealsHandCardFaces
         )
+        let titleNodes = semanticTitleNodes(
+            for: descriptor,
+            title: title,
+            labelResolution: labelResolution
+        )
         let accessibilityLabel = subtitle.map { "\(title), \($0)" } ?? title
         return BasicChoiceResolvedChoiceLabel(
             title: title,
+            titleNodes: titleNodes,
             subtitle: subtitle,
             systemImage: semanticSystemImage(for: descriptor),
             accessibilityLabel: accessibilityLabel
@@ -1051,6 +1077,21 @@ extension BasicChoicePromptPresentation {
             value: "Choice \(descriptor.sourceIndex + 1)",
             arguments: [Int64(descriptor.sourceIndex + 1)]
         )
+    }
+
+    private func semanticTitleNodes(
+        for descriptor: QuestionPresentation.Choice,
+        title: String,
+        labelResolution: BasicChoiceLabelResolution?
+    ) -> [StoryNode]? {
+        if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
+            return nodes
+        }
+        guard let labelText = descriptor.label?.text, !labelText.hasPrefix("$") else {
+            return nil
+        }
+        let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return StoryIconInlineParser.nodes(for: trimmed)
     }
 
     private func semanticSubtitle(

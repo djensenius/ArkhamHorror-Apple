@@ -96,16 +96,36 @@ enum BasicChoiceServerFeedbackSource: Sendable, Equatable {
     case gameError
 }
 
+struct BasicChoiceResolvedLabelText: Sendable, Equatable {
+    let title: String
+    let inlineNodes: [StoryNode]?
+
+    init(title: String, inlineNodes: [StoryNode]? = nil) {
+        self.title = title
+        self.inlineNodes = inlineNodes
+    }
+}
+
 /// One localized choice label captured from the same immutable catalog snapshot used by
 /// every prompt surface. Raw wire keys are never a presentation fallback.
-enum BasicChoiceLabelResolution: Sendable, Equatable {
+enum BasicChoiceLabelResolution: Sendable {
     case resolved(String)
+    case resolvedLabel(BasicChoiceResolvedLabelText)
     case unavailable(StoryUnavailableReason)
 
     var title: String? {
-        guard case let .resolved(value) = self else { return nil }
+        let value = switch self {
+        case let .resolved(value): value
+        case let .resolvedLabel(label): label.title
+        case .unavailable: ""
+        }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var inlineNodes: [StoryNode]? {
+        guard case let .resolvedLabel(label) = self else { return nil }
+        return label.inlineNodes
     }
 
     var unavailableReason: StoryUnavailableReason? {
@@ -147,6 +167,25 @@ enum BasicChoiceLabelResolution: Sendable, Equatable {
                 "basicChoice.choiceText.variable",
                 "The text for this choice needs a value this app cannot display."
             )
+        }
+    }
+}
+
+extension BasicChoiceLabelResolution: Equatable {
+    static func == (lhs: BasicChoiceLabelResolution, rhs: BasicChoiceLabelResolution) -> Bool {
+        switch (lhs, rhs) {
+        case let (.resolved(left), .resolved(right)):
+            left == right
+        case let (.resolvedLabel(left), .resolvedLabel(right)):
+            left == right
+        case let (.unavailable(left), .unavailable(right)):
+            left == right
+        case let (.resolved(left), .resolvedLabel(right)):
+            left == right.title
+        case let (.resolvedLabel(left), .resolved(right)):
+            left.title == right
+        default:
+            false
         }
     }
 }

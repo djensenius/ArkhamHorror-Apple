@@ -543,7 +543,11 @@ struct BasicChoicePromptView: View {
                     Image(systemName: resolved.systemImage)
                         .frame(width: 22)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
+                        StoryInlineTextLabel(
+                            fallbackText: title,
+                            nodes: resolved.titleNodes,
+                            textStyle: .body
+                        )
                         if let subtitle = resolved.subtitle {
                             Text(subtitle)
                                 .font(.caption)
@@ -563,7 +567,7 @@ struct BasicChoicePromptView: View {
         )
         .focused(focusBinding, equals: focusID)
         .disabled(!isActionable || !presentation.canSubmit)
-        // `SemanticActionControl` already applies `accessibilityLabel: Text(title)`
+        // `SemanticActionControl` already applies the semantic accessibility label
         // internally; an outer override here would risk silently diverging from it.
         .accessibilityHint(accessibilityHint(for: choice))
         .accessibilityIdentifier("liveGame.prompt.choice.\(choice.index)")

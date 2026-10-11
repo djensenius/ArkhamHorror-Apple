@@ -128,6 +128,18 @@ extension StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<String, StoryUnavailableReason> {
+        resolveProductionChoiceLabelRich(
+            wireLabel,
+            resolver: resolver,
+            catalogUnavailability: catalogUnavailability
+        ).map(\.title)
+    }
+
+    static func resolveProductionChoiceLabelRich(
+        _ wireLabel: String,
+        resolver: LocaleCatalogResolver?,
+        catalogUnavailability: StoryUnavailableReason
+    ) -> Result<BasicChoiceResolvedLabelText, StoryUnavailableReason> {
         guard wireLabel.hasPrefix("$") else { return .failure(.unsupportedEntry) }
         guard let invocation = parseProductionChoiceLabel(wireLabel) else {
             return .failure(.unsupportedVariableValue)
@@ -152,7 +164,8 @@ extension StoryNarrativeLocalization {
             let trimmed = rendered.nodes.map(\.plainText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
-            return .success(trimmed)
+            let nodes = rendered.nodes.containsSemanticIcon ? rendered.nodes.trimmedTextEdges : nil
+            return .success(BasicChoiceResolvedLabelText(title: trimmed, inlineNodes: nodes))
         }
     }
 
@@ -599,6 +612,69 @@ extension StoryNarrativeLocalization {
              .linkCycle, .missingVariable, .unsupportedVariableValue, .tooComplex:
             nil
         }
+    }
+}
+
+private extension [StoryNode] {
+    var containsSemanticIcon: Bool {
+        contains { node in
+            switch node {
+            case .semanticIcon:
+                true
+            case let .group(children), let .paragraph(children), let .heading(_, children),
+                 let .emphasis(_, children), let .cardReference(_, children):
+                children.containsSemanticIcon
+            case let .list(_, items):
+                items.contains { $0.containsSemanticIcon }
+            case .text, .lineBreak, .rule, .image, .icon, .table:
+                false
+            }
+        }
+    }
+
+    var trimmedTextEdges: [StoryNode] {
+        var nodes = self
+        while let first = nodes.first, case let .text(text) = first {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                nodes.removeFirst()
+            } else {
+                nodes[0] = .text(text.trimmingPrefixWhitespace)
+                break
+            }
+        }
+        while let last = nodes.last, case let .text(text) = last {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                nodes.removeLast()
+            } else {
+                nodes[nodes.count - 1] = .text(text.trimmingSuffixWhitespace)
+                break
+            }
+        }
+        return nodes.coalescingAdjacentText
+    }
+
+    private var coalescingAdjacentText: [StoryNode] {
+        reduce(into: []) { result, node in
+            switch (node, result.last) {
+            case let (.text(text), .text(existing)?):
+                result[result.count - 1] = .text(existing + text)
+            default:
+                result.append(node)
+            }
+        }
+    }
+}
+
+private extension String {
+    var trimmingPrefixWhitespace: String {
+        String(drop(while: { $0.isWhitespace }))
+    }
+
+    var trimmingSuffixWhitespace: String {
+        guard let lastContentIndex = lastIndex(where: { !$0.isWhitespace }) else { return "" }
+        return String(self[...lastContentIndex])
     }
 }
 

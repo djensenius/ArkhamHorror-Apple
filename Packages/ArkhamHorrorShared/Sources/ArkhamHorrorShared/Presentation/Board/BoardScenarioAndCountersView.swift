@@ -176,7 +176,7 @@ struct BoardChaosBagView: View {
             onOutcome: onOutcome,
             content: {
                 HStack(spacing: 6) {
-                    Image(systemName: "circle.hexagongrid.fill")
+                    BoardChaosTokenGlyph(face: token.face, textStyle: .caption)
                     Text(token.displayTitle)
                 }
                 .font(.caption)
@@ -189,14 +189,39 @@ struct BoardChaosBagView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(counts, id: \.face) { count in
-                    BoardStatBadge(
-                        systemImage: "circle.hexagongrid.fill",
-                        value: "\(BoardDisplayFormatting.humanizeTag(count.face.rawValue)) "
-                            + "×\(count.count)"
-                    )
+                    BoardChaosFaceCountBadge(count: count)
                 }
             }
         }
+        .accessibilityHidden(true)
+    }
+}
+
+private struct BoardChaosTokenGlyph: View {
+    let face: ChaosTokenFace
+    let textStyle: StoryInlineTextStyle
+
+    var body: some View {
+        if let nodes = BoardChaosTokenGlyphPresentation.nodes(for: face) {
+            StoryInlineTextLabel(fallbackText: "", nodes: nodes, textStyle: textStyle)
+        } else {
+            Image(systemName: BoardChaosTokenGlyphPresentation.fallbackSystemImage)
+        }
+    }
+}
+
+private struct BoardChaosFaceCountBadge: View {
+    let count: BoardChaosFaceCount
+
+    var body: some View {
+        HStack(spacing: 4) {
+            BoardChaosTokenGlyph(face: count.face, textStyle: .caption)
+            Text("\(BoardDisplayFormatting.humanizeTag(count.face.rawValue)) ×\(count.count)")
+                .font(.caption.monospacedDigit())
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(.black.opacity(0.25), in: Capsule())
         .accessibilityHidden(true)
     }
 }

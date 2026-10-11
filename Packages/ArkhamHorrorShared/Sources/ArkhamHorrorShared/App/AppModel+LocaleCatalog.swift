@@ -574,13 +574,17 @@ extension AppModel {
         let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
         var result: [Key: BasicChoiceLabelResolution] = [:]
         for label in labels {
-            switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            switch StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
                 label.wireLabel,
                 resolver: resolver,
                 catalogUnavailability: unavailability
             ) {
             case let .success(value):
-                result[label.key] = .resolved(value)
+                if value.inlineNodes == nil {
+                    result[label.key] = .resolved(value.title)
+                } else {
+                    result[label.key] = .resolvedLabel(value)
+                }
             case let .failure(reason):
                 result[label.key] = .unavailable(reason)
             }

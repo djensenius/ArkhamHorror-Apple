@@ -75,6 +75,69 @@ struct WebIconFontGlyphMappingTests {
         )
     }
 
+    @Test("Choice label literal icon placeholders become story inline glyph nodes")
+    func choiceLabelLiteralIconPlaceholdersBecomeInlineGlyphNodes() throws {
+        let nodes = try #require(StoryIconInlineParser.nodes(for: "Choose {skull}"))
+        #expect(nodes == [.text("Choose "), .semanticIcon(.chaosToken(.skull))])
+        #expect(StoryNodePresentation.accessibilityLabel(for: nodes) == "Choose skull")
+
+        let iconFonts = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: "arkhamicons"),
+        ])
+        #expect(
+            StoryInlineTextRenderer.semanticIconTextRun(
+                for: .chaosToken(.skull),
+                iconFonts: iconFonts,
+                textStyle: .body
+            ) == StoryInlineSemanticIconTextRun(
+                run: .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}"),
+                pointSize: StoryWebGlyphFontMetrics.pointSize(
+                    forIconNamed: "skull",
+                    textStyle: .body
+                )
+            )
+        )
+    }
+
+    @Test("Board chaos-token glyphs use face glyphs and honest fallbacks")
+    func boardChaosTokenGlyphsUseFaceGlyphsAndFallbacks() {
+        let iconFonts = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: "arkhamicons"),
+        ])
+        #expect(
+            BoardChaosTokenGlyphPresentation.nodes(for: .skull)
+                == [.semanticIcon(.chaosToken(.skull))]
+        )
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(for: .skull, iconFonts: iconFonts)
+                == .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}")
+        )
+        #expect(
+            StoryInlineTextRenderer.semanticIconTextRun(
+                for: .chaosToken(.skull),
+                iconFonts: iconFonts,
+                textStyle: .caption
+            ) == StoryInlineSemanticIconTextRun(
+                run: .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}"),
+                pointSize: StoryWebGlyphFontMetrics.pointSize(
+                    forIconNamed: "skull",
+                    textStyle: .caption
+                )
+            )
+        )
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(
+                for: .skull,
+                iconFonts: WebIconFontAvailability()
+            ) == .systemImage(name: "circle.hexagongrid.fill")
+        )
+        #expect(BoardChaosTokenGlyphPresentation.nodes(for: .zero) == nil)
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(for: .zero, iconFonts: iconFonts)
+                == .systemImage(name: "circle.hexagongrid.fill")
+        )
+    }
+
     private func registration(
         _ family: WebIconFontFamily,
         postScriptName: String,

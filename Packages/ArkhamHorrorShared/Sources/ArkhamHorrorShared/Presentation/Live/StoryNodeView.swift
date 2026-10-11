@@ -382,9 +382,38 @@ private struct StoryInlineTextView: View {
     }
 }
 
+struct StoryInlineTextLabel: View {
+    let fallbackText: String
+    let nodes: [StoryNode]?
+    var textStyle: StoryInlineTextStyle = .body
+    @Environment(\.storyIconFontAvailability) private var iconFontAvailability
+
+    var body: some View {
+        if let renderedText {
+            renderedText
+        } else {
+            Text(fallbackText)
+        }
+    }
+
+    private var renderedText: Text? {
+        guard let nodes else { return nil }
+        return StoryInlineTextRenderer.text(
+            for: nodes,
+            iconFonts: iconFontAvailability,
+            textStyle: textStyle
+        )
+    }
+}
+
 enum StoryInlineSemanticIconRun: Equatable {
     case webGlyph(iconName: String, fontName: String, glyph: String)
     case systemImage(name: String)
+}
+
+struct StoryInlineSemanticIconTextRun: Equatable {
+    let run: StoryInlineSemanticIconRun
+    let pointSize: CGFloat?
 }
 
 enum StoryInlineTextRenderer {
@@ -413,6 +442,21 @@ enum StoryInlineTextRenderer {
             }
         }
         return .systemImage(name: icon.systemImage)
+    }
+
+    static func semanticIconTextRun(
+        for icon: StoryIcon,
+        iconFonts: WebIconFontAvailability,
+        textStyle: StoryInlineTextStyle
+    ) -> StoryInlineSemanticIconTextRun {
+        let run = semanticIconRun(for: icon, iconFonts: iconFonts)
+        let pointSize: CGFloat? = switch run {
+        case let .webGlyph(iconName, _, _):
+            StoryWebGlyphFontMetrics.pointSize(forIconNamed: iconName, textStyle: textStyle)
+        case .systemImage:
+            nil
+        }
+        return StoryInlineSemanticIconTextRun(run: run, pointSize: pointSize)
     }
 
     private static func text(
@@ -454,18 +498,24 @@ enum StoryInlineTextRenderer {
         iconFonts: WebIconFontAvailability,
         textStyle: StoryInlineTextStyle
     ) -> Text {
-        switch semanticIconRun(for: icon, iconFonts: iconFonts) {
-        case let .webGlyph(iconName, fontName, glyph):
-            Text(verbatim: glyph)
+        let textRun = semanticIconTextRun(
+            for: icon,
+            iconFonts: iconFonts,
+            textStyle: textStyle
+        )
+        switch textRun.run {
+        case let .webGlyph(_, fontName, glyph):
+            return Text(verbatim: glyph)
                 .font(.custom(
                     fontName,
-                    size: StoryWebGlyphFontMetrics.pointSize(
-                        forIconNamed: iconName, textStyle: textStyle
+                    size: textRun.pointSize ?? StoryWebGlyphFontMetrics.pointSize(
+                        forIconNamed: icon.iconName,
+                        textStyle: textStyle
                     ),
                     relativeTo: textStyle.swiftUITextStyle
                 ))
         case let .systemImage(name):
-            Text(Image(systemName: name))
+            return Text(Image(systemName: name))
         }
     }
 
