@@ -1,4 +1,9 @@
 // swiftlint:disable file_length
+#if os(macOS)
+    import AppKit
+#elseif os(iOS) || os(tvOS) || os(visionOS)
+    import UIKit
+#endif
 import SwiftUI
 
 enum StoryNodeFlowItem: Equatable {
@@ -68,9 +73,12 @@ struct ResolvedStoryEntryView: View {
         case let .nodes(nodes):
             StoryNodeSequenceView(nodes: nodes)
         case let .heading(level, nodes):
-            StoryNodeChildrenView(children: nodes)
-                .font(StoryHeadingPresentation.font(for: level.rawValue))
-                .addingStoryHeadingTrait()
+            StoryNodeChildrenView(
+                children: nodes,
+                inlineTextStyle: StoryHeadingPresentation.textStyle(for: level.rawValue)
+            )
+            .font(StoryHeadingPresentation.font(for: level.rawValue))
+            .addingStoryHeadingTrait()
         case let .modified(modifiers, entry):
             ModifiedResolvedStoryEntryView(
                 modifiers: modifiers, entry: entry, cardCatalog: cardCatalog
@@ -330,6 +338,7 @@ private struct ResolvedStoryListItemView: View {
 
 private struct StoryNodeSequenceView: View {
     let nodes: [StoryNode]
+    var inlineTextStyle: StoryInlineTextStyle = .body
 
     var body: some View {
         let flow = StoryNodePresentation.flow(nodes)
@@ -337,7 +346,7 @@ private struct StoryNodeSequenceView: View {
             ForEach(Array(flow.enumerated()), id: \.offset) { _, item in
                 switch item {
                 case let .inline(nodes):
-                    StoryInlineTextView(nodes: nodes)
+                    StoryInlineTextView(nodes: nodes, textStyle: inlineTextStyle)
                 case let .block(node):
                     StoryNodeView(node: node)
                 }
@@ -348,22 +357,26 @@ private struct StoryNodeSequenceView: View {
 
 private struct StoryNodeChildrenView: View {
     let children: [StoryNode]
+    var inlineTextStyle: StoryInlineTextStyle = .body
 
     var body: some View {
         if children.allSatisfy(StoryNodePresentation.isInline) {
-            StoryInlineTextView(nodes: children)
+            StoryInlineTextView(nodes: children, textStyle: inlineTextStyle)
         } else {
-            StoryNodeSequenceView(nodes: children)
+            StoryNodeSequenceView(nodes: children, inlineTextStyle: inlineTextStyle)
         }
     }
 }
 
 private struct StoryInlineTextView: View {
     let nodes: [StoryNode]
+    var textStyle: StoryInlineTextStyle = .body
     @Environment(\.storyIconFontAvailability) private var iconFontAvailability
 
     var body: some View {
-        if let text = StoryInlineTextRenderer.text(for: nodes, iconFonts: iconFontAvailability) {
+        if let text = StoryInlineTextRenderer.text(
+            for: nodes, iconFonts: iconFontAvailability, textStyle: textStyle
+        ) {
             text.accessibilityLabel(StoryNodePresentation.accessibilityLabel(for: nodes))
         }
     }
@@ -377,11 +390,14 @@ enum StoryInlineSemanticIconRun: Equatable {
 enum StoryInlineTextRenderer {
     static func text(
         for nodes: [StoryNode],
-        iconFonts: WebIconFontAvailability = WebIconFontAvailability()
+        iconFonts: WebIconFontAvailability = WebIconFontAvailability(),
+        textStyle: StoryInlineTextStyle = .body
     ) -> Text? {
         var result = Text("")
         for node in nodes {
-            guard let fragment = text(for: node, iconFonts: iconFonts) else { return nil }
+            guard let fragment = text(
+                for: node, iconFonts: iconFonts, textStyle: textStyle
+            ) else { return nil }
             result = Text("\(result)\(fragment)")
         }
         return result
@@ -401,15 +417,19 @@ enum StoryInlineTextRenderer {
 
     private static func text(
         for node: StoryNode,
-        iconFonts: WebIconFontAvailability
+        iconFonts: WebIconFontAvailability,
+        textStyle: StoryInlineTextStyle
     ) -> Text? {
         switch node {
         case let .text(text):
             Text(verbatim: text)
         case let .group(children):
-            text(for: children, iconFonts: iconFonts)
+            text(for: children, iconFonts: iconFonts, textStyle: textStyle)
         case let .emphasis(style, children):
-            text(for: children, iconFonts: iconFonts).map { emphasized($0, style: style) }
+            text(
+                for: children, iconFonts: iconFonts,
+                textStyle: textStyle.applying(emphasis: style)
+            ).map { emphasized($0, style: style) }
         case .lineBreak:
             Text("\n")
         case let .icon(name):
@@ -417,9 +437,9 @@ enum StoryInlineTextRenderer {
                 "\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))"
             )
         case let .semanticIcon(icon):
-            semanticIconText(for: icon, iconFonts: iconFonts)
+            semanticIconText(for: icon, iconFonts: iconFonts, textStyle: textStyle)
         case let .cardReference(_, children):
-            text(for: children, iconFonts: iconFonts).map {
+            text(for: children, iconFonts: iconFonts, textStyle: textStyle).map {
                 Text(
                     "\(Image(systemName: "rectangle.portrait.on.rectangle.portrait")) \($0)"
                 )
@@ -431,12 +451,19 @@ enum StoryInlineTextRenderer {
 
     private static func semanticIconText(
         for icon: StoryIcon,
-        iconFonts: WebIconFontAvailability
+        iconFonts: WebIconFontAvailability,
+        textStyle: StoryInlineTextStyle
     ) -> Text {
         switch semanticIconRun(for: icon, iconFonts: iconFonts) {
-        case let .webGlyph(_, fontName, glyph):
+        case let .webGlyph(iconName, fontName, glyph):
             Text(verbatim: glyph)
-                .font(.custom(fontName, size: 17, relativeTo: .body))
+                .font(.custom(
+                    fontName,
+                    size: StoryWebGlyphFontMetrics.pointSize(
+                        forIconNamed: iconName, textStyle: textStyle
+                    ),
+                    relativeTo: textStyle.swiftUITextStyle
+                ))
         case let .systemImage(name):
             Text(Image(systemName: name))
         }
@@ -470,9 +497,11 @@ private struct StoryNodeView: View {
                 StoryNodeChildrenView(children: children)
             }
         case let .heading(level, children):
-            StoryNodeChildrenView(children: children)
-                .font(StoryHeadingPresentation.font(for: level))
-                .addingStoryHeadingTrait()
+            StoryNodeChildrenView(
+                children: children, inlineTextStyle: StoryHeadingPresentation.textStyle(for: level)
+            )
+            .font(StoryHeadingPresentation.font(for: level))
+            .addingStoryHeadingTrait()
         case let .emphasis(style, children):
             emphasized(children, style: style)
         case let .list(ordered, items):
@@ -522,9 +551,11 @@ private struct StoryNodeView: View {
         case .strikethrough:
             StoryNodeChildrenView(children: children).strikethrough()
         case .small:
-            StoryNodeChildrenView(children: children).font(.caption)
+            StoryNodeChildrenView(children: children, inlineTextStyle: .caption).font(.caption)
         case .smallCaps:
-            StoryNodeChildrenView(children: children).font(.caption.smallCaps())
+            StoryNodeChildrenView(
+                children: children, inlineTextStyle: .caption
+            ).font(.caption.smallCaps())
         }
     }
 
@@ -667,8 +698,90 @@ private struct StoryWrappingRowItem {
     let size: CGSize
 }
 
+enum StoryInlineTextStyle: Equatable, Sendable {
+    case body
+    case title2
+    case title3
+    case headline
+    case caption
+
+    var swiftUITextStyle: Font.TextStyle {
+        switch self {
+        case .body: .body
+        case .title2: .title2
+        case .title3: .title3
+        case .headline: .headline
+        case .caption: .caption
+        }
+    }
+
+    func applying(emphasis: LocaleCatalogEmphasis) -> StoryInlineTextStyle {
+        switch emphasis {
+        case .small, .smallCaps: .caption
+        case .bold, .italic, .underline, .strikethrough: self
+        }
+    }
+}
+
+enum StoryWebGlyphFontMetrics {
+    static func pointSize(forIconNamed iconName: String, textStyle: StoryInlineTextStyle) -> CGFloat {
+        platformPreferredPointSize(for: textStyle) * scale(forIconNamed: iconName)
+    }
+
+    private static func scale(forIconNamed iconName: String) -> CGFloat {
+        switch iconName {
+        case "elderSign", "autoFail": 1.3
+        default: 1
+        }
+    }
+
+    static func platformPreferredPointSize(for textStyle: StoryInlineTextStyle) -> CGFloat {
+        #if os(macOS)
+            NSFont.preferredFont(forTextStyle: textStyle.nsFontTextStyle).pointSize
+        #elseif os(iOS) || os(tvOS) || os(visionOS)
+            UIFont.preferredFont(forTextStyle: textStyle.uiFontTextStyle).pointSize
+        #else
+            17
+        #endif
+    }
+}
+
+#if os(macOS)
+    private extension StoryInlineTextStyle {
+        var nsFontTextStyle: NSFont.TextStyle {
+            switch self {
+            case .body: .body
+            case .title2: .title2
+            case .title3: .title3
+            case .headline: .headline
+            case .caption: .caption1
+            }
+        }
+    }
+#elseif os(iOS) || os(tvOS) || os(visionOS)
+    private extension StoryInlineTextStyle {
+        var uiFontTextStyle: UIFont.TextStyle {
+            switch self {
+            case .body: .body
+            case .title2: .title2
+            case .title3: .title3
+            case .headline: .headline
+            case .caption: .caption1
+            }
+        }
+    }
+#endif
+
 private enum StoryHeadingPresentation {
     static func font(for level: Int) -> Font {
+        switch level {
+        case 1: .title2
+        case 2: .title3
+        default: .headline
+        }
+    }
+
+    static func textStyle(for level: Int) -> StoryInlineTextStyle {
         switch level {
         case 1: .title2
         case 2: .title3
