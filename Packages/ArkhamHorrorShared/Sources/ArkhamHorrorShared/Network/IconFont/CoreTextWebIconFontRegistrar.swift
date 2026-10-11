@@ -10,11 +10,10 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
         let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData)
             as? [CTFontDescriptor]
         let provider: CGDataProvider? = CGDataProvider(data: data as CFData)
-        let cgFont: CGFont?
-        if let provider {
-            cgFont = CGFont(provider)
+        let cgFont: CGFont? = if let provider {
+            CGFont(provider)
         } else {
-            cgFont = nil
+            nil
         }
         guard descriptors?.isEmpty == false || cgFont != nil else {
             throw WebIconFontFailure.invalidFont
