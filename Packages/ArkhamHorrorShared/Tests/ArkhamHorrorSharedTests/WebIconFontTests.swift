@@ -405,27 +405,10 @@ struct WebIconFontLoaderTests {
             family: .arkham,
             postScriptName: "new-memory-arkham"
         )
-        let scriptedResponses = Dictionary(
-            uniqueKeysWithValues: WebIconFontSources.required.map { source in
-                let initialData = source.family == .arkham
-                    ? oldData
-                    : FakeWebIconFontTransport.syntheticFontData(family: source.family)
-                let initialETag = source.family == .arkham
-                    ? "\"old-memory\""
-                    : "\"\(source.family.rawValue)-memory\""
-                let revalidation: FakeWebIconFontTransport.Response = source.family == .arkham
-                    ? .success(data: newData, etag: "\"new-memory\"")
-                    : .success(data: Data(), status: 304)
-                return (
-                    source.path,
-                    [
-                        .success(data: initialData, etag: initialETag),
-                        revalidation,
-                    ]
-                )
-            }
-        )
-        let transport = FakeWebIconFontTransport(scriptedResponses: scriptedResponses)
+        let transport = FakeWebIconFontTransport(scriptedResponses: memoryRevalidationScript(
+            oldData: oldData,
+            newData: newData
+        ))
         let loader = WebIconFontLoader(
             transport: transport,
             registrar: PrefixWebIconFontRegistrar()
@@ -720,6 +703,30 @@ struct WebIconFontLoaderTests {
                 requiredGlyphs: StoryIconGlyph.all.filter { $0.family == .arkham }
             )
         }
+    }
+
+    private func memoryRevalidationScript(
+        oldData: Data,
+        newData: Data
+    ) -> [String: [FakeWebIconFontTransport.Response]] {
+        Dictionary(uniqueKeysWithValues: WebIconFontSources.required.map { source in
+            let initialData = source.family == .arkham
+                ? oldData
+                : FakeWebIconFontTransport.syntheticFontData(family: source.family)
+            let initialETag = source.family == .arkham
+                ? "\"old-memory\""
+                : "\"\(source.family.rawValue)-memory\""
+            let revalidation: FakeWebIconFontTransport.Response = source.family == .arkham
+                ? .success(data: newData, etag: "\"new-memory\"")
+                : .success(data: Data(), status: 304)
+            return (
+                source.path,
+                [
+                    .success(data: initialData, etag: initialETag),
+                    revalidation,
+                ]
+            )
+        })
     }
 
     private func waitForTotalFetchCount(
