@@ -1253,8 +1253,42 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
-    @Test("Live bot strategy avoids explicit game-over story choices")
-    func botStrategyAvoidsGameOverStoryChoice() {
+    @Test("Live bot strategy avoids explicit game-over story choices from readChoices")
+    func botStrategyAvoidsGameOverReadChoice() throws {
+        let fixture = try Self.drownedCityAnOfferGameOverFixture()
+        let prompt = try Self.drownedCityAnOfferPrompt(
+            fixture: fixture,
+            semanticPresentation: false
+        )
+
+        #expect(Self.strategySelection(in: prompt, seed: 0) == 1)
+    }
+
+    @Test("Live bot strategy avoids explicit game-over story choices from rawValue")
+    func botStrategyAvoidsGameOverRawValueChoice() throws {
+        let fixture = try Self.drownedCityAnOfferGameOverFixture()
+        var neutralRawQuestion = try Self.replacingReadChoiceMessages(
+            in: fixture.rawQuestion,
+            at: 0,
+            with: [.object(["tag": .string("NextCampaignStep")])]
+        )
+        neutralRawQuestion = try Self.replacingReadChoiceMessages(
+            in: neutralRawQuestion,
+            at: 1,
+            with: [.object(["tag": .string("NextCampaignStep")])]
+        )
+        let prompt = try Self.drownedCityAnOfferPrompt(
+            fixture: fixture,
+            rawQuestion: neutralRawQuestion,
+            semanticRawQuestion: fixture.rawQuestion,
+            semanticPresentation: true
+        )
+
+        #expect(Self.strategySelection(in: prompt, seed: 0) == 1)
+    }
+
+    @Test("Live bot strategy avoids explicit game-over story choices from choices fallback")
+    func botStrategyAvoidsGameOverChoicesFallback() {
         let prompt = Self.storyChoiceStrategyPrompt(
             choices: [
                 StoryChoiceStrategyFixture(
@@ -1270,14 +1304,46 @@ struct LiveNightOfTheZealotPlaythroughTests {
             ]
         )
 
-        #expect(preferredSelectableIndex(
-            in: prompt,
-            projection: Self.strategyProjection(),
-            selectableIndexes: [0, 1],
-            repeatCount: 0,
-            skillTestPreparationCount: 0,
-            seed: 0
-        ) == 1)
+        #expect(Self.strategySelection(in: prompt, seed: 0) == 1)
+    }
+
+    @Test("Live bot strategy still selects when every story choice ends the game")
+    func botStrategySelectsWhenAllStoryChoicesEndTheGame() throws {
+        let fixture = try Self.drownedCityAnOfferGameOverFixture()
+        let allGameOverRawQuestion = try Self.replacingReadChoiceMessages(
+            in: fixture.rawQuestion,
+            at: 1,
+            with: [.object(["tag": .string("GameOver")])]
+        )
+        let prompt = try Self.drownedCityAnOfferPrompt(
+            fixture: fixture,
+            rawQuestion: allGameOverRawQuestion,
+            semanticPresentation: false
+        )
+
+        #expect([0, 1].contains(Self.strategySelection(in: prompt, seed: 0)))
+    }
+
+    @Test("Live bot strategy ignores game-over choices nested under a follow-up question")
+    func botStrategyIgnoresNestedGameOverReadChoice() throws {
+        let fixture = try Self.drownedCityAnOfferGameOverFixture()
+        var nestedOnlyRawQuestion = try Self.replacingReadChoiceMessages(
+            in: fixture.rawQuestion,
+            at: 0,
+            with: [Self.askMapWithNestedContinueGameOver(from: fixture.rawQuestion, at: 0)]
+        )
+        nestedOnlyRawQuestion = try Self.replacingReadChoiceMessages(
+            in: nestedOnlyRawQuestion,
+            at: 1,
+            with: [.object(["tag": .string("NextCampaignStep")])]
+        )
+        let prompt = try Self.drownedCityAnOfferPrompt(
+            fixture: fixture,
+            rawQuestion: nestedOnlyRawQuestion,
+            semanticPresentation: false
+        )
+
+        #expect(Self.strategySelection(in: prompt, seed: 0) == 0)
     }
 
     @Test("Live bot strategy is seedable for equal-ranked choices")
@@ -2320,6 +2386,125 @@ struct LiveNightOfTheZealotPlaythroughTests {
                 }
             )
         )
+    }
+
+    /// Captured from fork 25a3eb8,
+    /// `/tmp/arkham-logs/playthrough-trace-campaign-11-roland-banks.jsonl:174`.
+    private static func drownedCityAnOfferGameOverFixture() throws -> CapturedLivePromptFixture {
+        let url = try #require(Bundle.module.url(
+            forResource: "an-offer-game-over-read",
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveDrownedCityPlaythrough"
+        ))
+        return try ContractJSON.decode(
+            CapturedLivePromptFixture.self,
+            from: Data(contentsOf: url)
+        )
+    }
+
+    private static func drownedCityAnOfferPrompt(
+        fixture: CapturedLivePromptFixture,
+        rawQuestion: JSONValue? = nil,
+        semanticRawQuestion: JSONValue? = nil,
+        semanticPresentation includeSemanticPresentation: Bool
+    ) throws -> BasicChoicePromptPresentation {
+        let promptRawQuestion = rawQuestion ?? fixture.rawQuestion
+        let bound = includeSemanticPresentation
+            ? try fixture.questionPresentation.bind(
+                to: semanticRawQuestion ?? promptRawQuestion,
+                expectedQuestionVersion: fixture.questionVersion
+            )
+            : nil
+        return BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: fixture.questionVersion,
+                rawQuestion: promptRawQuestion,
+                questionPresentation: fixture.questionPresentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .updateRequired(tag: "Read"),
+            semanticPresentation: bound,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    private static func strategySelection(
+        in prompt: BasicChoicePromptPresentation,
+        seed: UInt64
+    ) -> Int {
+        preferredSelectableIndex(
+            in: prompt,
+            projection: strategyProjection(),
+            selectableIndexes: [0, 1],
+            repeatCount: 0,
+            skillTestPreparationCount: 0,
+            seed: seed
+        )
+    }
+
+    private static func replacingReadChoiceMessages(
+        in rawQuestion: JSONValue,
+        at index: Int,
+        with messages: [JSONValue]
+    ) throws -> JSONValue {
+        try replacingReadChoice(in: rawQuestion, at: index) { choice in
+            choice["messages"] = .array(messages)
+        }
+    }
+
+    private static func askMapWithNestedContinueGameOver(
+        from rawQuestion: JSONValue,
+        at index: Int
+    ) throws -> JSONValue {
+        let choice = try readChoiceObject(in: rawQuestion, at: index)
+        let messages = try #require(choice["messages"]?.arrayValue)
+        var askMap = try #require(messages.first?.objectValue)
+        var askMapContents = try #require(askMap["contents"]?.objectValue)
+        let playerID = try #require(askMapContents.keys.min())
+        var read = try #require(askMapContents[playerID]?.objectValue)
+        var readChoices = try #require(read["readChoices"]?.objectValue)
+        var contents = try #require(readChoices["contents"]?.arrayValue)
+        var continueChoice = try #require(contents.first?.objectValue)
+        continueChoice["messages"] = .array([.object(["tag": .string("GameOver")])])
+        contents[0] = .object(continueChoice)
+        readChoices["contents"] = .array(contents)
+        read["readChoices"] = .object(readChoices)
+        askMapContents[playerID] = .object(read)
+        askMap["contents"] = .object(askMapContents)
+        return .object(askMap)
+    }
+
+    private static func replacingReadChoice(
+        in rawQuestion: JSONValue,
+        at index: Int,
+        update: (inout [String: JSONValue]) throws -> Void
+    ) throws -> JSONValue {
+        var object = try #require(rawQuestion.objectValue)
+        var readChoices = try #require(object["readChoices"]?.objectValue)
+        var contents = try #require(readChoices["contents"]?.arrayValue)
+        var choice = try readChoiceObject(in: rawQuestion, at: index)
+        try update(&choice)
+        contents[index] = .object(choice)
+        readChoices["contents"] = .array(contents)
+        object["readChoices"] = .object(readChoices)
+        return .object(object)
+    }
+
+    private static func readChoiceObject(
+        in rawQuestion: JSONValue,
+        at index: Int
+    ) throws -> [String: JSONValue] {
+        let object = try #require(rawQuestion.objectValue)
+        let readChoices = try #require(object["readChoices"]?.objectValue)
+        let contents = try #require(readChoices["contents"]?.arrayValue)
+        _ = try #require(contents.indices.contains(index))
+        return try #require(contents[index].objectValue)
     }
 
     private static func strategyProjection(
@@ -5081,6 +5266,7 @@ private func preferredSelectableIndex(
         return startSkillTestIndex
     }
     guard let presentation = prompt.identity.questionPresentation else {
+        // Without semantic presentation, raw story choices are not scored; keep seeded fallback.
         return selectableIndexes[seededOffset(
             repeatCount: repeatCount,
             seed: seed,
@@ -5185,17 +5371,11 @@ private func rawChoiceValue(
     return nil
 }
 
-private func containsGameOverMessage(_ value: JSONValue) -> Bool {
-    if value.objectValue?["tag"]?.stringValue == "GameOver" {
-        return true
+private func containsDirectGameOverMessage(_ value: JSONValue) -> Bool {
+    guard let messages = value.objectValue?["messages"]?.arrayValue else { return false }
+    return messages.contains {
+        $0.objectValue?["tag"]?.stringValue == "GameOver"
     }
-    if let object = value.objectValue {
-        return object.values.contains(where: containsGameOverMessage)
-    }
-    if let array = value.arrayValue {
-        return array.contains(where: containsGameOverMessage)
-    }
-    return false
 }
 
 private struct StoryChoiceStrategyFixture {
@@ -5535,7 +5715,7 @@ private struct BotStrategyContext {
     }
 
     private func isGameOverChoice(_ choice: QuestionPresentation.Choice) -> Bool {
-        rawChoiceValue(for: choice, in: prompt).map(containsGameOverMessage) == true
+        rawChoiceValue(for: choice, in: prompt).map(containsDirectGameOverMessage) == true
     }
 
     private func objectiveAction(_ action: QuestionPresentation.Action) -> Bool {
