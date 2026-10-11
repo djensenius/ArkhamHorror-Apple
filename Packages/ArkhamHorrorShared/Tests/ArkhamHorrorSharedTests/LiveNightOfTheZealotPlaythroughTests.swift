@@ -1253,6 +1253,41 @@ struct LiveNightOfTheZealotPlaythroughTests {
         ) == 1)
     }
 
+    @Test("Live bot strategy prefers continuing opaque choices over high-score game-over choices")
+    func botStrategyPrefersContinuingOpaqueChoiceOverHighScoreGameOverChoice() {
+        let rawQuestion: JSONValue = .object([
+            "tag": .string("ChooseOne"),
+            "choices": .array([
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("Advance the act and end the campaign"),
+                    "messages": .array([.object(["tag": .string("GameOver")])]),
+                ]),
+                .object([
+                    "tag": .string("Label"),
+                    "label": .string("Continue investigating"),
+                    "messages": .array([.object(["tag": .string("NextCampaignStep")])]),
+                ]),
+            ]),
+        ])
+        let prompt = Self.prompt(
+            questionVersion: 42,
+            rawQuestion: rawQuestion,
+            questionPresentation: QuestionPresentation(
+                protocolVersion: QuestionPresentation.supportedProtocolVersion,
+                questionVersion: 42,
+                questionKind: .chooseOne,
+                choiceCount: 2,
+                choices: [
+                    QuestionPresentation.Choice(sourceIndex: 0, kind: .advanceAct, cost: .free),
+                    QuestionPresentation.Choice(sourceIndex: 1, kind: .opaque),
+                ]
+            )
+        )
+
+        #expect(Self.strategySelection(in: prompt, seed: 0) == 1)
+    }
+
     @Test("Live bot strategy avoids explicit game-over story choices from readChoices")
     func botStrategyAvoidsGameOverReadChoice() throws {
         let fixture = try Self.drownedCityAnOfferGameOverFixture()
@@ -5305,11 +5340,15 @@ private func preferredSelectableIndex(
     let ranked = selectableChoices.map { choice in
         BotChoiceRank(
             sourceIndex: choice.sourceIndex,
+            terminal: context.isTerminalChoice(choice),
             score: context.score(choice, objectiveAvailable: objectiveAvailable)
         )
     }
-    let bestScore = ranked.map(\.score).max() ?? 0
-    let best = ranked.filter { $0.score == bestScore }.map(\.sourceIndex).sorted()
+    let preferredRanks = ranked.contains { !$0.terminal }
+        ? ranked.filter { !$0.terminal }
+        : ranked
+    let bestScore = preferredRanks.map(\.score).max() ?? 0
+    let best = preferredRanks.filter { $0.score == bestScore }.map(\.sourceIndex).sorted()
     return best[seededOffset(repeatCount: repeatCount, seed: seed, count: best.count)]
 }
 
@@ -5386,6 +5425,7 @@ private struct StoryChoiceStrategyFixture {
 
 private struct BotChoiceRank: Sendable, Equatable {
     let sourceIndex: Int
+    let terminal: Bool
     let score: Int
 }
 
@@ -5489,7 +5529,7 @@ private struct BotStrategyContext {
         default:
             score = 1000
         }
-        if isResign(choice) || isGameOverChoice(choice) {
+        if isResign(choice) {
             score -= 9000
         }
         if choice.completesSelection == true {
@@ -5712,6 +5752,10 @@ private struct BotStrategyContext {
 
     private func isResign(_ choice: QuestionPresentation.Choice) -> Bool {
         choice.ability?.actions.contains(.resign) == true
+    }
+
+    func isTerminalChoice(_ choice: QuestionPresentation.Choice) -> Bool {
+        isGameOverChoice(choice)
     }
 
     private func isGameOverChoice(_ choice: QuestionPresentation.Choice) -> Bool {
