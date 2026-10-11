@@ -323,7 +323,7 @@ struct WebIconFontLoaderTests {
         )
 
         let report = try await loader.loadFonts(for: profile())
-        await waitForFetchCount(1, path: "/fonts/arkham.ttf", transport: transport)
+        await loader.awaitPendingRevalidations()
 
         #expect(report.availability.registrations[.arkham]?.postScriptName == "cached-arkham")
         let requests = await transport.requests(for: "/fonts/arkham.ttf")
@@ -376,7 +376,7 @@ struct WebIconFontLoaderTests {
         )
 
         let report = try await loader.loadFonts(for: profile())
-        await waitForFetchCount(1, path: "/fonts/arkham.ttf", transport: transport)
+        await loader.awaitPendingRevalidations()
         #expect(report.availability.registrations[.arkham]?.postScriptName == "old-arkham")
 
         let newKey = WebIconFontCacheKey(
@@ -428,7 +428,7 @@ struct WebIconFontLoaderTests {
         )
 
         _ = try await loader.loadFonts(for: profile())
-        await waitForFetchCount(1, path: "/fonts/arkham.ttf", transport: transport)
+        await loader.awaitPendingRevalidations()
 
         let offlineLoader = WebIconFontLoader(
             transport: FakeWebIconFontTransport(responses: [:]),
@@ -437,6 +437,105 @@ struct WebIconFontLoaderTests {
         )
         let offlineReport = try await offlineLoader.loadFonts(for: profile())
         #expect(offlineReport.availability.registrations[.arkham]?.postScriptName == "kept-arkham")
+    }
+
+    @Test("A 200 revalidation with an invalid font keeps the disk cache payload")
+    func invalidFontRevalidationKeepsDiskCachePayload() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = WebIconFontDiskCache(root: root)
+        let source = WebIconFontSource(family: .arkham, path: "/fonts/arkham.ttf")
+        let url = try #require(WebIconFontLoader.url(for: source, profile: profile()))
+        let cachedData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "kept-after-invalid-arkham"
+        )
+        try cache.store(
+            data: cachedData,
+            key: WebIconFontCacheKey(
+                url: url, etag: "\"kept\"", lastModified: nil, data: cachedData
+            )
+        )
+        let transport = FakeWebIconFontTransport(
+            responses: [
+                "/fonts/arkham.ttf": .success(data: Data("invalid-font".utf8), etag: "\"bad\""),
+            ],
+            defaultResponse: .failure(.unexpectedStatus(404))
+        )
+        let loader = WebIconFontLoader(
+            transport: transport,
+            registrar: PrefixWebIconFontRegistrar(),
+            diskCache: cache
+        )
+
+        _ = try await loader.loadFonts(for: profile())
+        await loader.awaitPendingRevalidations()
+
+        let offlineLoader = WebIconFontLoader(
+            transport: FakeWebIconFontTransport(responses: [:]),
+            registrar: PrefixWebIconFontRegistrar(),
+            diskCache: cache
+        )
+        let offlineReport = try await offlineLoader.loadFonts(for: profile())
+        #expect(
+            offlineReport.availability.registrations[.arkham]?.postScriptName
+                == "kept-after-invalid-arkham"
+        )
+    }
+
+    @Test("A stale 200 revalidation is discarded")
+    func staleRevalidationIsDiscarded() async throws {
+        let root = temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cache = WebIconFontDiskCache(root: root)
+        let source = WebIconFontSource(family: .arkham, path: "/fonts/arkham.ttf")
+        let url = try #require(WebIconFontLoader.url(for: source, profile: profile()))
+        let cachedData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "old-arkham"
+        )
+        try cache.store(
+            data: cachedData,
+            key: WebIconFontCacheKey(
+                url: url, etag: "\"old\"", lastModified: nil, data: cachedData
+            )
+        )
+        let transport = GatedWebIconFontTransport()
+        let loader = WebIconFontLoader(
+            transport: transport,
+            registrar: PrefixWebIconFontRegistrar(),
+            diskCache: cache
+        )
+
+        _ = try await loader.loadFonts(for: profile())
+        await transport.waitUntilPending(1)
+        let newerData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "newer-arkham"
+        )
+        await loader.replaceCachedFontForTesting(
+            url: url,
+            data: newerData,
+            etag: "\"newer\""
+        )
+        let staleData = FakeWebIconFontTransport.syntheticFontData(
+            family: .arkham,
+            postScriptName: "stale-arkham"
+        )
+        await transport.resumeOldest(with: WebIconFontHTTPResponse(
+            statusCode: 200,
+            etag: "\"stale\"",
+            data: staleData
+        ))
+        await loader.awaitPendingRevalidations()
+
+        let offlineLoader = WebIconFontLoader(
+            transport: FakeWebIconFontTransport(responses: [:]),
+            registrar: PrefixWebIconFontRegistrar(),
+            diskCache: cache
+        )
+        let offlineReport = try await offlineLoader.loadFonts(for: profile())
+        #expect(offlineReport.availability.registrations[.arkham]?.postScriptName == "newer-arkham")
     }
 
     @Test("A corrupt cache entry triggers a fresh download")
@@ -534,19 +633,6 @@ struct WebIconFontLoaderTests {
         }
     }
 
-    private func waitForFetchCount(
-        _ count: Int,
-        path: String,
-        transport: FakeWebIconFontTransport
-    ) async {
-        for _ in 0 ..< 100 {
-            if await transport.requests(for: path).count >= count {
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(10))
-        }
-    }
-
     private func waitForTotalFetchCount(
         _ count: Int,
         transport: FakeWebIconFontTransport
@@ -601,9 +687,6 @@ private final class WebIconFontURLProtocol: URLProtocol, @unchecked Sendable {
     private static let lock = NSLock()
     // swiftlint:disable:next modifier_order
     private nonisolated(unsafe) static var responses: [URL: Response] = [:]
-    // swiftlint:disable:next modifier_order
-    private nonisolated(unsafe) static var stopped: Set<URL> = []
-
     static func register(
         _ url: URL,
         statusCode: Int,
@@ -613,13 +696,6 @@ private final class WebIconFontURLProtocol: URLProtocol, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         responses[url] = Response(statusCode: statusCode, headers: headers, data: data)
-        stopped.remove(url)
-    }
-
-    static func wasStopped(_ url: URL) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return stopped.contains(url)
     }
 
     override static func canInit(with request: URLRequest) -> Bool {
@@ -651,17 +727,56 @@ private final class WebIconFontURLProtocol: URLProtocol, @unchecked Sendable {
         client?.urlProtocolDidFinishLoading(self)
     }
 
-    override func stopLoading() {
-        guard let url = request.url else { return }
-        Self.lock.lock()
-        Self.stopped.insert(url)
-        Self.lock.unlock()
-    }
+    override func stopLoading() {}
 
     private static func response(for url: URL) -> Response? {
         lock.lock()
         defer { lock.unlock() }
         return responses[url]
+    }
+}
+
+private actor GatedWebIconFontTransport: WebIconFontTransporting {
+    private let gatedPath: String
+    private var continuations: [CheckedContinuation<WebIconFontHTTPResponse, any Error>] = []
+    private var pendingWaiters: [(
+        threshold: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+
+    init(gatedPath: String = "/fonts/arkham.ttf") {
+        self.gatedPath = gatedPath
+    }
+
+    func fetch(
+        _ request: WebIconFontHTTPRequest,
+        maxBytes _: Int
+    ) async throws -> WebIconFontHTTPResponse {
+        guard request.url.path == gatedPath else { throw WebIconFontFailure.unexpectedStatus(404) }
+        return try await withCheckedThrowingContinuation { continuation in
+            continuations.append(continuation)
+            notifyWaiters()
+        }
+    }
+
+    func waitUntilPending(_ count: Int) async {
+        if continuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { pendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldest(with response: WebIconFontHTTPResponse) {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume(returning: response)
+    }
+
+    private func notifyWaiters() {
+        pendingWaiters.removeAll { entry in
+            guard continuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
     }
 }
 

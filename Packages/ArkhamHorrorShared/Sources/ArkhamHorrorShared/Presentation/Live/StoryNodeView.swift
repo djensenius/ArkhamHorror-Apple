@@ -348,7 +348,7 @@ private struct StoryNodeSequenceView: View {
                 case let .inline(nodes):
                     StoryInlineTextView(nodes: nodes, textStyle: inlineTextStyle)
                 case let .block(node):
-                    StoryNodeView(node: node)
+                    StoryNodeView(node: node, inlineTextStyle: inlineTextStyle)
                 }
             }
         }
@@ -483,18 +483,19 @@ enum StoryInlineTextRenderer {
 
 private struct StoryNodeView: View {
     let node: StoryNode
+    var inlineTextStyle: StoryInlineTextStyle = .body
 
     var body: some View {
         switch node {
         case .text, .lineBreak, .icon, .semanticIcon:
-            StoryInlineTextView(nodes: [node])
+            StoryInlineTextView(nodes: [node], textStyle: inlineTextStyle)
         case let .paragraph(children):
-            StoryNodeChildrenView(children: children)
+            StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
         case let .group(children):
             if let references = StoryNodePresentation.encounterSetGroupReferences(children) {
                 StoryEncounterSetGroupView(references: references)
             } else {
-                StoryNodeChildrenView(children: children)
+                StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
             }
         case let .heading(level, children):
             StoryNodeChildrenView(
@@ -509,7 +510,7 @@ private struct StoryNodeView: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                     HStack(alignment: .top, spacing: 6) {
                         Text(ordered ? "\(index + 1)." : "•")
-                        StoryNodeChildrenView(children: item)
+                        StoryNodeChildrenView(children: item, inlineTextStyle: inlineTextStyle)
                     }
                 }
             }
@@ -520,18 +521,18 @@ private struct StoryNodeView: View {
         case let .cardReference(code, children):
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "rectangle.portrait.on.rectangle.portrait")
-                StoryNodeChildrenView(children: children)
+                StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(cardReferenceLabel(code: code, children: children))
         case let .table(head, body):
             Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
                 ForEach(Array(head.enumerated()), id: \.offset) { _, row in
-                    StoryTableRowView(row: row)
+                    StoryTableRowView(row: row, inlineTextStyle: inlineTextStyle)
                         .fontWeight(.semibold)
                 }
                 ForEach(Array(body.enumerated()), id: \.offset) { _, row in
-                    StoryTableRowView(row: row)
+                    StoryTableRowView(row: row, inlineTextStyle: inlineTextStyle)
                 }
             }
         }
@@ -543,13 +544,16 @@ private struct StoryNodeView: View {
     ) -> some View {
         switch style {
         case .bold:
-            StoryNodeChildrenView(children: children).fontWeight(.bold)
+            StoryNodeChildrenView(
+                children: children, inlineTextStyle: inlineTextStyle
+            ).fontWeight(.bold)
         case .italic:
-            StoryNodeChildrenView(children: children).italic()
+            StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle).italic()
         case .underline:
-            StoryNodeChildrenView(children: children).underline()
+            StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle).underline()
         case .strikethrough:
-            StoryNodeChildrenView(children: children).strikethrough()
+            StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
+                .strikethrough()
         case .small:
             StoryNodeChildrenView(children: children, inlineTextStyle: .caption).font(.caption)
         case .smallCaps:
@@ -698,7 +702,7 @@ private struct StoryWrappingRowItem {
     let size: CGSize
 }
 
-enum StoryInlineTextStyle: Equatable, Sendable {
+enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
     case body
     case title2
     case title3
@@ -723,6 +727,11 @@ enum StoryInlineTextStyle: Equatable, Sendable {
     }
 }
 
+enum StoryContentSizeCategoryProbe {
+    case large
+    case accessibilityExtraExtraExtraLarge
+}
+
 enum StoryWebGlyphFontMetrics {
     static func pointSize(
         forIconNamed iconName: String,
@@ -739,10 +748,20 @@ enum StoryWebGlyphFontMetrics {
     }
 
     static func platformPreferredPointSize(for textStyle: StoryInlineTextStyle) -> CGFloat {
+        platformPreferredPointSize(for: textStyle, currentContentSizeCategory: .large)
+    }
+
+    static func platformPreferredPointSize(
+        for textStyle: StoryInlineTextStyle,
+        currentContentSizeCategory _: StoryContentSizeCategoryProbe
+    ) -> CGFloat {
         #if os(macOS)
             NSFont.preferredFont(forTextStyle: textStyle.nsFontTextStyle).pointSize
         #elseif os(iOS) || os(tvOS) || os(visionOS)
-            UIFont.preferredFont(forTextStyle: textStyle.uiFontTextStyle).pointSize
+            UIFont.preferredFont(
+                forTextStyle: textStyle.uiFontTextStyle,
+                compatibleWith: UITraitCollection(preferredContentSizeCategory: .large)
+            ).pointSize
         #else
             17
         #endif
@@ -806,11 +825,12 @@ private extension View {
 
 private struct StoryTableRowView: View {
     let row: StoryTableRow
+    var inlineTextStyle: StoryInlineTextStyle = .body
 
     var body: some View {
         GridRow {
             ForEach(Array(row.cells.enumerated()), id: \.offset) { _, cell in
-                StoryNodeChildrenView(children: cell.children)
+                StoryNodeChildrenView(children: cell.children, inlineTextStyle: inlineTextStyle)
                     .gridColumnAlignment(.leading)
             }
         }

@@ -1212,6 +1212,10 @@ struct GameLifecycleCreateCatalogTests {
         let model = AppModel(
             profileStore: FakeServerProfileStore(),
             tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(outcome(for: compatibility))),
+            authenticationSession: ScriptedAuthenticating(),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            webIconFontLoader: NoopWebIconFontLoader(),
             campaignCatalogService: campaignCatalogService
         )
         await model.flowTask?.value
@@ -1222,6 +1226,15 @@ struct GameLifecycleCreateCatalogTests {
             user: user
         )
         return model
+    }
+
+    private func outcome(for compatibility: ServerCompatibility) -> CompatibilityOutcome {
+        switch compatibility {
+        case .legacy:
+            .legacyFallback
+        case let .modern(capabilities, campaignCatalog):
+            .compatible(capabilities: capabilities, campaignCatalog: campaignCatalog)
+        }
     }
 }
 

@@ -27,6 +27,13 @@ protocol WebIconFontLoading: Sendable {
     func loadFonts(for profile: ServerProfile) async -> WebIconFontLoadReport
 }
 
+/// The safe default for non-production ``AppModel`` construction.
+struct DisabledWebIconFontLoader: WebIconFontLoading {
+    func loadFonts(for _: ServerProfile) async -> WebIconFontLoadReport {
+        WebIconFontLoadReport(registrations: [:], failures: [:])
+    }
+}
+
 protocol WebIconFontTransporting: Sendable {
     func fetch(
         _ request: WebIconFontHTTPRequest,
@@ -77,6 +84,7 @@ actor WebIconFontLoader: WebIconFontLoading {
     private let diskCache: WebIconFontDiskCache?
     private var memoryCache: [WebIconFontCacheKey: Data] = [:]
     private var latestKeyByURL: [URL: WebIconFontCacheKey] = [:]
+    private var pendingRevalidations: [Task<Void, Never>] = []
 
     init(
         transport: any WebIconFontTransporting,
@@ -191,14 +199,36 @@ actor WebIconFontLoader: WebIconFontLoading {
         }
     }
 
+    func awaitPendingRevalidations() async {
+        while !pendingRevalidations.isEmpty {
+            let task = pendingRevalidations.removeFirst()
+            await task.value
+        }
+    }
+
+    func replaceCachedFontForTesting(
+        url: URL,
+        data: Data,
+        etag: String?,
+        lastModified: String? = nil
+    ) {
+        let key = WebIconFontCacheKey(
+            url: url, etag: etag, lastModified: lastModified, data: data
+        )
+        memoryCache[key] = data
+        latestKeyByURL[url] = key
+        try? diskCache?.store(data: data, key: key)
+    }
+
     private func startDiskCacheRevalidation(
         source: WebIconFontSource,
         url: URL,
         cached: CachedWebIconFont
     ) {
-        Task { [source, url, cached] in
+        let task = Task { [source, url, cached] in
             await self.revalidateDiskCache(source: source, url: url, cached: cached)
         }
+        pendingRevalidations.append(task)
     }
 
     /// Mirrors `AssetCacheService.performRevalidation`: a disk hit is served immediately,

@@ -28,7 +28,10 @@ public struct RootView: View {
     /// previews and tests can inject a fake one instead of touching this shared,
     /// side-effectful instance.
     @MainActor
-    private static let productionModel = AppModel(assetCacheFactory: { .production() })
+    private static let productionModel = AppModel(
+        assetCacheFactory: { .production() },
+        webIconFontLoader: WebIconFontLoader.production()
+    )
 
     @State private var model: AppModel
     @State private var liveGamePath: [GameID] = []

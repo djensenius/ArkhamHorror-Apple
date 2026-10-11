@@ -30,4 +30,19 @@ struct StoryWebGlyphFontMetricsTests {
                 - headline * 1.3) < 0.0001
         )
     }
+
+    @Test("Web glyph base sizing ignores the current Dynamic Type category")
+    func baseSizingIgnoresCurrentDynamicTypeCategory() {
+        for textStyle in StoryInlineTextStyle.allCases {
+            #expect(
+                StoryWebGlyphFontMetrics.platformPreferredPointSize(
+                    for: textStyle,
+                    currentContentSizeCategory: .accessibilityExtraExtraExtraLarge
+                ) == StoryWebGlyphFontMetrics.platformPreferredPointSize(
+                    for: textStyle,
+                    currentContentSizeCategory: .large
+                )
+            )
+        }
+    }
 }

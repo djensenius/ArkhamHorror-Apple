@@ -387,7 +387,7 @@ final class AppModel {
         assetCacheService: AssetCacheService? = nil,
         assetCacheFactory: @escaping @MainActor () -> AssetCacheService? = { nil },
         storyAssetSourceLoader: StoryAssetSourceLoader = StoryAssetSourceLoader(),
-        webIconFontLoader: any WebIconFontLoading = WebIconFontLoader.production(),
+        webIconFontLoader: any WebIconFontLoading = DisabledWebIconFontLoader(),
         cardCatalogService: CardCatalogService = CardCatalogService(),
         campaignCatalogService: any CampaignCatalogServicing = CampaignCatalogService()
     ) {
