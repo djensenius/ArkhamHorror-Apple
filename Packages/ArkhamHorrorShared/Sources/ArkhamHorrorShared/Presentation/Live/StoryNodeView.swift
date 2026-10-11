@@ -360,32 +360,54 @@ private struct StoryNodeChildrenView: View {
 
 private struct StoryInlineTextView: View {
     let nodes: [StoryNode]
+    @Environment(\.storyIconFontAvailability) private var iconFontAvailability
 
     var body: some View {
-        if let text = StoryInlineTextRenderer.text(for: nodes) {
+        if let text = StoryInlineTextRenderer.text(for: nodes, iconFonts: iconFontAvailability) {
             text.accessibilityLabel(StoryNodePresentation.accessibilityLabel(for: nodes))
         }
     }
 }
 
-private enum StoryInlineTextRenderer {
-    static func text(for nodes: [StoryNode]) -> Text? {
+enum StoryInlineSemanticIconRun: Equatable {
+    case webGlyph(iconName: String, family: WebIconFontFamily, glyph: String)
+    case systemImage(name: String)
+}
+
+enum StoryInlineTextRenderer {
+    static func text(
+        for nodes: [StoryNode],
+        iconFonts: WebIconFontAvailability = WebIconFontAvailability()
+    ) -> Text? {
         var result = Text("")
         for node in nodes {
-            guard let fragment = text(for: node) else { return nil }
+            guard let fragment = text(for: node, iconFonts: iconFonts) else { return nil }
             result = Text("\(result)\(fragment)")
         }
         return result
     }
 
-    private static func text(for node: StoryNode) -> Text? {
+    static func semanticIconRun(
+        for icon: StoryIcon,
+        iconFonts: WebIconFontAvailability
+    ) -> StoryInlineSemanticIconRun {
+        if let glyph = icon.webGlyph, iconFonts.contains(glyph.family) {
+            return .webGlyph(iconName: glyph.iconName, family: glyph.family, glyph: glyph.string)
+        }
+        return .systemImage(name: icon.systemImage)
+    }
+
+    private static func text(
+        for node: StoryNode,
+        iconFonts: WebIconFontAvailability
+    ) -> Text? {
         switch node {
         case let .text(text):
             Text(verbatim: text)
         case let .group(children):
-            text(for: children)
+            text(for: children, iconFonts: iconFonts)
         case let .emphasis(style, children):
-            text(for: children).map { emphasized($0, style: style) }
+            text(for: children, iconFonts: iconFonts).map { emphasized($0, style: style) }
         case .lineBreak:
             Text("\n")
         case let .icon(name):
@@ -393,15 +415,28 @@ private enum StoryInlineTextRenderer {
                 "\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))"
             )
         case let .semanticIcon(icon):
-            Text(Image(systemName: icon.systemImage))
+            semanticIconText(for: icon, iconFonts: iconFonts)
         case let .cardReference(_, children):
-            text(for: children).map {
+            text(for: children, iconFonts: iconFonts).map {
                 Text(
                     "\(Image(systemName: "rectangle.portrait.on.rectangle.portrait")) \($0)"
                 )
             }
         case .paragraph, .heading, .list, .rule, .image, .table:
             nil
+        }
+    }
+
+    private static func semanticIconText(
+        for icon: StoryIcon,
+        iconFonts: WebIconFontAvailability
+    ) -> Text {
+        switch semanticIconRun(for: icon, iconFonts: iconFonts) {
+        case let .webGlyph(_, family, glyph):
+            Text(verbatim: glyph)
+                .font(.custom(family.rawValue, size: 17, relativeTo: .body))
+        case let .systemImage(name):
+            Text(Image(systemName: name))
         }
     }
 

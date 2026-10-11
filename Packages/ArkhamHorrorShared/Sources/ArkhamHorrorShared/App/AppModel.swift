@@ -138,6 +138,12 @@ final class AppModel {
     var assetCacheService: AssetCacheService?
     @ObservationIgnored let assetCacheFactory: @MainActor () -> AssetCacheService?
     @ObservationIgnored let storyAssetSourceLoader: StoryAssetSourceLoader
+    @ObservationIgnored let webIconFontLoader: any WebIconFontLoading
+    @ObservationIgnored var webIconFontTask: Task<Void, Never>?
+    @ObservationIgnored var webIconFontGeneration = 0
+    var webIconFontAvailability = WebIconFontAvailability()
+    var webIconFontFailures: [WebIconFontFamily: WebIconFontFailure] = [:]
+    var isWebIconFontLoading = false
     @ObservationIgnored let cardCatalogService: CardCatalogService
     @ObservationIgnored let campaignCatalogService: any CampaignCatalogServicing
     var cardCatalog: CardCatalogSnapshot?
@@ -383,6 +389,7 @@ final class AppModel {
         assetCacheService: AssetCacheService? = nil,
         assetCacheFactory: @escaping @MainActor () -> AssetCacheService? = { nil },
         storyAssetSourceLoader: StoryAssetSourceLoader = StoryAssetSourceLoader(),
+        webIconFontLoader: any WebIconFontLoading = WebIconFontLoader.production(),
         cardCatalogService: CardCatalogService = CardCatalogService(),
         campaignCatalogService: any CampaignCatalogServicing = CampaignCatalogService()
     ) {
@@ -401,6 +408,7 @@ final class AppModel {
         self.assetCacheService = assetCacheService
         self.assetCacheFactory = assetCacheFactory
         self.storyAssetSourceLoader = storyAssetSourceLoader
+        self.webIconFontLoader = webIconFontLoader
         self.cardCatalogService = cardCatalogService
         self.campaignCatalogService = campaignCatalogService
         startLaunchFlow()

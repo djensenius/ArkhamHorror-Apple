@@ -65,6 +65,7 @@ public struct RootView: View {
             }
         }
         .environment(\.storyAssetCache, model.assetCacheService)
+        .environment(\.storyIconFontAvailability, model.webIconFontAvailability)
         .onChange(of: route) { _, newRoute in
             if case .account = newRoute {
                 return
