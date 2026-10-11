@@ -31,7 +31,7 @@ struct AppModelWebIconFontTests {
     }
 
     @Test("AppModel default web icon font loader is disabled")
-    func defaultWebIconFontLoaderDoesNoProductionWork() async {
+    func defaultWebIconFontLoaderDoesNoProductionWork() async throws {
         let probe = GatedCapabilityProbe()
         let model = AppModel(
             profileStore: FakeServerProfileStore(),
@@ -43,7 +43,7 @@ struct AppModelWebIconFontTests {
         defer { model.webIconFontTask?.cancel() }
 
         await probe.waitUntilPending(1)
-        #expect(model.webIconFontLoader is DisabledWebIconFontLoader)
+        try #require(model.webIconFontLoader is DisabledWebIconFontLoader)
 
         await probe.resumeOldest(with: .compatible(
             capabilities: ["websockets.authorization-header"]
