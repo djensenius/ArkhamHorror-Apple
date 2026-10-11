@@ -3,6 +3,8 @@ import Foundation
 /// Shared inline icon parsing for server-provided button labels that still contain the
 /// web's literal `{iconName}` placeholders. Catalog-rendered story text already arrives as
 /// `StoryNode.semanticIcon`; this parser exists only for non-catalog label strings.
+/// Raw labels follow the web's unescaped `replaceIcons` behavior, so `{{skull}}` renders as
+/// a literal `{`, the skull icon, and a literal `}` rather than as an escaped placeholder.
 enum StoryIconInlineParser {
     static func nodes(for text: String) -> [StoryNode]? {
         var nodes: [StoryNode] = []
@@ -24,10 +26,11 @@ enum StoryIconInlineParser {
             if let icon = StoryIcon.iconVariableValue(name) {
                 nodes.append(.semanticIcon(icon))
                 foundIcon = true
+                cursor = text.index(after: close)
             } else {
-                appendText(String(text[open ... close]), to: &nodes)
+                appendText(String(text[open]), to: &nodes)
+                cursor = text.index(after: open)
             }
-            cursor = text.index(after: close)
         }
 
         return foundIcon ? nodes : nil
