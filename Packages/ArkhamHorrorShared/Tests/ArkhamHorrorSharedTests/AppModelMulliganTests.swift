@@ -60,7 +60,8 @@ extension AppModelLiveGameTests {
             liveGameClock: clock,
             liveGameRandomSource: random,
             localeCatalogLoader: loader,
-            preferredLanguagesProvider: MulliganPreferredLanguages()
+            preferredLanguagesProvider: MulliganPreferredLanguages(),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         return (
             model,

@@ -142,8 +142,6 @@ final class AppModel {
     @ObservationIgnored var webIconFontTask: Task<Void, Never>?
     @ObservationIgnored var webIconFontGeneration = 0
     var webIconFontAvailability = WebIconFontAvailability()
-    var webIconFontFailures: [WebIconFontFamily: WebIconFontFailure] = [:]
-    var isWebIconFontLoading = false
     @ObservationIgnored let cardCatalogService: CardCatalogService
     @ObservationIgnored let campaignCatalogService: any CampaignCatalogServicing
     var cardCatalog: CardCatalogSnapshot?

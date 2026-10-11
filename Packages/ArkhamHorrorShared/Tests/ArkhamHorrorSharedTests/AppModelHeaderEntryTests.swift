@@ -261,7 +261,8 @@ extension AppModelLiveGameTests {
             liveGameClock: clock,
             liveGameRandomSource: random,
             localeCatalogLoader: documents.loader(),
-            preferredLanguagesProvider: HeaderEntryPreferredLanguages()
+            preferredLanguagesProvider: HeaderEntryPreferredLanguages(),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         return (
             model,

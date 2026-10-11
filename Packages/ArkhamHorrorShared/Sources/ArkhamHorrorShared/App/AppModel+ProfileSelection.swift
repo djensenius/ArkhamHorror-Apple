@@ -133,7 +133,7 @@ extension AppModel {
         // -- rather than leaving the previous server's verified catalog momentarily readable
         // by a scene that is already rendering against the new profile.
         invalidateLocaleCatalog()
-        startWebIconFontLoad(for: profile)
+        invalidateWebIconFonts()
         sessionState = .checkingCompatibility(profile: profile)
         flowTask = Task { [weak self] in
             await self?.probeAndRestore(profile: profile, generation: generation)

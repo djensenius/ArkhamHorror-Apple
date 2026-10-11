@@ -35,7 +35,7 @@ extension AppModel {
         guard isCurrent(generation) else { return }
         profiles = resolvedProfiles
         selectedProfile = resolvedSelection
-        startWebIconFontLoad(for: resolvedSelection)
+        invalidateWebIconFonts()
         reconcileUnselectedPendingCleanupTombstones(selectedProfileID: resolvedSelection.id)
         // Re-checked here, immediately before the write below — not merely once at
         // the top of this function — because the synchronous call just above can

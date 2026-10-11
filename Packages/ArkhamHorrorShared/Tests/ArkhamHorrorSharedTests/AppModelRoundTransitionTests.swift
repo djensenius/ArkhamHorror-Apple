@@ -89,7 +89,8 @@ extension AppModelLiveGameTests {
             liveGameClock: clock,
             liveGameRandomSource: random,
             localeCatalogLoader: loader ?? documents.loader(),
-            preferredLanguagesProvider: RoundTransitionPreferredLanguages()
+            preferredLanguagesProvider: RoundTransitionPreferredLanguages(),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         return (
             model,

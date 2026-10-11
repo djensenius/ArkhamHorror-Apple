@@ -381,7 +381,8 @@ enum AssignmentContinuationReplayRunner {
             assetCacheFactory: { assetCache },
             storyAssetSourceLoader: StoryAssetSourceLoader(
                 transport: localeTransport
-            )
+            ),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         defer {
             model.flowTask?.cancel()

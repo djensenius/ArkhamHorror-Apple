@@ -2152,7 +2152,8 @@ extension AppModelLiveGameTests {
             liveGameClock: clock,
             liveGameRandomSource: random,
             localeCatalogLoader: documents.loader(),
-            preferredLanguagesProvider: AmountPromptPreferredLanguages(preferredLanguages: ["en"])
+            preferredLanguagesProvider: AmountPromptPreferredLanguages(preferredLanguages: ["en"]),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         return (
             model,

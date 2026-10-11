@@ -5,8 +5,6 @@ extension AppModel {
         webIconFontGeneration += 1
         let generation = webIconFontGeneration
         webIconFontAvailability = WebIconFontAvailability()
-        webIconFontFailures = [:]
-        isWebIconFontLoading = true
         let loader = webIconFontLoader
         webIconFontTask = Task { [weak self] in
             let report = await loader.loadFonts(for: profile)
@@ -19,8 +17,6 @@ extension AppModel {
         webIconFontTask = nil
         webIconFontGeneration += 1
         webIconFontAvailability = WebIconFontAvailability()
-        webIconFontFailures = [:]
-        isWebIconFontLoading = false
     }
 
     private func applyWebIconFontReport(
@@ -29,7 +25,5 @@ extension AppModel {
     ) {
         guard generation == webIconFontGeneration else { return }
         webIconFontAvailability = report.availability
-        webIconFontFailures = report.failures
-        isWebIconFontLoading = false
     }
 }
