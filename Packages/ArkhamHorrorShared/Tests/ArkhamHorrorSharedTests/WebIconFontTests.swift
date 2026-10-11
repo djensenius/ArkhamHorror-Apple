@@ -75,6 +75,94 @@ struct WebIconFontGlyphMappingTests {
         )
     }
 
+    @Test("Choice label literal icon placeholders become story inline glyph nodes")
+    func choiceLabelLiteralIconPlaceholdersBecomeInlineGlyphNodes() throws {
+        let nodes = try #require(StoryIconInlineParser.nodes(for: "Choose {skull}"))
+        #expect(nodes == [.text("Choose "), .semanticIcon(.chaosToken(.skull))])
+        #expect(StoryNodePresentation.accessibilityLabel(for: nodes) == "Choose skull")
+
+        let iconFonts = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: "arkhamicons"),
+        ])
+        #expect(
+            StoryInlineTextRenderer.semanticIconTextRun(
+                for: .chaosToken(.skull),
+                iconFonts: iconFonts,
+                textStyle: .body
+            ) == StoryInlineSemanticIconTextRun(
+                run: .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}"),
+                pointSize: StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .body)
+            )
+        )
+    }
+
+    @Test("Literal icon parser preserves brace edges and continues after misses")
+    func literalIconParserHandlesBraceEdges() throws {
+        #expect(StoryIconInlineParser.nodes(for: "Choose {future}") == nil)
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{future} then {skull}"))
+                == [.text("{future} then "), .semanticIcon(.chaosToken(.skull))]
+        )
+        #expect(StoryIconInlineParser.nodes(for: "Choose {skull") == nil)
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{skull} and {future"))
+                == [.semanticIcon(.chaosToken(.skull)), .text(" and {future")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{x {skull}"))
+                == [.text("{x "), .semanticIcon(.chaosToken(.skull))]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{willpower}{skull}"))
+                == [.semanticIcon(.skill(.willpower)), .semanticIcon(.chaosToken(.skull))]
+        )
+        // Raw labels match the web replaceIcons path; catalog `{{` escaping is upstream.
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{{skull}}"))
+                == [.text("{"), .semanticIcon(.chaosToken(.skull)), .text("}")]
+        )
+    }
+
+    @Test("Board chaos-token glyphs use face glyphs and honest fallbacks")
+    func boardChaosTokenGlyphsUseFaceGlyphsAndFallbacks() throws {
+        let iconFonts = WebIconFontAvailability(registrations: [
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: "arkhamicons"),
+        ])
+        let boardNodes = BoardChaosTokenGlyphPresentation.nodes(for: .skull)
+        let requiredBoardNodes = try #require(boardNodes)
+        #expect(requiredBoardNodes == [.semanticIcon(.chaosToken(.skull))])
+        #expect(StoryInlineTextRenderer.text(
+            for: requiredBoardNodes,
+            iconFonts: iconFonts,
+            textStyle: .caption
+        ) != nil)
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(for: .skull, iconFonts: iconFonts)
+                == .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}")
+        )
+        #expect(
+            StoryInlineTextRenderer.semanticIconTextRun(
+                for: .chaosToken(.skull),
+                iconFonts: iconFonts,
+                textStyle: .caption
+            ) == StoryInlineSemanticIconTextRun(
+                run: .webGlyph(iconName: "skull", fontName: "arkhamicons", glyph: "\u{E910}"),
+                pointSize: StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .caption)
+            )
+        )
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(
+                for: .skull,
+                iconFonts: WebIconFontAvailability()
+            ) == .systemImage(name: "circle.hexagongrid.fill")
+        )
+        #expect(BoardChaosTokenGlyphPresentation.nodes(for: .zero) == nil)
+        #expect(
+            BoardChaosTokenGlyphPresentation.run(for: .zero, iconFonts: iconFonts)
+                == .systemImage(name: "circle.hexagongrid.fill")
+        )
+    }
+
     private func registration(
         _ family: WebIconFontFamily,
         postScriptName: String,

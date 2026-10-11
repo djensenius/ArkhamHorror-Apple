@@ -96,16 +96,38 @@ enum BasicChoiceServerFeedbackSource: Sendable, Equatable {
     case gameError
 }
 
+struct BasicChoiceResolvedLabelText: Sendable, Equatable {
+    let title: String
+    let inlineNodes: [StoryNode]?
+
+    init(title: String, inlineNodes: [StoryNode]? = nil) {
+        self.title = title
+        self.inlineNodes = inlineNodes
+    }
+}
+
 /// One localized choice label captured from the same immutable catalog snapshot used by
 /// every prompt surface. Raw wire keys are never a presentation fallback.
 enum BasicChoiceLabelResolution: Sendable, Equatable {
-    case resolved(String)
+    case resolved(BasicChoiceResolvedLabelText)
     case unavailable(StoryUnavailableReason)
 
+    static func resolved(_ title: String) -> Self {
+        .resolved(BasicChoiceResolvedLabelText(title: title))
+    }
+
     var title: String? {
-        guard case let .resolved(value) = self else { return nil }
+        let value = switch self {
+        case let .resolved(label): label.title
+        case .unavailable: ""
+        }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var inlineNodes: [StoryNode]? {
+        guard case let .resolved(label) = self else { return nil }
+        return label.inlineNodes
     }
 
     var unavailableReason: StoryUnavailableReason? {

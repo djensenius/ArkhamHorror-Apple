@@ -574,7 +574,7 @@ extension AppModel {
         let unavailability = localeCatalogUnavailability ?? .catalog(.notAdvertised)
         var result: [Key: BasicChoiceLabelResolution] = [:]
         for label in labels {
-            switch StoryNarrativeLocalization.resolveProductionChoiceLabel(
+            switch StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
                 label.wireLabel,
                 resolver: resolver,
                 catalogUnavailability: unavailability

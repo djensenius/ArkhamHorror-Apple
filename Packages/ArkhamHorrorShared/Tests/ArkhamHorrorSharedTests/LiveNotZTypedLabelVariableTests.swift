@@ -3,6 +3,7 @@ import Foundation
 import Testing
 
 @Suite("Live NotZ typed label variable rendering")
+// swiftlint:disable:next type_body_length
 struct LiveNotZTypedLabelVariableTests {
     @Test("Roland c01142 q16 typed label variables resolve through the production catalog")
     @MainActor
@@ -41,8 +42,21 @@ struct LiveNotZTypedLabelVariableTests {
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
         #expect(resolved.title == "Discard 2 cards with wild icons")
+        #expect(resolved.accessibilityLabel == "Discard 2 cards with wild icons")
+        #expect(resolved.titleNodes == [
+            .text("Discard 2 cards with "),
+            .semanticIcon(.skill(.wild)),
+            .text(" icons"),
+        ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
-        #expect(prompt.choiceLabelResolutions[0] == .resolved("Discard 2 cards with wild icons"))
+        #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
+            title: "Discard 2 cards with wild icons",
+            inlineNodes: [
+                .text("Discard 2 cards with "),
+                .semanticIcon(.skill(.wild)),
+                .text(" icons"),
+            ]
+        )))
     }
 
     @Test("Seal icon choice labels resolve through the production label path")
@@ -59,10 +73,20 @@ struct LiveNotZTypedLabelVariableTests {
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
         #expect(resolved.title == "Choose an investigator to take seal e")
+        #expect(resolved.accessibilityLabel == "Choose an investigator to take seal e")
+        #expect(resolved.titleNodes == [
+            .text("Choose an investigator to take "),
+            .semanticIcon(.seal(.sealE)),
+        ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
         #expect(
-            prompt.choiceLabelResolutions[0]
-                == .resolved("Choose an investigator to take seal e")
+            prompt.choiceLabelResolutions[0] == .resolved(.init(
+                title: "Choose an investigator to take seal e",
+                inlineNodes: [
+                    .text("Choose an investigator to take "),
+                    .semanticIcon(.seal(.sealE)),
+                ]
+            ))
         )
     }
 
