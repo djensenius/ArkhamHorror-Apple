@@ -22,6 +22,9 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
         guard let cgFont, let postScriptName = cgFont.postScriptName as String? else {
             throw WebIconFontFailure.invalidFont
         }
+        guard postScriptName == expectedFamily.expectedPostScriptName else {
+            throw WebIconFontFailure.invalidFont
+        }
         let byteFont = CTFontCreateWithGraphicsFont(cgFont, 17, nil, nil)
         let byteSupportedScalars = Self.supportedScalars(
             requiredGlyphs.map(\.scalar),

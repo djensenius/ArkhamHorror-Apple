@@ -11,6 +11,17 @@ enum WebIconFontFamily: String, CaseIterable, Sendable, Hashable, Codable {
     case arkhamIcons = "ArkhamIcons"
     case arkhamSlim = "ArkhamSlim"
     case icons = "Icons"
+
+    /// Internal PostScript names from the real font files at fork commit
+    /// 4203738708b0ad2d3cff426b4ce2e6b3d9904fec (`frontend/public/fonts`).
+    var expectedPostScriptName: String {
+        switch self {
+        case .arkham: "AHLCG"
+        case .arkhamIcons: "arkhamicons"
+        case .arkhamSlim: "arkhamslim"
+        case .icons: "icon"
+        }
+    }
 }
 
 struct WebIconFontSource: Sendable, Equatable, Hashable {
@@ -36,7 +47,7 @@ enum WebIconFontSources {
 struct WebIconFontRegistration: Sendable, Equatable {
     let family: WebIconFontFamily
     /// The actual CoreText/PostScript font name. This intentionally is not the CSS name:
-    /// the web font files use internal names such as `AH LCG`, `arkhamicons`, and `icon`.
+    /// the web font files use internal names such as `AHLCG`, `arkhamicons`, and `icon`.
     let postScriptName: String
     let supportedScalars: Set<UInt32>
 

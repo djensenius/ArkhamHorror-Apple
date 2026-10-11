@@ -1,5 +1,6 @@
 // swiftlint:disable file_length
 @testable import ArkhamHorrorShared
+import CoreText
 import CryptoKit
 import Foundation
 import Testing
@@ -621,6 +622,32 @@ struct WebIconFontLoaderTests {
         #expect(response.data.isEmpty)
     }
 
+    @Test("Loader rejects a wrong-identity CoreText font and falls back")
+    func loaderRejectsWrongPostScriptIdentity() async throws {
+        let wrongFontData = try systemFontData(postScriptName: "ArialRoundedMTBold")
+        let transport = FakeWebIconFontTransport(
+            responses: [
+                "/fonts/arkham.ttf": .success(data: wrongFontData),
+            ],
+            defaultResponse: .failure(.unexpectedStatus(404))
+        )
+        let loader = WebIconFontLoader(
+            transport: transport,
+            registrar: CoreTextWebIconFontRegistrar()
+        )
+
+        let report = try await loader.loadFonts(for: profile())
+
+        #expect(report.failures[.arkham] == .invalidFont)
+        #expect(!report.loadedFamilies.contains(.arkham))
+        #expect(
+            StoryInlineTextRenderer.semanticIconRun(
+                for: .skill(.willpower),
+                iconFonts: report.availability
+            ) == .systemImage(name: "brain.head.profile")
+        )
+    }
+
     @Test("CoreText registrar maps bad font bytes to invalidFont")
     func coreTextRegistrarRejectsBadBytes() throws {
         let registrar = CoreTextWebIconFontRegistrar()
@@ -651,6 +678,17 @@ struct WebIconFontLoaderTests {
         return configuration
     }
 
+    private func systemFontData(postScriptName: String) throws -> Data {
+        let font = CTFontCreateWithName(postScriptName as CFString, 17, nil)
+        guard CTFontCopyPostScriptName(font) as String == postScriptName else {
+            throw FontFixtureError.unavailable(postScriptName)
+        }
+        let descriptor = CTFontCopyFontDescriptor(font)
+        guard let url = CTFontDescriptorCopyAttribute(descriptor, kCTFontURLAttribute) as? URL
+        else { throw FontFixtureError.unavailable(postScriptName) }
+        return try Data(contentsOf: url)
+    }
+
     private func profile() throws -> ServerProfile {
         try ServerProfile.custom(displayName: "Test", rawURL: "https://game.example.test")
     }
@@ -665,6 +703,10 @@ struct WebIconFontLoaderTests {
             SHA256Hex.digest(key.urlString + "\n" + key.validator) + ".font"
         )
     }
+}
+
+private enum FontFixtureError: Error {
+    case unavailable(String)
 }
 
 private enum SHA256Hex {
@@ -812,17 +854,6 @@ private struct PrefixWebIconFontRegistrar: WebIconFontRegistering {
     }
 }
 
-private extension WebIconFontFamily {
-    var syntheticPostScriptName: String {
-        switch self {
-        case .arkham: "AHLCG"
-        case .arkhamIcons: "arkhamicons"
-        case .arkhamSlim: "arkhamslim"
-        case .icons: "icon"
-        }
-    }
-}
-
 private actor FakeWebIconFontTransport: WebIconFontTransporting {
     enum Response: Sendable {
         case success(
@@ -911,7 +942,7 @@ private actor FakeWebIconFontTransport: WebIconFontTransporting {
             .filter { $0.family == family && !excludedIconNames.contains($0.iconName) }
             .map { String(format: "%04X", $0.scalar.value) }
             .joined(separator: ",")
-        let postScriptName = postScriptName ?? family.syntheticPostScriptName
+        let postScriptName = postScriptName ?? family.expectedPostScriptName
         return Data(
             "font:\(family.rawValue):ps=\(postScriptName):glyphs=\(glyphs)".utf8
         )
