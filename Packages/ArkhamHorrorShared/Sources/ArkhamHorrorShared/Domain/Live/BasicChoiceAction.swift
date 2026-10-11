@@ -108,15 +108,17 @@ struct BasicChoiceResolvedLabelText: Sendable, Equatable {
 
 /// One localized choice label captured from the same immutable catalog snapshot used by
 /// every prompt surface. Raw wire keys are never a presentation fallback.
-enum BasicChoiceLabelResolution: Sendable {
-    case resolved(String)
-    case resolvedLabel(BasicChoiceResolvedLabelText)
+enum BasicChoiceLabelResolution: Sendable, Equatable {
+    case resolved(BasicChoiceResolvedLabelText)
     case unavailable(StoryUnavailableReason)
+
+    static func resolved(_ title: String) -> Self {
+        .resolved(BasicChoiceResolvedLabelText(title: title))
+    }
 
     var title: String? {
         let value = switch self {
-        case let .resolved(value): value
-        case let .resolvedLabel(label): label.title
+        case let .resolved(label): label.title
         case .unavailable: ""
         }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -124,7 +126,7 @@ enum BasicChoiceLabelResolution: Sendable {
     }
 
     var inlineNodes: [StoryNode]? {
-        guard case let .resolvedLabel(label) = self else { return nil }
+        guard case let .resolved(label) = self else { return nil }
         return label.inlineNodes
     }
 
@@ -167,25 +169,6 @@ enum BasicChoiceLabelResolution: Sendable {
                 "basicChoice.choiceText.variable",
                 "The text for this choice needs a value this app cannot display."
             )
-        }
-    }
-}
-
-extension BasicChoiceLabelResolution: Equatable {
-    static func == (lhs: BasicChoiceLabelResolution, rhs: BasicChoiceLabelResolution) -> Bool {
-        switch (lhs, rhs) {
-        case let (.resolved(left), .resolved(right)):
-            left == right
-        case let (.resolvedLabel(left), .resolvedLabel(right)):
-            left == right
-        case let (.unavailable(left), .unavailable(right)):
-            left == right
-        case let (.resolved(left), .resolvedLabel(right)):
-            left == right.title
-        case let (.resolvedLabel(left), .resolved(right)):
-            left.title == right
-        default:
-            false
         }
     }
 }

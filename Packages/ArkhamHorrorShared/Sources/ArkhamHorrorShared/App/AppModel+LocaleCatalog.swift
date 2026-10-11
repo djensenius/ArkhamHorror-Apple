@@ -580,11 +580,7 @@ extension AppModel {
                 catalogUnavailability: unavailability
             ) {
             case let .success(value):
-                if value.inlineNodes == nil {
-                    result[label.key] = .resolved(value.title)
-                } else {
-                    result[label.key] = .resolvedLabel(value)
-                }
+                result[label.key] = .resolved(value)
             case let .failure(reason):
                 result[label.key] = .unavailable(reason)
             }

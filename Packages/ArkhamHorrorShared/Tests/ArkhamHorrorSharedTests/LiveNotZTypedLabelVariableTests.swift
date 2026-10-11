@@ -48,7 +48,14 @@ struct LiveNotZTypedLabelVariableTests {
             .text(" icons"),
         ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
-        #expect(prompt.choiceLabelResolutions[0] == .resolved("Discard 2 cards with wild icons"))
+        #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
+            title: "Discard 2 cards with wild icons",
+            inlineNodes: [
+                .text("Discard 2 cards with "),
+                .semanticIcon(.skill(.wild)),
+                .text(" icons"),
+            ]
+        )))
     }
 
     @Test("Seal icon choice labels resolve through the production label path")
@@ -72,8 +79,13 @@ struct LiveNotZTypedLabelVariableTests {
         ])
         #expect(prompt.isChoiceActionable(choice, in: projection))
         #expect(
-            prompt.choiceLabelResolutions[0]
-                == .resolved("Choose an investigator to take seal e")
+            prompt.choiceLabelResolutions[0] == .resolved(.init(
+                title: "Choose an investigator to take seal e",
+                inlineNodes: [
+                    .text("Choose an investigator to take "),
+                    .semanticIcon(.seal(.sealE)),
+                ]
+            ))
         )
     }
 
