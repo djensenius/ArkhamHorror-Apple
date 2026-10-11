@@ -9,8 +9,13 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
     ) throws -> WebIconFontRegistration {
         let descriptors = CTFontManagerCreateFontDescriptorsFromData(data as CFData)
             as? [CTFontDescriptor]
-        let provider = CGDataProvider(data: data as CFData)
-        let cgFont = provider.flatMap(CGFont.init)
+        let provider: CGDataProvider? = CGDataProvider(data: data as CFData)
+        let cgFont: CGFont?
+        if let provider {
+            cgFont = CGFont(provider)
+        } else {
+            cgFont = nil
+        }
         guard descriptors?.isEmpty == false || cgFont != nil else {
             throw WebIconFontFailure.invalidFont
         }
@@ -26,8 +31,9 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
 
         var error: Unmanaged<CFError>?
         if !CTFontManagerRegisterGraphicsFont(cgFont, &error) {
-            let registrationError = error?.takeRetainedValue() as NSError?
-            let code = registrationError?.code
+            let cfError: CFError? = error?.takeRetainedValue()
+            let nsError: NSError? = cfError.map { $0 as Error as NSError }
+            let code: Int? = nsError?.code
             guard Self.isAlreadyRegistered(code), Self.resolvedFont(named: postScriptName) != nil
             else { throw WebIconFontFailure.registrationFailed(code) }
         }
