@@ -1,9 +1,9 @@
-// swiftlint:disable type_body_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
 
 @Suite("Live NotZ typed label variable rendering")
+// swiftlint:disable:next type_body_length
 struct LiveNotZTypedLabelVariableTests {
     @Test("Roland c01142 q16 typed label variables resolve through the production catalog")
     @MainActor

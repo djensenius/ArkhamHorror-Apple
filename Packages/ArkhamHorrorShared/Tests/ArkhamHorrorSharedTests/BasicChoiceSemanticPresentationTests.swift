@@ -1,10 +1,11 @@
-// swiftlint:disable file_length type_body_length
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
 
 @MainActor
 @Suite("Basic choice semantic presentation")
+// swiftlint:disable:next type_body_length
 struct BasicChoiceSemanticPresentationTests {
     @Test("Q34 renders and submits source index 12 through generic advanceAct")
     func q34AdvanceActUsesGenericPath() throws {
