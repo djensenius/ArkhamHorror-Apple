@@ -30,13 +30,33 @@ protocol WebIconFontLoading: Sendable {
 }
 
 protocol WebIconFontTransporting: Sendable {
-    func fetch(_ url: URL, maxBytes: Int) async throws -> WebIconFontHTTPResponse
+    func fetch(_ request: WebIconFontHTTPRequest, maxBytes: Int) async throws -> WebIconFontHTTPResponse
+}
+
+struct WebIconFontHTTPRequest: Sendable, Equatable {
+    let url: URL
+    let ifNoneMatch: String?
+    let ifModifiedSince: String?
+
+    init(url: URL, ifNoneMatch: String? = nil, ifModifiedSince: String? = nil) {
+        self.url = url
+        self.ifNoneMatch = ifNoneMatch
+        self.ifModifiedSince = ifModifiedSince
+    }
 }
 
 struct WebIconFontHTTPResponse: Sendable, Equatable {
     let statusCode: Int
     let etag: String?
+    let lastModified: String?
     let data: Data
+
+    init(statusCode: Int, etag: String? = nil, lastModified: String? = nil, data: Data) {
+        self.statusCode = statusCode
+        self.etag = etag
+        self.lastModified = lastModified
+        self.data = data
+    }
 }
 
 protocol WebIconFontRegistering: Sendable {
@@ -97,22 +117,38 @@ actor WebIconFontLoader: WebIconFontLoading {
         guard let url = Self.url(for: source, profile: profile) else {
             throw WebIconFontFailure.invalidURL
         }
-        if let data = await cachedData(for: url) {
+        if let cached = await cachedFont(for: url) {
             do {
-                return try registrar.validateAndRegister(
-                    data,
+                let registration = try registrar.validateAndRegister(
+                    cached.data,
                     expectedFamily: source.family,
                     requiredGlyphs: Self.requiredGlyphs(for: source.family)
                 )
+                if cached.origin == .disk {
+                    startDiskCacheRevalidation(source: source, url: url, cached: cached)
+                }
+                return registration
             } catch {
                 latestKeyByURL[url] = nil
+                memoryCache[cached.key] = nil
                 try? diskCache?.remove(url: url)
             }
         }
 
+        return try await fetchAndRegister(source, url: url)
+    }
+
+    private static func requiredGlyphs(for family: WebIconFontFamily) -> [StoryIconGlyph] {
+        StoryIconGlyph.all.filter { $0.family == family }
+    }
+
+    private func fetchAndRegister(
+        _ source: WebIconFontSource,
+        url: URL
+    ) async throws -> WebIconFontRegistration {
         let response: WebIconFontHTTPResponse
         do {
-            response = try await transport.fetch(url, maxBytes: Self.maxFontBytes)
+            response = try await transport.fetch(WebIconFontHTTPRequest(url: url), maxBytes: Self.maxFontBytes)
         } catch let failure as WebIconFontFailure {
             throw failure
         } catch {
@@ -126,25 +162,86 @@ actor WebIconFontLoader: WebIconFontLoading {
             expectedFamily: source.family,
             requiredGlyphs: Self.requiredGlyphs(for: source.family)
         )
-        let key = WebIconFontCacheKey(url: url, etag: response.etag, data: response.data)
+        let key = WebIconFontCacheKey(
+            url: url, etag: response.etag, lastModified: response.lastModified, data: response.data
+        )
         memoryCache[key] = response.data
         latestKeyByURL[url] = key
         try? diskCache?.store(data: response.data, key: key)
         return registration
     }
 
-    private static func requiredGlyphs(for family: WebIconFontFamily) -> [StoryIconGlyph] {
-        StoryIconGlyph.all.filter { $0.family == family }
+    private func cachedFont(for url: URL) async -> CachedWebIconFont? {
+        if let key = latestKeyByURL[url], let data = memoryCache[key] {
+            return CachedWebIconFont(key: key, data: data, origin: .memory)
+        }
+        do {
+            guard let stored = try diskCache?.load(url: url) else { return nil }
+            memoryCache[stored.key] = stored.data
+            latestKeyByURL[url] = stored.key
+            return CachedWebIconFont(key: stored.key, data: stored.data, origin: .disk)
+        } catch {
+            latestKeyByURL[url] = nil
+            try? diskCache?.remove(url: url)
+            return nil
+        }
     }
 
-    private func cachedData(for url: URL) async -> Data? {
-        if let key = latestKeyByURL[url], let data = memoryCache[key] {
-            return data
+    private func startDiskCacheRevalidation(
+        source: WebIconFontSource,
+        url: URL,
+        cached: CachedWebIconFont
+    ) {
+        Task { [source, url, cached] in
+            await self.revalidateDiskCache(source: source, url: url, cached: cached)
         }
-        guard let stored = try? diskCache?.load(url: url) else { return nil }
-        memoryCache[stored.key] = stored.data
-        latestKeyByURL[url] = stored.key
-        return stored.data
+    }
+
+    /// Mirrors `AssetCacheService.performRevalidation`: a disk hit is served immediately,
+    /// then its exact URL is conditionally re-requested with the stored validators.
+    /// `304` keeps the existing payload; a valid `200` atomically replaces it; all other
+    /// statuses or failures leave the cached font in place.
+    private func revalidateDiskCache(
+        source: WebIconFontSource,
+        url: URL,
+        cached: CachedWebIconFont
+    ) async {
+        let request = WebIconFontHTTPRequest(
+            url: url,
+            ifNoneMatch: cached.key.etagHeader,
+            ifModifiedSince: cached.key.lastModifiedHeader
+        )
+        let response: WebIconFontHTTPResponse
+        do {
+            response = try await transport.fetch(request, maxBytes: Self.maxFontBytes)
+        } catch {
+            return
+        }
+        switch response.statusCode {
+        case 304:
+            return
+        case 200:
+            do {
+                _ = try registrar.validateAndRegister(
+                    response.data,
+                    expectedFamily: source.family,
+                    requiredGlyphs: Self.requiredGlyphs(for: source.family)
+                )
+                guard latestKeyByURL[url] == cached.key else { return }
+                let key = WebIconFontCacheKey(
+                    url: url, etag: response.etag,
+                    lastModified: response.lastModified, data: response.data
+                )
+                memoryCache[cached.key] = nil
+                memoryCache[key] = response.data
+                latestKeyByURL[url] = key
+                try? diskCache?.store(data: response.data, key: key)
+            } catch {
+                return
+            }
+        default:
+            return
+        }
     }
 
     /// Uses the same configured-origin rule as the existing static roots:
@@ -164,18 +261,23 @@ actor WebIconFontLoader: WebIconFontLoading {
     }
 }
 
+private struct CachedWebIconFont: Sendable {
+    enum Origin: Sendable {
+        case memory
+        case disk
+    }
+
+    let key: WebIconFontCacheKey
+    let data: Data
+    let origin: Origin
+}
+
 struct URLSessionWebIconFontTransport: WebIconFontTransporting {
     private let session: URLSession
 
     init(timeout: TimeInterval = 15) {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.httpCookieStorage = nil
-        configuration.httpShouldSetCookies = false
-        configuration.urlCredentialStorage = nil
-        configuration.urlCache = nil
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        configuration.timeoutIntervalForRequest = timeout
-        configuration.timeoutIntervalForResource = timeout
+        var configuration = URLSessionConfiguration.ephemeral
+        Self.harden(&configuration, timeout: timeout)
         session = URLSession(
             configuration: configuration,
             delegate: RedirectRejectingURLSessionDelegate(),
@@ -183,20 +285,46 @@ struct URLSessionWebIconFontTransport: WebIconFontTransporting {
         )
     }
 
-    func fetch(_ url: URL, maxBytes: Int) async throws -> WebIconFontHTTPResponse {
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue(
+    init(configuration: URLSessionConfiguration, timeout: TimeInterval = 15) {
+        var configuration = configuration
+        Self.harden(&configuration, timeout: timeout)
+        session = URLSession(
+            configuration: configuration,
+            delegate: RedirectRejectingURLSessionDelegate(),
+            delegateQueue: nil
+        )
+    }
+
+    private static func harden(_ configuration: inout URLSessionConfiguration, timeout: TimeInterval) {
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        configuration.timeoutIntervalForRequest = timeout
+        configuration.timeoutIntervalForResource = timeout
+    }
+
+    func fetch(_ request: WebIconFontHTTPRequest, maxBytes: Int) async throws -> WebIconFontHTTPResponse {
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = "GET"
+        urlRequest.setValue(
             "font/ttf, font/woff2, application/octet-stream",
             forHTTPHeaderField: "Accept"
         )
-        request.httpShouldHandleCookies = false
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        if let ifNoneMatch = request.ifNoneMatch {
+            urlRequest.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
+        }
+        if let ifModifiedSince = request.ifModifiedSince {
+            urlRequest.setValue(ifModifiedSince, forHTTPHeaderField: "If-Modified-Since")
+        }
+        urlRequest.httpShouldHandleCookies = false
+        urlRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
 
         let stream: URLSession.AsyncBytes
         let response: URLResponse
         do {
-            (stream, response) = try await session.bytes(for: request)
+            (stream, response) = try await session.bytes(for: urlRequest)
         } catch let cancellation as CancellationError {
             throw cancellation
         } catch {
@@ -206,6 +334,14 @@ struct URLSessionWebIconFontTransport: WebIconFontTransporting {
         guard let http = response as? HTTPURLResponse else {
             throw WebIconFontFailure.transportFailure
         }
+        let etag = http.value(forHTTPHeaderField: "ETag")
+        let lastModified = http.value(forHTTPHeaderField: "Last-Modified")
+        guard http.statusCode == 200 else {
+            stream.task.cancel()
+            return WebIconFontHTTPResponse(
+                statusCode: http.statusCode, etag: etag, lastModified: lastModified, data: Data()
+            )
+        }
         if http.expectedContentLength > Int64(maxBytes) {
             stream.task.cancel()
             throw WebIconFontFailure.tooLarge
@@ -213,7 +349,8 @@ struct URLSessionWebIconFontTransport: WebIconFontTransporting {
         let data = try await Self.readBounded(stream, maxBytes: maxBytes)
         return WebIconFontHTTPResponse(
             statusCode: http.statusCode,
-            etag: http.value(forHTTPHeaderField: "ETag"),
+            etag: etag,
+            lastModified: lastModified,
             data: data
         )
     }
@@ -261,25 +398,44 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
         guard let cgFont, let postScriptName = cgFont.postScriptName as String? else {
             throw WebIconFontFailure.invalidFont
         }
-        let ctFont = CTFontCreateWithGraphicsFont(cgFont, 17, nil, nil)
-        let supportedScalars = Self.supportedScalars(
+        let byteFont = CTFontCreateWithGraphicsFont(cgFont, 17, nil, nil)
+        let byteSupportedScalars = Self.supportedScalars(
             requiredGlyphs.map(\.scalar),
-            in: ctFont
+            in: byteFont
         )
-        guard !supportedScalars.isEmpty else { throw WebIconFontFailure.invalidFont }
+        guard !byteSupportedScalars.isEmpty else { throw WebIconFontFailure.invalidFont }
 
         var error: Unmanaged<CFError>?
         if !CTFontManagerRegisterGraphicsFont(cgFont, &error) {
             let registrationError = error?.takeRetainedValue() as NSError?
-            if registrationError?.code != CTFontManagerError.alreadyRegistered.rawValue {
-                throw WebIconFontFailure.registrationFailed(registrationError?.code)
-            }
+            let code = registrationError?.code
+            guard Self.isAlreadyRegistered(code), Self.resolvedFont(named: postScriptName) != nil
+            else { throw WebIconFontFailure.registrationFailed(code) }
         }
+        guard let resolvedFont = Self.resolvedFont(named: postScriptName) else {
+            throw WebIconFontFailure.invalidFont
+        }
+        let supportedScalars = Self.supportedScalars(
+            requiredGlyphs.map(\.scalar),
+            in: resolvedFont
+        )
+        guard !supportedScalars.isEmpty else { throw WebIconFontFailure.invalidFont }
         return WebIconFontRegistration(
             family: expectedFamily,
             postScriptName: postScriptName,
             supportedScalars: supportedScalars
         )
+    }
+
+    private static func isAlreadyRegistered(_ code: Int?) -> Bool {
+        code == CTFontManagerError.alreadyRegistered.rawValue
+            || code == CTFontManagerError.duplicatedName.rawValue
+    }
+
+    private static func resolvedFont(named postScriptName: String) -> CTFont? {
+        let font = CTFontCreateWithName(postScriptName as CFString, 17, nil)
+        guard CTFontCopyPostScriptName(font) as String == postScriptName else { return nil }
+        return font
     }
 
     private static func supportedScalars(
@@ -301,14 +457,37 @@ struct CoreTextWebIconFontRegistrar: WebIconFontRegistering {
 struct WebIconFontCacheKey: Sendable, Hashable, Codable {
     let urlString: String
     let validator: String
+    let lastModified: String?
 
-    init(url: URL, etag: String?, data: Data) {
+    init(url: URL, etag: String?, lastModified: String?, data: Data) {
         urlString = url.absoluteString
-        if let etag, !etag.isEmpty {
-            validator = "etag:\(etag)"
+        let normalizedETag = etag.flatMap(Self.nonEmpty)
+        let normalizedLastModified = lastModified.flatMap(Self.nonEmpty)
+        self.lastModified = normalizedLastModified
+        if let normalizedETag {
+            validator = "etag:\(normalizedETag)"
+        } else if let normalizedLastModified {
+            validator = "last-modified:\(normalizedLastModified)"
         } else {
             validator = "sha256:\(Self.sha256Hex(data))"
         }
+    }
+
+    var etagHeader: String? {
+        value(forPrefix: "etag:")
+    }
+
+    var lastModifiedHeader: String? {
+        lastModified ?? value(forPrefix: "last-modified:")
+    }
+
+    private func value(forPrefix prefix: String) -> String? {
+        guard validator.hasPrefix(prefix) else { return nil }
+        return String(validator.dropFirst(prefix.count))
+    }
+
+    private static func nonEmpty(_ value: String) -> String? {
+        value.isEmpty ? nil : value
     }
 
     private static func sha256Hex(_ data: Data) -> String {
@@ -335,46 +514,71 @@ struct WebIconFontDiskCache: @unchecked Sendable {
 
     func store(data: Data, key: WebIconFontCacheKey) throws {
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
-        let payloadName = Self.digest(key.urlString + "\n" + key.validator) + ".font"
-        try data.write(to: root.appendingPathComponent(payloadName), options: [.atomic])
-        let metadata = Metadata(key: key, payloadName: payloadName)
+        let metadataURL = metadataURL(for: key.urlString)
+        let oldPayloadURL = existingPayloadURL(metadataURL: metadataURL)
+        let newPayloadURL = payloadURL(for: key)
+        try data.write(to: newPayloadURL, options: [.atomic])
+        let metadata = Metadata(key: key)
         let encoded = try JSONEncoder().encode(metadata)
-        try encoded.write(to: metadataURL(for: key.urlString), options: [.atomic])
+        try encoded.write(to: metadataURL, options: [.atomic])
+        if let oldPayloadURL, oldPayloadURL != newPayloadURL {
+            try? fileManager.removeItem(at: oldPayloadURL)
+        }
     }
 
     func load(url: URL) throws -> (key: WebIconFontCacheKey, data: Data)? {
         let metadataURL = metadataURL(for: url.absoluteString)
         guard fileManager.fileExists(atPath: metadataURL.path) else { return nil }
+        var decodedKey: WebIconFontCacheKey?
         do {
             let metadata = try JSONDecoder().decode(
                 Metadata.self,
                 from: Data(contentsOf: metadataURL)
             )
+            decodedKey = metadata.key
             guard metadata.key.urlString == url.absoluteString else {
                 throw WebIconFontFailure.cacheCorrupted
             }
-            let data = try Data(contentsOf: root.appendingPathComponent(metadata.payloadName))
+            let data = try Data(contentsOf: payloadURL(for: metadata.key))
             guard metadata.key.validator.hasPrefix("etag:")
+                || metadata.key.validator.hasPrefix("last-modified:")
                 || metadata.key.validator == "sha256:\(Self.digestData(data))"
             else { throw WebIconFontFailure.cacheCorrupted }
             return (metadata.key, data)
         } catch {
             try? fileManager.removeItem(at: metadataURL)
+            if let decodedKey {
+                try? fileManager.removeItem(at: payloadURL(for: decodedKey))
+            }
             throw error
         }
     }
 
     func remove(url: URL) throws {
-        try? fileManager.removeItem(at: metadataURL(for: url.absoluteString))
+        let metadataURL = metadataURL(for: url.absoluteString)
+        if let payloadURL = existingPayloadURL(metadataURL: metadataURL) {
+            try? fileManager.removeItem(at: payloadURL)
+        }
+        try? fileManager.removeItem(at: metadataURL)
     }
 
     private func metadataURL(for urlString: String) -> URL {
         root.appendingPathComponent(Self.digest(urlString) + ".json")
     }
 
+    private func payloadURL(for key: WebIconFontCacheKey) -> URL {
+        root.appendingPathComponent(Self.digest(key.urlString + "\n" + key.validator) + ".font")
+    }
+
+    private func existingPayloadURL(metadataURL: URL) -> URL? {
+        guard let data = try? Data(contentsOf: metadataURL),
+              let metadata = try? JSONDecoder().decode(Metadata.self, from: data)
+        else { return nil }
+        return payloadURL(for: metadata.key)
+    }
+
     private struct Metadata: Codable {
         let key: WebIconFontCacheKey
-        let payloadName: String
     }
 
     private static func digest(_ value: String) -> String {
