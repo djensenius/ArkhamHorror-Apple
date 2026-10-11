@@ -37,7 +37,8 @@ struct AppModelLocaleCatalogTests {
             authenticationSession: ScriptedAuthenticating(),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             localeCatalogLoader: loader,
-            preferredLanguagesProvider: SyntheticPreferredLanguages(preferredLanguages: ["en-US"])
+            preferredLanguagesProvider: SyntheticPreferredLanguages(preferredLanguages: ["en-US"]),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
     }
 

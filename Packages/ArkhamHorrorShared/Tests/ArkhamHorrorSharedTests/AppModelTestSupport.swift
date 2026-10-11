@@ -247,3 +247,70 @@ let sampleCustomProfile: ServerProfile = {
         fatalError("sampleCustomProfile fixture must be a valid custom profile: \(error)")
     }
 }()
+
+/// A Web icon font loader that never touches the network or disk. AppModel tests inject
+/// this the same way they inject scripted capability, locale-catalog, and authentication
+/// services so unit tests cannot reach live hosts or the real Caches directory.
+struct NoopWebIconFontLoader: WebIconFontLoading {
+    func loadFonts(for _: ServerProfile) async -> WebIconFontLoadReport {
+        WebIconFontLoadReport(registrations: [:], failures: [:])
+    }
+}
+
+actor RecordingWebIconFontLoader: WebIconFontLoading {
+    private(set) var requestedProfileIDs: [UUID] = []
+
+    func loadFonts(for profile: ServerProfile) async -> WebIconFontLoadReport {
+        requestedProfileIDs.append(profile.id)
+        return WebIconFontLoadReport(registrations: [:], failures: [:])
+    }
+
+    var callCount: Int {
+        requestedProfileIDs.count
+    }
+}
+
+actor GatedWebIconFontLoader: WebIconFontLoading {
+    private var continuations: [CheckedContinuation<WebIconFontLoadReport, Never>] = []
+    private var pendingWaiters: [
+        (threshold: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+    private(set) var requestedProfileIDs: [UUID] = []
+
+    func loadFonts(for profile: ServerProfile) async -> WebIconFontLoadReport {
+        requestedProfileIDs.append(profile.id)
+        return await withCheckedContinuation { continuation in
+            continuations.append(continuation)
+            notifyWaiters()
+        }
+    }
+
+    func waitUntilPending(_ count: Int) async {
+        if continuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { pendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldest(with report: WebIconFontLoadReport) {
+        guard !continuations.isEmpty else { return }
+        continuations.removeFirst().resume(returning: report)
+    }
+
+    func resumeNewest(with report: WebIconFontLoadReport) {
+        guard !continuations.isEmpty else { return }
+        continuations.removeLast().resume(returning: report)
+    }
+
+    var callCount: Int {
+        requestedProfileIDs.count
+    }
+
+    private func notifyWaiters() {
+        pendingWaiters.removeAll { entry in
+            guard continuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+}

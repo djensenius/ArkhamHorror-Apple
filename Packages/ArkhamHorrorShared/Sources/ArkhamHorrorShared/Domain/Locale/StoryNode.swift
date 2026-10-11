@@ -205,7 +205,7 @@ enum StoryIcon: Sendable, Equatable, Hashable {
     }
 }
 
-private extension ChaosTokenArtFace {
+extension ChaosTokenArtFace {
     // swiftlint:disable:next cyclomatic_complexity
     static func iconVariableValue(_ value: String) -> ChaosTokenArtFace? {
         switch value {

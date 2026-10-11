@@ -17,6 +17,8 @@ extension AppModel {
         switch outcome {
         case let .compatible(capabilities, localeCatalog, campaignCatalog):
             compatibility = .modern(capabilities: capabilities, campaignCatalog: campaignCatalog)
+            guard isCurrent(generation) else { return }
+            startWebIconFontLoad(for: profile)
             // Bound to the exact profile this probe ran against, and installed before any
             // token work, so a story key can start resolving as soon as a catalog arrives
             // without waiting on authentication. A later profile switch advances

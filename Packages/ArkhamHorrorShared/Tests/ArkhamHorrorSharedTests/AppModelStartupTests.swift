@@ -189,7 +189,8 @@ extension AppModelTests {
             tokenStore: FakeTokenStore(),
             capabilityProbe: ScriptedCapabilityProbe(.outcome(.compatible(capabilities: ["a"]))),
             authenticationSession: ScriptedAuthenticating(),
-            cleanupPendingStore: FakeTokenCleanupPendingStore()
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         await model.flowTask?.value
 

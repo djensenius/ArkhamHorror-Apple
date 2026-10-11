@@ -2182,7 +2182,8 @@ struct LiveNightOfTheZealotPlaythroughTests {
             authenticationSession: ScriptedAuthenticating(),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             localeCatalogLoader: documents.loader(),
-            preferredLanguagesProvider: LiveHarnessPreferredLanguages(preferredLanguages: ["en"])
+            preferredLanguagesProvider: LiveHarnessPreferredLanguages(preferredLanguages: ["en"]),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         await model.flowTask?.value
         await model.localeCatalogTask?.value

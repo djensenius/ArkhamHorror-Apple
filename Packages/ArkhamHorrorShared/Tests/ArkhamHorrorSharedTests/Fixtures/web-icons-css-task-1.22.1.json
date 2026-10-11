@@ -1,0 +1,25 @@
+{
+  "provenance": "fork 4203738708b0ad2d3cff426b4ce2e6b3d9904fec frontend/src/styles/icons.css",
+  "mappings": [
+    { "iconName": "skull", "cssClass": "skull-icon", "family": "ArkhamIcons", "codepoint": "E910" },
+    { "iconName": "cultist", "cssClass": "cultist-icon", "family": "ArkhamIcons", "codepoint": "E911" },
+    { "iconName": "tablet", "cssClass": "tablet-icon", "family": "ArkhamIcons", "codepoint": "E912" },
+    { "iconName": "elderThing", "cssClass": "elder-thing-icon", "family": "ArkhamIcons", "codepoint": "E913" },
+    { "iconName": "autoFail", "cssClass": "auto-fail", "family": "Arkham", "codepoint": "005A" },
+    { "iconName": "elderSign", "cssClass": "elder-sign", "family": "Arkham", "codepoint": "0058" },
+    { "iconName": "curse", "cssClass": "curse-icon", "family": "ArkhamIcons", "codepoint": "E929" },
+    { "iconName": "bless", "cssClass": "bless-icon", "family": "ArkhamIcons", "codepoint": "E92A" },
+    { "iconName": "frost", "cssClass": "frost-icon", "family": "ArkhamSlim", "codepoint": "0062" },
+    { "iconName": "blood", "cssClass": "blood-icon", "family": "Icons", "codepoint": "E94A" },
+    { "iconName": "willpower", "cssClass": "willpower-icon", "family": "Arkham", "codepoint": "0041" },
+    { "iconName": "intellect", "cssClass": "intellect-icon", "family": "Arkham", "codepoint": "0046" },
+    { "iconName": "combat", "cssClass": "combat-icon", "family": "Arkham", "codepoint": "0044" },
+    { "iconName": "agility", "cssClass": "agility-icon", "family": "Arkham", "codepoint": "0053" },
+    { "iconName": "wild", "cssClass": "wild-icon", "family": "Arkham", "codepoint": "0047" },
+    { "iconName": "sealA", "cssClass": "seal-a-icon", "family": "ArkhamSlim", "codepoint": "0067" },
+    { "iconName": "sealB", "cssClass": "seal-b-icon", "family": "ArkhamSlim", "codepoint": "0066" },
+    { "iconName": "sealC", "cssClass": "seal-c-icon", "family": "ArkhamSlim", "codepoint": "0065" },
+    { "iconName": "sealD", "cssClass": "seal-d-icon", "family": "ArkhamSlim", "codepoint": "0063" },
+    { "iconName": "sealE", "cssClass": "seal-e-icon", "family": "ArkhamSlim", "codepoint": "0064" }
+  ]
+}

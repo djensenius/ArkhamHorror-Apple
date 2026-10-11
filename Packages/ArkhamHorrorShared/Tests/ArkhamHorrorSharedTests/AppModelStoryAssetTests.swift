@@ -49,7 +49,8 @@ struct AppModelStoryAssetTests {
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             localeCatalogLoader: LocaleCatalogLoader(transport: catalogTransport),
             assetCacheFactory: { factory.make() },
-            storyAssetSourceLoader: StoryAssetSourceLoader(transport: transport)
+            storyAssetSourceLoader: StoryAssetSourceLoader(transport: transport),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         await model.flowTask?.value
         await model.localeCatalogTask?.value

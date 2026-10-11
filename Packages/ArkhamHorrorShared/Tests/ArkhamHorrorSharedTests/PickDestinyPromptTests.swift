@@ -403,7 +403,8 @@ struct PickDestinyPromptTests {
             authenticationSession: ScriptedAuthenticating(),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             localeCatalogLoader: documents.loader(),
-            preferredLanguagesProvider: PickDestinyPreferredLanguages(preferredLanguages: ["en"])
+            preferredLanguagesProvider: PickDestinyPreferredLanguages(preferredLanguages: ["en"]),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         await model.flowTask?.value
         await model.localeCatalogTask?.value

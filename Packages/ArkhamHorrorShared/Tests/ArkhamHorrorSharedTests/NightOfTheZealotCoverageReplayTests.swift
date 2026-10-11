@@ -1175,7 +1175,8 @@ private struct CoverageReplaySession {
             liveGameClock: FakeLiveGameClock(),
             liveGameRandomSource: FakeLiveGameRandomSource(values: [0]),
             localeCatalogLoader: catalogDocuments.loader(),
-            preferredLanguagesProvider: NightOfTheZealotPreferredLanguages()
+            preferredLanguagesProvider: NightOfTheZealotPreferredLanguages(),
+            webIconFontLoader: NoopWebIconFontLoader()
         )
         return (model, Fakes(service: service, socketFactory: socketFactory))
     }
