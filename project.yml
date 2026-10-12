@@ -1,7 +1,7 @@
 name: ArkhamHorror
 
 options:
-  bundleIdPrefix: com.djensenius
+  bundleIdPrefix: org.davidjensenius
   createIntermediateGroups: true
   deploymentTarget:
     iOS: "26.0"
@@ -28,12 +28,19 @@ packages:
 targetTemplates:
   Application:
     type: application
+    sources:
+      - path: Sources/Resources/PrivacyInfo.xcprivacy
+        type: file
+        buildPhase: resources
     dependencies:
       - package: ArkhamHorrorShared
     settings:
       base:
+        CODE_SIGN_STYLE: Automatic
         CURRENT_PROJECT_VERSION: 1
+        DEVELOPMENT_TEAM: 9JALHNGRBQ
         GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         MARKETING_VERSION: 0.1.0
         PRODUCT_NAME: Arkham Horror
 
@@ -50,7 +57,7 @@ targets:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror
+        PRODUCT_BUNDLE_IDENTIFIER: org.davidjensenius.ArkhamHorror
         PRODUCT_MODULE_NAME: ArkhamHorrorIOS
         SUPPORTS_MACCATALYST: NO
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -63,8 +70,9 @@ targets:
       - path: Sources/Platforms/macOS
     settings:
       base:
+        CODE_SIGN_ENTITLEMENTS: Sources/Platforms/macOS/ArkhamHorrorMac.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
-        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.macOS
+        PRODUCT_BUNDLE_IDENTIFIER: org.davidjensenius.ArkhamHorror
         PRODUCT_MODULE_NAME: ArkhamHorrorMac
 
   ArkhamHorror-tvOS:
@@ -76,7 +84,7 @@ targets:
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
-        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.tvOS
+        PRODUCT_BUNDLE_IDENTIFIER: org.davidjensenius.ArkhamHorror
         PRODUCT_MODULE_NAME: ArkhamHorrorTVOS
         TARGETED_DEVICE_FAMILY: "3"
 
@@ -89,7 +97,7 @@ targets:
     settings:
       base:
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
-        PRODUCT_BUNDLE_IDENTIFIER: com.djensenius.ArkhamHorror.visionOS
+        PRODUCT_BUNDLE_IDENTIFIER: org.davidjensenius.ArkhamHorror
         PRODUCT_MODULE_NAME: ArkhamHorrorVisionOS
         TARGETED_DEVICE_FAMILY: "7"
 

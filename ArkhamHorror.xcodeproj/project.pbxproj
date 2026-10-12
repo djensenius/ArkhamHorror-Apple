@@ -8,9 +8,13 @@
 
 /* Begin PBXBuildFile section */
 		02476F3B43B15E3172BACBBB /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 55E9F638D6D7CF460C768EA8 /* ArkhamHorrorShared */; };
+		1BD4CA224393A801F394CE33 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */; };
 		243290B4B7B4DB0C0219B90C /* ArkhamHorrorVisionOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */; };
+		25931CB8772CE8C4CF71EDAB /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */; };
 		49DA332916558B0717AB1A4C /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = ACB67D2294CED84D1B50989F /* ArkhamHorrorShared */; };
 		764D7C8F6E35A96B49241A2D /* ArkhamHorrorTVOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */; };
+		78EF9EBDE7AB8CDB8D9C8711 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */; };
+		7ADE594F167C7235BE5C1254 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */; };
 		B6A69FDAB2D52FF7978BB584 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = D9C156993D9D5A16C3380D57 /* ArkhamHorrorShared */; };
 		C8496FB57D6F565C212C13D2 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 719A56CDE682761E780B4057 /* ArkhamHorrorShared */; };
 		D72AD6B2861FE60C8CBA3394 /* ArkhamHorrorIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */; };
@@ -20,10 +24,12 @@
 /* Begin PBXFileReference section */
 		2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorVisionOSApp.swift; sourceTree = "<group>"; };
 		2ED0034BC224E195C0889363 /* ArkhamHorror-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ArkhamHorror-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		334C25BEC21F8A6B0D7B16CD /* ArkhamHorrorMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ArkhamHorrorMac.entitlements; sourceTree = "<group>"; };
 		3CEE12E59BB401870876E1F4 /* ArkhamHorrorShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ArkhamHorrorShared; path = Packages/ArkhamHorrorShared; sourceTree = SOURCE_ROOT; };
 		5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorMacApp.swift; sourceTree = "<group>"; };
 		6AC6C27A2AC109E3D3B9FA4A /* ArkhamHorror-visionOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-visionOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E3BF3C284F7B45008E783CF /* ArkhamHorror-tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-tvOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		A8AF3E01C677104974878F47 /* ArkhamHorror-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorTVOSApp.swift; sourceTree = "<group>"; };
 		F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorIOSApp.swift; sourceTree = "<group>"; };
@@ -73,6 +79,14 @@
 			path = visionOS;
 			sourceTree = "<group>";
 		};
+		0C835764D12B2E21F7BDFCDE /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				9060BB6E9BA7D234A3242F14 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		1FEEF36D863009733ECB6EED /* iOS */ = {
 			isa = PBXGroup;
 			children = (
@@ -85,6 +99,7 @@
 			isa = PBXGroup;
 			children = (
 				33899CC934C62650A8CAF0B3 /* Platforms */,
+				0C835764D12B2E21F7BDFCDE /* Resources */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -111,6 +126,7 @@
 		8CBEC5C1EE120DF4AA1CAE7B /* macOS */ = {
 			isa = PBXGroup;
 			children = (
+				334C25BEC21F8A6B0D7B16CD /* ArkhamHorrorMac.entitlements */,
 				5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */,
 			);
 			path = macOS;
@@ -152,6 +168,7 @@
 			buildConfigurationList = 653AA5B8FC19CF948D96C15C /* Build configuration list for PBXNativeTarget "ArkhamHorror-tvOS" */;
 			buildPhases = (
 				3175E8088FA7248D3B4C9165 /* Sources */,
+				D69B9615461BF888F40B388E /* Resources */,
 				6C8DDF1AFD43D288BFF2FEA9 /* Frameworks */,
 			);
 			buildRules = (
@@ -171,6 +188,7 @@
 			buildConfigurationList = 9080379168A31E17B65896DB /* Build configuration list for PBXNativeTarget "ArkhamHorror-macOS" */;
 			buildPhases = (
 				CFED1A9B65DDDA6FA495F9DF /* Sources */,
+				4B4DFD21DE218687AB4B73CD /* Resources */,
 				C0D5282A13D9A2A826401B94 /* Frameworks */,
 			);
 			buildRules = (
@@ -190,6 +208,7 @@
 			buildConfigurationList = 6BCCF690E9A639DCB77D3EFD /* Build configuration list for PBXNativeTarget "ArkhamHorror-visionOS" */;
 			buildPhases = (
 				0F4980BBAD885A0FC18770C9 /* Sources */,
+				79EFCD5E05256DC69DDB8BF0 /* Resources */,
 				A1D6B56C59A82BBFEF512293 /* Frameworks */,
 			);
 			buildRules = (
@@ -209,6 +228,7 @@
 			buildConfigurationList = CC28023B3810C92B8735A610 /* Build configuration list for PBXNativeTarget "ArkhamHorror-iOS" */;
 			buildPhases = (
 				A8C0C5677DCD1D2AB0B9B3B2 /* Sources */,
+				39762B2B38B01A84F84D1DAA /* Resources */,
 				0E50A1BA6449F4CEC74FA9F8 /* Frameworks */,
 			);
 			buildRules = (
@@ -232,6 +252,22 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					11C35F501E0FFF66B976FC56 = {
+						DevelopmentTeam = 9JALHNGRBQ;
+						ProvisioningStyle = Automatic;
+					};
+					8BF5B1F20A580FF4AF50E65C = {
+						DevelopmentTeam = 9JALHNGRBQ;
+						ProvisioningStyle = Automatic;
+					};
+					BFEBDB350BF0052C63E42BC1 = {
+						DevelopmentTeam = 9JALHNGRBQ;
+						ProvisioningStyle = Automatic;
+					};
+					F817018E9E02544A72A242E6 = {
+						DevelopmentTeam = 9JALHNGRBQ;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = FFA6CD94C80BDB42C8279097 /* Build configuration list for PBXProject "ArkhamHorror" */;
@@ -258,6 +294,41 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		39762B2B38B01A84F84D1DAA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1BD4CA224393A801F394CE33 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4B4DFD21DE218687AB4B73CD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				25931CB8772CE8C4CF71EDAB /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79EFCD5E05256DC69DDB8BF0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7ADE594F167C7235BE5C1254 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D69B9615461BF888F40B388E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				78EF9EBDE7AB8CDB8D9C8711 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0F4980BBAD885A0FC18770C9 /* Sources */ = {
@@ -299,15 +370,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.visionOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorVisionOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = xros;
@@ -320,9 +394,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -331,7 +408,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorIOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = iphoneos;
@@ -345,15 +422,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.tvOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorTVOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = appletvos;
@@ -426,15 +506,18 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.visionOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorVisionOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = xros;
@@ -447,9 +530,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -458,7 +544,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorIOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = iphoneos;
@@ -539,16 +625,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/Platforms/macOS/ArkhamHorrorMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.macOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorMac;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = macosx;
@@ -559,16 +649,20 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Sources/Platforms/macOS/ArkhamHorrorMac.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.macOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorMac;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = macosx;
@@ -580,15 +674,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 9JALHNGRBQ;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Arkham Horror";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.djensenius.ArkhamHorror.tvOS;
+				PRODUCT_BUNDLE_IDENTIFIER = org.davidjensenius.ArkhamHorror;
 				PRODUCT_MODULE_NAME = ArkhamHorrorTVOS;
 				PRODUCT_NAME = "Arkham Horror";
 				SDKROOT = appletvos;
