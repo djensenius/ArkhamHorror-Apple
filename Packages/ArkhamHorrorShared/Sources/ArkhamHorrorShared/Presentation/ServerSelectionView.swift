@@ -143,12 +143,14 @@ struct ServerSelectionView: View {
     }
 }
 
-#Preview("Server selection – modern hosted") {
-    ServerSelectionView(
-        model: previewAppModel(outcome: .compatible(capabilities: [])),
-        profiles: [.hosted],
-        selected: .hosted,
-        compatibility: .modern(capabilities: [])
-    )
-    .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Server selection – modern hosted") {
+        ServerSelectionView(
+            model: previewAppModel(outcome: .compatible(capabilities: [])),
+            profiles: [.hosted],
+            selected: .hosted,
+            compatibility: .modern(capabilities: [])
+        )
+        .background(ArkhamTheme.backgroundGradient)
+    }
+#endif

@@ -159,24 +159,28 @@ struct AccountDetailView: View {
     }
 }
 
-#Preview("Account – modern") {
-    AccountShellView(
-        model: previewAppModel(outcome: .compatible(capabilities: [])),
-        profile: .hosted,
-        compatibility: .modern(capabilities: []),
-        user: .previewSample
-    )
-    .background(ArkhamTheme.backgroundGradient)
-    .foregroundStyle(ArkhamTheme.bone)
-}
+#if DEBUG
+    #Preview("Account – modern") {
+        AccountShellView(
+            model: previewAppModel(outcome: .compatible(capabilities: [])),
+            profile: .hosted,
+            compatibility: .modern(capabilities: []),
+            user: .previewSample
+        )
+        .background(ArkhamTheme.backgroundGradient)
+        .foregroundStyle(ArkhamTheme.bone)
+    }
+#endif
 
-#Preview("Account – legacy") {
-    AccountShellView(
-        model: previewAppModel(),
-        profile: .hosted,
-        compatibility: .legacy,
-        user: .previewSample
-    )
-    .background(ArkhamTheme.backgroundGradient)
-    .foregroundStyle(ArkhamTheme.bone)
-}
+#if DEBUG
+    #Preview("Account – legacy") {
+        AccountShellView(
+            model: previewAppModel(),
+            profile: .hosted,
+            compatibility: .legacy,
+            user: .previewSample
+        )
+        .background(ArkhamTheme.backgroundGradient)
+        .foregroundStyle(ArkhamTheme.bone)
+    }
+#endif

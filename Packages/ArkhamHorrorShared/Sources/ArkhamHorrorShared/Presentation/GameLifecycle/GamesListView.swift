@@ -225,8 +225,10 @@ struct GamesListView: View {
     }
 }
 
-#Preview("Games – empty") {
-    NavigationStack {
-        GamesListView(model: previewAppModel())
+#if DEBUG
+    #Preview("Games – empty") {
+        NavigationStack {
+            GamesListView(model: previewAppModel())
+        }
     }
-}
+#endif

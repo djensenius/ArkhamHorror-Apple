@@ -187,40 +187,48 @@ struct ServerIssueView: View {
     }
 }
 
-#Preview("Incompatible") {
-    ServerIssueView(
-        model: previewAppModel(),
-        kind: .incompatible(
-            profile: .hosted,
-            reason: .serverTooOld(
-                serverRevision: .literal(major: 0, minor: 9, patch: 0),
-                clientRequires: .literal(major: 1, minor: 0, patch: 0)
+#if DEBUG
+    #Preview("Incompatible") {
+        ServerIssueView(
+            model: previewAppModel(),
+            kind: .incompatible(
+                profile: .hosted,
+                reason: .serverTooOld(
+                    serverRevision: .literal(major: 0, minor: 9, patch: 0),
+                    clientRequires: .literal(major: 1, minor: 0, patch: 0)
+                )
             )
         )
-    )
-    .background(ArkhamTheme.backgroundGradient)
-}
+        .background(ArkhamTheme.backgroundGradient)
+    }
+#endif
 
-#Preview("Unavailable") {
-    ServerIssueView(
-        model: previewAppModel(),
-        kind: .unavailable(profile: .hosted, reason: .probeFailed(.nonHTTPResponse))
-    )
-    .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Unavailable") {
+        ServerIssueView(
+            model: previewAppModel(),
+            kind: .unavailable(profile: .hosted, reason: .probeFailed(.nonHTTPResponse))
+        )
+        .background(ArkhamTheme.backgroundGradient)
+    }
+#endif
 
-#Preview("Storage Corrupted") {
-    ServerIssueView(
-        model: previewAppModel(),
-        kind: .storageCorrupted(.profileStore(.corruptData(key: "ArkhamHorror.serverProfiles")))
-    )
-    .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Storage Corrupted") {
+        ServerIssueView(
+            model: previewAppModel(),
+            kind: .storageCorrupted(.profileStore(.corruptData(key: "ArkhamHorror.serverProfiles")))
+        )
+        .background(ArkhamTheme.backgroundGradient)
+    }
+#endif
 
-#Preview("Credential Cleanup Registry Corrupted") {
-    ServerIssueView(
-        model: previewAppModel(),
-        kind: .credentialCleanupRegistryCorrupted(.corruptData)
-    )
-    .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Credential Cleanup Registry Corrupted") {
+        ServerIssueView(
+            model: previewAppModel(),
+            kind: .credentialCleanupRegistryCorrupted(.corruptData)
+        )
+        .background(ArkhamTheme.backgroundGradient)
+    }
+#endif
