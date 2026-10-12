@@ -108,8 +108,8 @@ Do not call `gym`, `build_app`, or `xcodebuild` directly for these uploads. The 
 If archive and export succeeded but the upload step failed, upload the exported artifact without rebuilding:
 
 ```sh
-fastlane ios beta artifact_path:$PWD/fastlane/builds/ios/<build-number>/ArkhamHorror-iOS.ipa
-fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/ArkhamHorror-macOS.pkg
+fastlane ios beta artifact_path:$PWD/fastlane/builds/ios/<build-number>/<exported-app>.ipa
+fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/<exported-app>.pkg
 ```
 
 ## Versioning and build numbers
