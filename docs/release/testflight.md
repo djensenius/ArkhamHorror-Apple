@@ -11,6 +11,7 @@ Status: internal TestFlight setup for Backlog `task-1.4.2`. Do not invite extern
 - Primary language: `en-CA`.
 - Team: `9JALHNGRBQ`.
 - Universal purchase bundle ID for every app target: `org.davidjensenius.ArkhamHorror`.
+- macOS App Store category: `public.app-category.board-games`.
 - Xcode schemes: `ArkhamHorror-iOS`, `ArkhamHorror-macOS`, `ArkhamHorror-tvOS`, and `ArkhamHorror-visionOS`.
 - App test targets are not present in the Xcode project today; if they are added later, use sub-identifiers under `org.davidjensenius.ArkhamHorror`.
 
@@ -60,7 +61,7 @@ The owner already has the App Store Connect API key and the dedicated signing ke
    fastlane signing_certificates
    ```
 
-   This Arkham Horror lane only unlocks the existing dedicated keychain and checks that the reusable team identities are present; it does not create or fetch certificates.
+   This Arkham Horror lane only unlocks the existing dedicated keychain and checks that the reusable team identities are present; it does not create or fetch certificates. If the identities are missing, the owner should recover the dedicated keychain by following the canadian-ham keychain setup and `get_certificates` steps from that project's runbook, then return here and rerun `fastlane signing_certificates`.
 
 ## One-time App Store Connect setup
 
@@ -108,8 +109,8 @@ Do not call `gym`, `build_app`, or `xcodebuild` directly for these uploads. The 
 If archive and export succeeded but the upload step failed, upload the exported artifact without rebuilding:
 
 ```sh
-fastlane ios beta artifact_path:$PWD/fastlane/builds/ios/<build-number>/<exported-app>.ipa
-fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/<exported-app>.pkg
+fastlane ios beta artifact_path:"$PWD/fastlane/builds/ios/<build-number>/Arkham Horror.ipa"
+fastlane mac beta artifact_path:"$PWD/fastlane/builds/mac/<build-number>/Arkham Horror.pkg"
 ```
 
 ## Versioning and build numbers
@@ -120,8 +121,10 @@ fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/<exporte
 
 ## App Store validity notes
 
-- Bundle ID: all four app targets use the universal-purchase ID `org.davidjensenius.ArkhamHorror`.
+- Bundle ID: all four app targets use the universal-purchase ID `org.davidjensenius.ArkhamHorror`. Because this changes the bundle ID, and because the macOS app now runs in the App Sandbox, existing local development installs should be expected to lose saved server profiles, tokens, and caches.
+- macOS category: generated Info.plists set `LSApplicationCategoryType=public.app-category.board-games`.
 - macOS entitlements: App Sandbox and `com.apple.security.network.client` are enabled because the app talks to the game server. No file-picker entitlements are currently needed; there is no `NSOpenPanel`, `NSSavePanel`, `fileImporter`, or document-picker usage in the app sources.
+- First macOS TestFlight build: smoke-test sign-in and token persistence under the sandbox, because `kSecUseDataProtectionKeychain` needs the provisioning profile's `application-identifier` entitlement.
 - iOS, tvOS, and visionOS entitlements: none are currently required.
 - App Transport Security: no arbitrary-load ATS exception is configured. Custom `http://` server profiles are restricted in code to strict loopback hosts; remote servers must use HTTPS.
 - Export compliance: generated Info.plists set `ITSAppUsesNonExemptEncryption=NO`; the app uses standard HTTPS/WebSocket transport and does not ship non-exempt encryption.
@@ -153,4 +156,13 @@ fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/<exporte
    security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild: -s -k "$(cat ~/.appstoreconnect/build-keychain.pw)" "$KC"
    ```
 
+### Missing signing identities
+
+If `fastlane signing_certificates` reports missing reusable identities, do not create certificates from an agent session. The owner should follow the canadian-ham runbook's dedicated keychain setup and `get_certificates` recovery steps to restore the shared team certificates into `~/Library/Keychains/canadian-ham-build.keychain-db`, then rerun `fastlane signing_certificates` locally.
+
 Do not switch off Release signing or put login-keychain credentials in scripts or agent sessions.
+
+## Future App Store follow-ups
+
+- Add native in-app account deletion before public App Store submission to satisfy App Store Review Guideline 5.1.1(v).
+- Resolve the trademark risk around the display name `Arkham Horror`; the current App Store Connect name is only a placeholder.
