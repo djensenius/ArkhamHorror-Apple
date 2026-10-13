@@ -6,7 +6,7 @@ Status: internal TestFlight setup for Backlog `task-1.4.2`. Do not invite extern
 
 ## Scope and identifiers
 
-- App Store Connect app-name placeholder: **Arkham Horror Companion** (`APP_NAME` in `fastlane/Fastfile`). The owner should choose and confirm the final store name before running `fastlane ios create_app_record`; plain "Arkham Horror" is likely unavailable and is a Fantasy Flight trademark.
+- App Store Connect app record: **Arkham** (id `6822282565`, SKU `arkham-horror`) exists, with iOS, macOS, tvOS, and visionOS platforms added. `APP_NAME` in `fastlane/Fastfile` matches this record.
 - SKU: `arkham-horror`.
 - Primary language: `en-CA`.
 - Team: `9JALHNGRBQ`.
@@ -17,7 +17,7 @@ Status: internal TestFlight setup for Backlog `task-1.4.2`. Do not invite extern
 
 ## One-time local setup
 
-The owner already has the App Store Connect API key and the dedicated signing keychain on this machine. Reuse them; do not create new keys, keychains, certificates, or provisioning assets for this task.
+The owner already has the App Store Connect API key and the dedicated signing keychain on this machine. Reuse them; do not create new keys, keychains, or certificates for this task. The beta lanes verify the existing team-scoped signing identities before any `xbuild`; automatic signing with `-allowProvisioningUpdates` may create or update provisioning profiles for `org.davidjensenius.ArkhamHorror` on the first upload, and that is expected.
 
 1. Install fastlane if it is not already available:
 
@@ -75,13 +75,13 @@ Run these only from an owner-controlled interactive shell. They touch the owner'
 
    Release/TestFlight builds require no Developer Portal capabilities beyond the default universal App ID. The macOS App Sandbox and network-client settings are signing entitlements in the app and do not require a portal capability toggle.
 
-2. Create the App Store Connect app record. This uses interactive Apple ID authentication and 2FA through `produce`; confirm the app name before running it:
+2. The App Store Connect app record already exists as **Arkham** (id `6822282565`, SKU `arkham-horror`) with iOS, macOS, tvOS, and visionOS platforms added. Keep this owner-run lane as recovery/documentation for creating the record in another account; it uses interactive Apple ID authentication and 2FA through `produce`:
 
    ```sh
    fastlane ios create_app_record
    ```
 
-   The lane requests platforms `ios`, `osx`, and `tvos` for the same universal-purchase bundle ID. Fastlane `produce` does not accept the App Store Connect API names `appletvos` or `xros`; after the record exists, add visionOS manually in App Store Connect with **App Information → Add Platform**.
+   The lane requests platforms `ios`, `osx`, and `tvos` for the same universal-purchase bundle ID. Fastlane `produce` does not accept the App Store Connect API names `appletvos` or `xros`; if recreating the record elsewhere, add visionOS manually in App Store Connect with **App Information → Add Platform** after the record exists.
 
 3. Check App Store Connect state when needed:
 
@@ -91,7 +91,7 @@ Run these only from an owner-controlled interactive shell. They touch the owner'
 
 ## Internal beta lanes
 
-Each beta lane archives and exports a **Release** build through `xbuild` with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, automatic signing, team `9JALHNGRBQ`, `fastlane/ExportOptions.plist` (`method=app-store-connect`, `testFlightInternalTestingOnly=true`), and App Store Connect API-key signing arguments. The lanes then upload the exported `.ipa` or `.pkg` with `upload_to_testflight(skip_waiting_for_build_processing: true)`.
+Each beta lane archives and exports a **Release** build through `xbuild` with `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer`, automatic signing, team `9JALHNGRBQ`, `fastlane/ExportOptions.plist` (`method=app-store-connect`, `testFlightInternalTestingOnly=true`), and App Store Connect API-key signing arguments. Immediately after unlocking the build keychain and before any `xbuild`, the lanes verify the reusable team signing identities and fail if an identity is missing, so automatic signing does not create certificates. `-allowProvisioningUpdates` stays enabled so Xcode can create or update provisioning profiles for `org.davidjensenius.ArkhamHorror`. The lanes then upload the exported `.ipa` or `.pkg` with `upload_to_testflight(skip_waiting_for_build_processing: true)`.
 
 Run only after review/merge approval and only for internal TestFlight:
 
@@ -165,4 +165,4 @@ Do not switch off Release signing or put login-keychain credentials in scripts o
 ## Future App Store follow-ups
 
 - Add native in-app account deletion before public App Store submission to satisfy App Store Review Guideline 5.1.1(v).
-- Resolve the trademark risk around the display name `Arkham Horror`; the current App Store Connect name is only a placeholder.
+- Review trademark risk around the display name `Arkham` before public App Store submission; the current App Store Connect app record uses that name for internal TestFlight.

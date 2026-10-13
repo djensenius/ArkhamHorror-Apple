@@ -14,7 +14,7 @@ API_KEY = {
 }.freeze
 
 TEAM_ID = "9JALHNGRBQ"
-APP_NAME = "Arkham Horror Companion"
+APP_NAME = "Arkham"
 APP_SKU = "arkham-horror"
 PRIMARY_BUNDLE_ID = "org.davidjensenius.ArkhamHorror"
 PRIMARY_LANGUAGE = "en-CA"
@@ -89,8 +89,7 @@ SIGNING_IDENTITY_MARKERS = [
 
 desc "Verify the existing dedicated build keychain and reusable team signing identities without creating certificates."
 lane :signing_certificates do
-  unlock_build_keychain
-  verify_existing_signing_identities
+  unlock_and_verify_build_keychain_identities
 end
 
 platform :ios do
@@ -103,7 +102,7 @@ platform :ios do
     register_universal_bundle_id
   end
 
-  desc "Create the App Store Connect app record for iOS, macOS and tvOS (add visionOS in App Store Connect). Requires Apple ID + 2FA; do not run non-interactively."
+  desc "Create the App Store Connect app record for Arkham if needed (record id 6822282565 exists). Requires Apple ID + 2FA; do not run non-interactively."
   lane :create_app_record do
     create_arkham_horror_app_record
   end
@@ -255,6 +254,11 @@ def unlock_build_keychain
   unlock_keychain(path: BUILD_KEYCHAIN_PATH, password: build_keychain_password, add_to_search_list: true, set_default: false)
 end
 
+def unlock_and_verify_build_keychain_identities
+  unlock_build_keychain
+  verify_existing_signing_identities
+end
+
 def verify_existing_signing_identities
   command = "security find-identity -v #{Shellwords.escape(BUILD_KEYCHAIN_PATH)}"
   success, output = capture_command(command)
@@ -266,7 +270,7 @@ def verify_existing_signing_identities
     identity_lines.any? { |line| line.include?(marker) && line.include?(team_marker) }
   end
   unless missing.empty?
-    UI.user_error!("Missing reusable signing identities for team #{TEAM_ID} in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}")
+    UI.user_error!("Missing reusable signing identities for team #{TEAM_ID} in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}. Restore the existing certificates before running beta lanes; automatic signing may update provisioning profiles only, not create certificates.")
   end
 
   UI.success("Build keychain contains the required reusable team signing identities for team #{TEAM_ID}.")
@@ -278,7 +282,7 @@ def capture_command(command)
 end
 
 def archive_and_export(platform_key)
-  unlock_build_keychain
+  unlock_and_verify_build_keychain_identities
   ensure_xbuild_available
   config = BETA_PLATFORMS.fetch(platform_key)
   build_number = Time.now.strftime("%Y%m%d%H%M")
