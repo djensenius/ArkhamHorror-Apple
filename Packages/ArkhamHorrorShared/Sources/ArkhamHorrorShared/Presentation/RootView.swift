@@ -107,6 +107,8 @@ public struct RootView: View {
     }
 }
 
-#Preview("Root – launching") {
-    RootView(model: previewAppModel())
-}
+#if DEBUG
+    #Preview("Root – launching") {
+        RootView(model: previewAppModel())
+    }
+#endif

@@ -190,10 +190,12 @@ private struct DeckRow: View {
     }
 }
 
-#Preview("Decks") {
-    NavigationStack {
-        DecksView(model: previewAppModel(), profile: .hosted)
+#if DEBUG
+    #Preview("Decks") {
+        NavigationStack {
+            DecksView(model: previewAppModel(), profile: .hosted)
+        }
+        .background(ArkhamTheme.backgroundGradient)
+        .foregroundStyle(ArkhamTheme.bone)
     }
-    .background(ArkhamTheme.backgroundGradient)
-    .foregroundStyle(ArkhamTheme.bone)
-}
+#endif

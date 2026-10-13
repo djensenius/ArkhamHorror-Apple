@@ -389,8 +389,10 @@ extension GameLobbyView {
     }
 }
 
-#Preview("Lobby – pending") {
-    NavigationStack {
-        GameLobbyView(model: previewAppModel(), gameID: GameID(UUID()))
+#if DEBUG
+    #Preview("Lobby – pending") {
+        NavigationStack {
+            GameLobbyView(model: previewAppModel(), gameID: GameID(UUID()))
+        }
     }
-}
+#endif

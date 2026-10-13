@@ -257,14 +257,18 @@ struct RegisterView: View {
     }
 }
 
-#Preview("Sign In") {
-    NavigationStack {
-        SignInView(model: previewAppModel())
+#if DEBUG
+    #Preview("Sign In") {
+        NavigationStack {
+            SignInView(model: previewAppModel())
+        }
     }
-}
+#endif
 
-#Preview("Create Account") {
-    NavigationStack {
-        RegisterView(model: previewAppModel())
+#if DEBUG
+    #Preview("Create Account") {
+        NavigationStack {
+            RegisterView(model: previewAppModel())
+        }
     }
-}
+#endif

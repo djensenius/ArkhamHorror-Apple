@@ -33,12 +33,16 @@ struct LaunchProgressView: View {
     }
 }
 
-#Preview("Launch – no profile yet") {
-    LaunchProgressView(profileName: nil)
-        .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Launch – no profile yet") {
+        LaunchProgressView(profileName: nil)
+            .background(ArkhamTheme.backgroundGradient)
+    }
+#endif
 
-#Preview("Launch – checking a named server") {
-    LaunchProgressView(profileName: "Arkham Horror Online")
-        .background(ArkhamTheme.backgroundGradient)
-}
+#if DEBUG
+    #Preview("Launch – checking a named server") {
+        LaunchProgressView(profileName: "Arkham Horror Online")
+            .background(ArkhamTheme.backgroundGradient)
+    }
+#endif

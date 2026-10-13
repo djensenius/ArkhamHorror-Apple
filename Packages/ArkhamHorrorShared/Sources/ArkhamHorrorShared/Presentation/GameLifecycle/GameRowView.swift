@@ -64,25 +64,27 @@ struct GameRowActionFailurePresentation: Equatable {
     let accessibilityIdentifier: String
 }
 
-#Preview("Game row") {
-    List {
-        GameRowView(
-            game: GameSummary(
-                id: GameID(UUID()),
-                scenario: ScenarioSummary(
-                    id: "01104", difficulty: .easy,
-                    name: CardName(title: "The Gathering", subtitle: nil), variant: nil
-                ),
-                campaign: nil,
-                gameState: .pending([]),
-                name: "Preview game",
-                investigators: [
-                    InvestigatorSummary(id: "01001", classSymbol: .init("Guardian")),
-                ],
-                otherInvestigators: [],
-                multiplayerVariant: .solo,
-                hasOpenSeats: false
+#if DEBUG
+    #Preview("Game row") {
+        List {
+            GameRowView(
+                game: GameSummary(
+                    id: GameID(UUID()),
+                    scenario: ScenarioSummary(
+                        id: "01104", difficulty: .easy,
+                        name: CardName(title: "The Gathering", subtitle: nil), variant: nil
+                    ),
+                    campaign: nil,
+                    gameState: .pending([]),
+                    name: "Preview game",
+                    investigators: [
+                        InvestigatorSummary(id: "01001", classSymbol: .init("Guardian")),
+                    ],
+                    otherInvestigators: [],
+                    multiplayerVariant: .solo,
+                    hasOpenSeats: false
+                )
             )
-        )
+        }
     }
-}
+#endif

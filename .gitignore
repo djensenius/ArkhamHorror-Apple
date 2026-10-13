@@ -1,6 +1,10 @@
 .DS_Store
 .build/
 DerivedData/
+fastlane/archives/
+fastlane/builds/
+fastlane/report.xml
+fastlane/test_output/
 *.xcuserstate
 xcuserdata/
 .mise.local.toml
