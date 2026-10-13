@@ -72,6 +72,7 @@ targets:
       base:
         CODE_SIGN_ENTITLEMENTS: Sources/Platforms/macOS/ArkhamHorrorMac.entitlements
         INFOPLIST_KEY_CFBundleDisplayName: Arkham Horror
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.board-games
         PRODUCT_BUNDLE_IDENTIFIER: org.davidjensenius.ArkhamHorror
         PRODUCT_MODULE_NAME: ArkhamHorrorMac
 
