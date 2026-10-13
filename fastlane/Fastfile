@@ -3,6 +3,7 @@ require "fileutils"
 require "shellwords"
 
 opt_out_usage
+skip_docs
 
 default_platform(:ios)
 
@@ -64,8 +65,7 @@ BETA_PLATFORMS = {
     scheme: "ArkhamHorror-macOS",
     destination: "generic/platform=macOS",
     artifact: :pkg,
-    app_platform: "osx",
-    build_settings: %w[SDKROOT=macosx SUPPORTED_PLATFORMS=macosx]
+    app_platform: "osx"
   },
   appletvos: {
     scheme: "ArkhamHorror-tvOS",
