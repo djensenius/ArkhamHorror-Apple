@@ -7,10 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00BC82CD1198403B4E306276 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5737B0D4EFAE89AD5BA66152 /* Assets.xcassets */; };
 		02476F3B43B15E3172BACBBB /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 55E9F638D6D7CF460C768EA8 /* ArkhamHorrorShared */; };
+		0943068E5ED59E1899C5C9E9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D2429AACA293D58983059D9D /* Assets.xcassets */; };
 		243290B4B7B4DB0C0219B90C /* ArkhamHorrorVisionOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */; };
 		49DA332916558B0717AB1A4C /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = ACB67D2294CED84D1B50989F /* ArkhamHorrorShared */; };
+		6B6129E7509C14F2D71D4A92 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A0BEF0748636574954DF3685 /* Assets.xcassets */; };
 		764D7C8F6E35A96B49241A2D /* ArkhamHorrorTVOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */; };
+		9F4B5D8117A5809AE51C9A74 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EC551BAA7761750CCB40553C /* Assets.xcassets */; };
 		B6A69FDAB2D52FF7978BB584 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = D9C156993D9D5A16C3380D57 /* ArkhamHorrorShared */; };
 		C8496FB57D6F565C212C13D2 /* ArkhamHorrorShared in Frameworks */ = {isa = PBXBuildFile; productRef = 719A56CDE682761E780B4057 /* ArkhamHorrorShared */; };
 		D72AD6B2861FE60C8CBA3394 /* ArkhamHorrorIOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */; };
@@ -21,11 +25,15 @@
 		2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorVisionOSApp.swift; sourceTree = "<group>"; };
 		2ED0034BC224E195C0889363 /* ArkhamHorror-macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ArkhamHorror-macOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CEE12E59BB401870876E1F4 /* ArkhamHorrorShared */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ArkhamHorrorShared; path = Packages/ArkhamHorrorShared; sourceTree = SOURCE_ROOT; };
+		5737B0D4EFAE89AD5BA66152 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorMacApp.swift; sourceTree = "<group>"; };
 		6AC6C27A2AC109E3D3B9FA4A /* ArkhamHorror-visionOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-visionOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E3BF3C284F7B45008E783CF /* ArkhamHorror-tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-tvOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A0BEF0748636574954DF3685 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A8AF3E01C677104974878F47 /* ArkhamHorror-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "ArkhamHorror-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D2429AACA293D58983059D9D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorTVOSApp.swift; sourceTree = "<group>"; };
+		EC551BAA7761750CCB40553C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArkhamHorrorIOSApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -69,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				2ADE1C92BCE7244FC9D57F7E /* ArkhamHorrorVisionOSApp.swift */,
+				A0BEF0748636574954DF3685 /* Assets.xcassets */,
 			);
 			path = visionOS;
 			sourceTree = "<group>";
@@ -77,6 +86,7 @@
 			isa = PBXGroup;
 			children = (
 				F963FDB29EDCDF1C867A2E75 /* ArkhamHorrorIOSApp.swift */,
+				EC551BAA7761750CCB40553C /* Assets.xcassets */,
 			);
 			path = iOS;
 			sourceTree = "<group>";
@@ -104,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				DF0DF1FC44149015B10F4641 /* ArkhamHorrorTVOSApp.swift */,
+				D2429AACA293D58983059D9D /* Assets.xcassets */,
 			);
 			path = tvOS;
 			sourceTree = "<group>";
@@ -112,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				5DCAF12432D16B8FF5E28FC8 /* ArkhamHorrorMacApp.swift */,
+				5737B0D4EFAE89AD5BA66152 /* Assets.xcassets */,
 			);
 			path = macOS;
 			sourceTree = "<group>";
@@ -152,6 +164,7 @@
 			buildConfigurationList = 653AA5B8FC19CF948D96C15C /* Build configuration list for PBXNativeTarget "ArkhamHorror-tvOS" */;
 			buildPhases = (
 				3175E8088FA7248D3B4C9165 /* Sources */,
+				D69B9615461BF888F40B388E /* Resources */,
 				6C8DDF1AFD43D288BFF2FEA9 /* Frameworks */,
 			);
 			buildRules = (
@@ -171,6 +184,7 @@
 			buildConfigurationList = 9080379168A31E17B65896DB /* Build configuration list for PBXNativeTarget "ArkhamHorror-macOS" */;
 			buildPhases = (
 				CFED1A9B65DDDA6FA495F9DF /* Sources */,
+				4B4DFD21DE218687AB4B73CD /* Resources */,
 				C0D5282A13D9A2A826401B94 /* Frameworks */,
 			);
 			buildRules = (
@@ -190,6 +204,7 @@
 			buildConfigurationList = 6BCCF690E9A639DCB77D3EFD /* Build configuration list for PBXNativeTarget "ArkhamHorror-visionOS" */;
 			buildPhases = (
 				0F4980BBAD885A0FC18770C9 /* Sources */,
+				79EFCD5E05256DC69DDB8BF0 /* Resources */,
 				A1D6B56C59A82BBFEF512293 /* Frameworks */,
 			);
 			buildRules = (
@@ -209,6 +224,7 @@
 			buildConfigurationList = CC28023B3810C92B8735A610 /* Build configuration list for PBXNativeTarget "ArkhamHorror-iOS" */;
 			buildPhases = (
 				A8C0C5677DCD1D2AB0B9B3B2 /* Sources */,
+				39762B2B38B01A84F84D1DAA /* Resources */,
 				0E50A1BA6449F4CEC74FA9F8 /* Frameworks */,
 			);
 			buildRules = (
@@ -258,6 +274,41 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		39762B2B38B01A84F84D1DAA /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9F4B5D8117A5809AE51C9A74 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4B4DFD21DE218687AB4B73CD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00BC82CD1198403B4E306276 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		79EFCD5E05256DC69DDB8BF0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6B6129E7509C14F2D71D4A92 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D69B9615461BF888F40B388E /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0943068E5ED59E1899C5C9E9 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0F4980BBAD885A0FC18770C9 /* Sources */ = {
@@ -343,7 +394,7 @@
 		8028D999252F3A0066402AC2 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -578,7 +629,7 @@
 		ED1B1D2B7946E394D07D726D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon";
 				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
