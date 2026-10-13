@@ -260,10 +260,16 @@ def verify_existing_signing_identities
   success, output = capture_command(command)
   UI.user_error!("Unable to inspect #{BUILD_KEYCHAIN_PATH}: #{output}") unless success
 
-  missing = SIGNING_IDENTITY_MARKERS.reject { |marker| output.include?(marker) }
-  UI.user_error!("Missing reusable signing identities in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}") unless missing.empty?
+  team_marker = "(#{TEAM_ID})"
+  identity_lines = output.each_line.to_a
+  missing = SIGNING_IDENTITY_MARKERS.reject do |marker|
+    identity_lines.any? { |line| line.include?(marker) && line.include?(team_marker) }
+  end
+  unless missing.empty?
+    UI.user_error!("Missing reusable signing identities for team #{TEAM_ID} in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}")
+  end
 
-  UI.success("Build keychain contains the required reusable team signing identities.")
+  UI.success("Build keychain contains the required reusable team signing identities for team #{TEAM_ID}.")
 end
 
 def capture_command(command)
