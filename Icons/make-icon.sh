@@ -10,6 +10,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ICONS="$ROOT/Icons"
 FONT_PATH="${1:-}"
 MAGICK="${MAGICK:-/opt/homebrew/bin/magick}"
+PNG_ARGS=(-define png:exclude-chunks=date,time)
 
 if [[ -z "$FONT_PATH" ]]; then
   echo "usage: $0 /path/to/arkham.ttf" >&2
@@ -43,11 +44,11 @@ TINTED_COMPOSITE="$ICONS/AppIcon-tinted.png"
 FG_WHITE="$ICONS/.AppIcon-fg-white.png"
 BG_DARK="$ICONS/.AppIcon-bg-dark.png"
 
-"$MAGICK" "$BACKGROUND" "$FOREGROUND" -compose over -composite -depth 8 "$COMPOSITE"
-"$MAGICK" "$FOREGROUND" -fill white -colorize 100% -depth 8 "$FG_WHITE"
-"$MAGICK" "$BACKGROUND" -modulate 22 -depth 8 "$BG_DARK"
-"$MAGICK" "$BG_DARK" "$FG_WHITE" -compose over -composite -depth 8 "$DARK_COMPOSITE"
-"$MAGICK" -size 1024x1024 xc:black "$FG_WHITE" -compose over -composite -colorspace sRGB -depth 8 "$TINTED_COMPOSITE"
+"$MAGICK" "$BACKGROUND" "$FOREGROUND" -compose over -composite -depth 8 "${PNG_ARGS[@]}" "$COMPOSITE"
+"$MAGICK" "$FOREGROUND" -fill white -colorize 100% -depth 8 "${PNG_ARGS[@]}" "$FG_WHITE"
+"$MAGICK" "$BACKGROUND" -modulate 22 -depth 8 "${PNG_ARGS[@]}" "$BG_DARK"
+"$MAGICK" "$BG_DARK" "$FG_WHITE" -compose over -composite -depth 8 "${PNG_ARGS[@]}" "$DARK_COMPOSITE"
+"$MAGICK" -size 1024x1024 xc:black "$FG_WHITE" -compose over -composite -colorspace sRGB -depth 8 "${PNG_ARGS[@]}" "$TINTED_COMPOSITE"
 rm -f "$FG_WHITE" "$BG_DARK"
 
 write_json() {
@@ -56,16 +57,19 @@ write_json() {
   printf '%s\n' "$content" > "$file"
 }
 
-write_asset_catalog_root() {
-  write_json "$1/Contents.json" '{
+ensure_asset_catalog_root() {
+  mkdir -p "$1"
+  if [[ ! -f "$1/Contents.json" ]]; then
+    write_json "$1/Contents.json" '{
   "info" : { "author" : "xcode", "version" : 1 }
 }'
+  fi
 }
 
 render_square() {
   local out="$1" size="$2" source="${3:-$COMPOSITE}"
   mkdir -p "$(dirname "$out")"
-  "$MAGICK" "$source" -resize "${size}x${size}!" -depth 8 "$out"
+  "$MAGICK" "$source" -resize "${size}x${size}!" -depth 8 "${PNG_ARGS[@]}" "$out"
   echo "  ${size}x${size} -> ${out#$ROOT/}"
 }
 
@@ -73,25 +77,29 @@ render_layer() {
   local source="$1" out="$2" width="$3" height="$4" mode="${5:-contain}"
   mkdir -p "$(dirname "$out")"
   if [[ "$mode" == "cover" ]]; then
-    "$MAGICK" "$source" -resize "${width}x${height}^" -gravity center -extent "${width}x${height}" -depth 8 "$out"
+    "$MAGICK" "$source" -resize "${width}x${height}^" -gravity center -extent "${width}x${height}" -depth 8 "${PNG_ARGS[@]}" "$out"
   else
     "$MAGICK" -size "${width}x${height}" xc:none \
       "$source" -resize "${width}x${height}" -gravity center -compose over -composite \
-      -depth 8 "$out"
+      -depth 8 "${PNG_ARGS[@]}" "$out"
   fi
 }
 
-render_tv_composite() {
+render_tv_banner() {
   local out="$1" width="$2" height="$3"
   mkdir -p "$(dirname "$out")"
-  "$MAGICK" "$COMPOSITE" -resize "${width}x${height}^" -gravity center -extent "${width}x${height}" -depth 8 "$out"
+  "$MAGICK" \
+    \( "$BACKGROUND" -resize "${width}x${height}^" -gravity center -extent "${width}x${height}" \) \
+    \( "$FOREGROUND" -resize "${height}x${height}" \) \
+    -gravity center -compose over -composite \
+    -depth 8 "${PNG_ARGS[@]}" "$out"
 }
 
 # iOS / iPadOS app icon: light, dark, and tinted appearances (iOS 18+).
 IOS_ASSETS="$ROOT/Sources/Platforms/iOS/Assets.xcassets"
 IOS_SET="$IOS_ASSETS/AppIcon.appiconset"
-rm -rf "$IOS_ASSETS"
-write_asset_catalog_root "$IOS_ASSETS"
+rm -rf "$IOS_SET"
+ensure_asset_catalog_root "$IOS_ASSETS"
 render_square "$IOS_SET/AppIcon-1024.png" 1024
 render_square "$IOS_SET/AppIcon-1024-dark.png" 1024 "$DARK_COMPOSITE"
 render_square "$IOS_SET/AppIcon-1024-tinted.png" 1024 "$TINTED_COMPOSITE"
@@ -107,8 +115,8 @@ write_json "$IOS_SET/Contents.json" '{
 # macOS .icns-style appiconset.
 MAC_ASSETS="$ROOT/Sources/Platforms/macOS/Assets.xcassets"
 MAC_SET="$MAC_ASSETS/AppIcon.appiconset"
-rm -rf "$MAC_ASSETS"
-write_asset_catalog_root "$MAC_ASSETS"
+rm -rf "$MAC_SET"
+ensure_asset_catalog_root "$MAC_ASSETS"
 render_square "$MAC_SET/icon_16x16.png" 16
 render_square "$MAC_SET/icon_16x16@2x.png" 32
 render_square "$MAC_SET/icon_32x32.png" 32
@@ -138,8 +146,8 @@ write_json "$MAC_SET/Contents.json" '{
 # visionOS layered icon: parchment background + elder-sign foreground.
 VISION_ASSETS="$ROOT/Sources/Platforms/visionOS/Assets.xcassets"
 VISION_SET="$VISION_ASSETS/AppIcon.solidimagestack"
-rm -rf "$VISION_ASSETS"
-write_asset_catalog_root "$VISION_ASSETS"
+rm -rf "$VISION_SET"
+ensure_asset_catalog_root "$VISION_ASSETS"
 for layer in Back Front; do
   mkdir -p "$VISION_SET/$layer.solidimagestacklayer/Content.imageset"
   write_json "$VISION_SET/$layer.solidimagestacklayer/Contents.json" '{
@@ -167,8 +175,8 @@ write_json "$VISION_SET/Front.solidimagestacklayer/Content.imageset/Contents.jso
 # tvOS brand assets: background + elder-sign app-icon stacks and top shelf art.
 TV_ASSETS="$ROOT/Sources/Platforms/tvOS/Assets.xcassets"
 TV_SET="$TV_ASSETS/App Icon.brandassets"
-rm -rf "$TV_ASSETS"
-write_asset_catalog_root "$TV_ASSETS"
+rm -rf "$TV_SET"
+ensure_asset_catalog_root "$TV_ASSETS"
 write_json "$TV_SET/Contents.json" '{
   "assets" : [
     { "filename" : "App Icon - App Store.imagestack", "idiom" : "tv", "role" : "primary-app-icon", "size" : "1280x768" },
@@ -227,10 +235,10 @@ done
 
 TOP="$TV_SET/Top Shelf Image.imageset"
 TOP_WIDE="$TV_SET/Top Shelf Image Wide.imageset"
-render_tv_composite "$TOP/topshelf-1x.png" 1920 720
-render_tv_composite "$TOP/topshelf-2x.png" 3840 1440
-render_tv_composite "$TOP_WIDE/topshelf-wide-1x.png" 2320 720
-render_tv_composite "$TOP_WIDE/topshelf-wide-2x.png" 4640 1440
+render_tv_banner "$TOP/topshelf-1x.png" 1920 720
+render_tv_banner "$TOP/topshelf-2x.png" 3840 1440
+render_tv_banner "$TOP_WIDE/topshelf-wide-1x.png" 2320 720
+render_tv_banner "$TOP_WIDE/topshelf-wide-2x.png" 4640 1440
 write_json "$TOP/Contents.json" '{
   "images" : [
     { "filename" : "topshelf-1x.png", "idiom" : "tv", "scale" : "1x" },
