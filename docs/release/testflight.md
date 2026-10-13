@@ -125,7 +125,7 @@ fastlane mac beta artifact_path:$PWD/fastlane/builds/mac/<build-number>/<exporte
 - iOS, tvOS, and visionOS entitlements: none are currently required.
 - App Transport Security: no arbitrary-load ATS exception is configured. Custom `http://` server profiles are restricted in code to strict loopback hosts; remote servers must use HTTPS.
 - Export compliance: generated Info.plists set `ITSAppUsesNonExemptEncryption=NO`; the app uses standard HTTPS/WebSocket transport and does not ship non-exempt encryption.
-- Privacy manifest: `Sources/Resources/PrivacyInfo.xcprivacy` is embedded in every app target, declares no tracking and no collected data, and lists required-reason access for app-owned UserDefaults and file timestamp/stat-style cache metadata.
+- Privacy manifest: `Sources/Resources/PrivacyInfo.xcprivacy` is embedded in every app target, declares no tracking, declares email address, user ID, and gameplay content as collected data linked to the user for app functionality, and lists required-reason access for app-owned UserDefaults and file timestamp/stat-style cache metadata. Keep the App Store Connect privacy questionnaire consistent with these declarations.
 
 ## Troubleshooting
 
