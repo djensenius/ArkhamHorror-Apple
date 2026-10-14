@@ -1,5 +1,6 @@
 require "English"
 require "fileutils"
+require "open3"
 require "shellwords"
 
 opt_out_usage
@@ -264,16 +265,91 @@ def verify_existing_signing_identities
   success, output = capture_command(command)
   UI.user_error!("Unable to inspect #{BUILD_KEYCHAIN_PATH}: #{output}") unless success
 
-  team_marker = "(#{TEAM_ID})"
-  identity_lines = output.each_line.to_a
+  ensure_openssl_available
+  certificates_by_hash = build_keychain_certificates_by_hash
+  identities = signing_identities(output)
+
+  # Apple Development certificates created via the API are named after the API
+  # key id, so verify the team from the certificate subject OU instead of the
+  # display name suffix shown by `security find-identity`.
+  matched_identities = {}
   missing = SIGNING_IDENTITY_MARKERS.reject do |marker|
-    identity_lines.any? { |line| line.include?(marker) && line.include?(team_marker) }
+    matched_identity = identities.find do |identity|
+      identity[:name].start_with?(marker) &&
+        certificate_team_ids(certificates_by_hash[identity[:sha1]]).include?(TEAM_ID)
+    end
+    matched_identities[marker] = matched_identity if matched_identity
+    matched_identity
   end
   unless missing.empty?
     UI.user_error!("Missing reusable signing identities for team #{TEAM_ID} in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}. Restore the existing certificates before running beta lanes; automatic signing may update provisioning profiles only, not create certificates.")
   end
 
+  SIGNING_IDENTITY_MARKERS.each do |marker|
+    UI.success("Found #{marker} signing identity for team #{TEAM_ID}: #{matched_identities.fetch(marker).fetch(:name)}")
+  end
   UI.success("Build keychain contains the required reusable team signing identities for team #{TEAM_ID}.")
+end
+
+IDENTITY_LINE_PATTERN = /^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"([^"]+)"/.freeze
+
+CERTIFICATE_BLOCK_PATTERN = /^SHA-1 hash:\s*([0-9A-Fa-f]{40})\s*$\n(.*?-----END CERTIFICATE-----)/m.freeze
+
+PEM_CERTIFICATE_PATTERN = /-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m.freeze
+
+RFC2253_FIELD_SEPARATOR = /(?<!\\),/.freeze
+
+def signing_identities(output)
+  output.each_line.filter_map do |line|
+    match = line.match(IDENTITY_LINE_PATTERN)
+    next unless match
+
+    { sha1: match[1].upcase, name: match[2] }
+  end
+end
+
+def build_keychain_certificates_by_hash
+  command = "security find-certificate -a -Z -p #{Shellwords.escape(BUILD_KEYCHAIN_PATH)}"
+  success, output = capture_command(command)
+  UI.user_error!("Unable to read certificates from #{BUILD_KEYCHAIN_PATH}: #{output}") unless success
+
+  output.scan(CERTIFICATE_BLOCK_PATTERN).each_with_object({}) do |(sha1, block), certificates|
+    pem = block[PEM_CERTIFICATE_PATTERN]
+    certificates[sha1.upcase] = pem if pem
+  end
+end
+
+def ensure_openssl_available
+  success, = capture_command("command -v openssl")
+  return if success
+
+  UI.user_error!("Unable to inspect signing certificate subjects: openssl is not installed or not on PATH.")
+end
+
+def certificate_team_ids(pem)
+  return [] unless pem
+
+  output, error, status = Open3.capture3(
+    "openssl", "x509", "-noout", "-subject", "-nameopt", "RFC2253",
+    stdin_data: pem
+  )
+  unless status.success?
+    UI.user_error!("Unable to inspect signing certificate subject with openssl: #{error}#{output}")
+  end
+
+  subject = output.each_line.find { |line| line.start_with?("subject=") }.to_s.delete_prefix("subject=").strip
+  rfc2253_attribute_values(subject, "OU")
+rescue Errno::ENOENT
+  UI.user_error!("Unable to inspect signing certificate subjects: openssl is not installed or not on PATH.")
+end
+
+def rfc2253_attribute_values(subject, attribute)
+  values = []
+  subject.split(RFC2253_FIELD_SEPARATOR).each do |field|
+    key, value = field.split("=", 2)
+    values << value if key == attribute && value
+  end
+  values
 end
 
 def capture_command(command)
