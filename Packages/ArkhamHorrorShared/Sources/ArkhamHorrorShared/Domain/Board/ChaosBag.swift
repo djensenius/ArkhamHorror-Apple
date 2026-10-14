@@ -85,8 +85,10 @@ struct ChaosBag: Sendable {
     /// The in-progress chaos-bag draw/resolution step, if any
     /// (`Arkham.ChaosBagStepState`). Broad and out of scope for this contract slice.
     let choice: JSONValue?
-    /// A forced ``ChaosTokenFace``, when set.
-    let forceDraw: ChaosTokenFace?
+    /// Forced ``ChaosTokenFace`` values, when set. Servers before schema 0.1.53 emitted a
+    /// single string-or-null; 0.1.53 can emit an array. Both shapes decode here so one app
+    /// build remains compatible with 0.1.48-0.1.53 servers.
+    let forceDraw: [ChaosTokenFace]
     let tokenPool: [ChaosToken]
     let totalRevealedChaosTokens: [ChaosToken]
     /// A `Source`-keyed map of pending chaos-token requests, encoded as an array of
@@ -123,8 +125,7 @@ extension ChaosBag: Codable {
             forKey: .choice,
             codingPath: decoder.codingPath + [CodingKeys.choice]
         )
-        forceDraw = try decodeRequiredNullable(
-            ChaosTokenFace.self,
+        forceDraw = try Self.decodeForceDraw(
             from: container,
             forKey: .forceDraw,
             codingPath: decoder.codingPath + [CodingKeys.forceDraw]
@@ -143,9 +144,37 @@ extension ChaosBag: Codable {
         try container.encode(setAsideChaosTokens, forKey: .setAsideChaosTokens)
         try container.encode(revealedChaosTokens, forKey: .revealedChaosTokens)
         try container.encode(choice, forKey: .choice)
+        // Response-only in this client: the decoded bag is not echoed to the server, so
+        // encoding normalizes to the 0.1.53 array shape instead of preserving legacy spellings.
         try container.encode(forceDraw, forKey: .forceDraw)
         try container.encode(tokenPool, forKey: .tokenPool)
         try container.encode(totalRevealedChaosTokens, forKey: .totalRevealedChaosTokens)
         try container.encode(pendingRequests, forKey: .pendingRequests)
+    }
+
+    private static func decodeForceDraw(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+        codingPath: [any CodingKey]
+    ) throws -> [ChaosTokenFace] {
+        if try container.decodeNil(forKey: key) {
+            return []
+        }
+        if let single = try? container.decode(ChaosTokenFace.self, forKey: key) {
+            return [single]
+        }
+        do {
+            return try container.decode([ChaosTokenFace].self, forKey: key)
+        } catch {
+            throw DecodingError.typeMismatch(
+                [ChaosTokenFace].self,
+                .init(
+                    codingPath: codingPath,
+                    debugDescription: "Expected forceDraw to be a chaos-token face string, "
+                        + "array, or null",
+                    underlyingError: error
+                )
+            )
+        }
     }
 }

@@ -93,7 +93,16 @@ private extension BasicChoiceParser {
     static let coverUpInvestigatorCardCode = "c01001"
     static let coverUpCardCode = "c01007"
 
-    static let coverUpAbilityKeys: Set<String> = [
+    enum CoverUpAbilityWireShape {
+        case legacy
+        case schema153
+    }
+
+    /// Cover Up is strict for both governed wire shapes: the historical
+    /// authenticated 0.1.40 production capture from September 14, 2026, and the
+    /// schema 0.1.53 fixture vendored from fork commit 06d5df2. Mixed shapes
+    /// (for example a legacy matcher with 0.1.53-only fields) remain rejected.
+    static let coverUpAbilityLegacyKeys: Set<String> = [
         "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
         "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
@@ -102,8 +111,13 @@ private extension BasicChoiceParser {
         "window",
     ]
 
-    static var coverUpAbilityFixedValues: [String: JSONValue] {
-        [
+    static let coverUpAbilitySchema153Keys: Set<String> = coverUpAbilityLegacyKeys
+        .union(["chaosTokenEffects", "resultLabel"])
+
+    static func coverUpAbilityFixedValues(
+        for shape: CoverUpAbilityWireShape
+    ) -> [String: JSONValue] {
+        var values: [String: JSONValue] = [
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
@@ -121,14 +135,19 @@ private extension BasicChoiceParser {
             "triggersSkillTest": .bool(false),
             "wantsSkillTest": .null,
         ]
+        if shape == .schema153 {
+            values["chaosTokenEffects"] = .array([])
+            values["resultLabel"] = .null
+        }
+        return values
     }
 
     static func parseCoverUpReactionAbility(
         _ value: JSONValue?
     ) -> CoverUpAbilityIdentity? {
         guard case let .object(ability)? = value,
-              coverUpAbilityHasAllowedKeys(ability),
-              coverUpAbilityFixedValues.allSatisfy({
+              let wireShape = coverUpAbilityWireShape(ability),
+              coverUpAbilityFixedValues(for: wireShape).allSatisfy({
                   ability[$0.key] == $0.value
               }),
               coverUpAbilityBlockingFieldsAreCanonical(ability),
@@ -138,8 +157,8 @@ private extension BasicChoiceParser {
               coverUpCanonicalInteger(ability["index"], equalTo: 1),
               coverUpReactionLimitIsCanonical(ability["limit"]),
               coverUpReactionCriteriaIsCanonical(ability["criteria"]),
-              coverUpReactionAbilityTypeIsCanonical(ability["type"]),
-              coverUpReactionMatcherIsCanonical(ability["window"]),
+              coverUpReactionAbilityTypeIsCanonical(ability["type"], shape: wireShape),
+              coverUpReactionMatcherIsCanonical(ability["window"], shape: wireShape),
               let sourceID = coverUpTreacherySource(ability["source"]),
               let requestorID = coverUpTreacherySource(ability["requestor"]),
               sourceID == requestorID
@@ -169,9 +188,18 @@ private extension BasicChoiceParser {
         return CoverUpWindowIdentity(locationID: locationID, skillTestID: skillTestID)
     }
 
-    static func coverUpAbilityHasAllowedKeys(_ ability: [String: JSONValue]) -> Bool {
+    static func coverUpAbilityWireShape(
+        _ ability: [String: JSONValue]
+    ) -> CoverUpAbilityWireShape? {
         let additiveKeys: Set = ["blocksIn", "nonBlocking"]
-        return Set(ability.keys).subtracting(additiveKeys) == coverUpAbilityKeys
+        let governedKeys = Set(ability.keys).subtracting(additiveKeys)
+        if governedKeys == coverUpAbilityLegacyKeys {
+            return .legacy
+        }
+        if governedKeys == coverUpAbilitySchema153Keys {
+            return .schema153
+        }
+        return nil
     }
 
     static func coverUpAbilityBlockingFieldsAreCanonical(_ ability: [String: JSONValue]) -> Bool {
@@ -215,11 +243,14 @@ private extension BasicChoiceParser {
         return coverUpAtLeastOneIsCanonical(cluesOnThis["contents"])
     }
 
-    static func coverUpReactionAbilityTypeIsCanonical(_ value: JSONValue?) -> Bool {
+    static func coverUpReactionAbilityTypeIsCanonical(
+        _ value: JSONValue?,
+        shape: CoverUpAbilityWireShape
+    ) -> Bool {
         guard case let .object(type)? = value,
               Set(type.keys) == ["tag", "window", "cost", "actions"],
               type["tag"] == .string("ReactionAbility"),
-              coverUpReactionMatcherIsCanonical(type["window"]),
+              coverUpReactionMatcherIsCanonical(type["window"], shape: shape),
               type["cost"] == .object(["tag": .string("Free")]),
               type["actions"] == .object([
                   "tag": .string("AndActions"),
@@ -229,12 +260,15 @@ private extension BasicChoiceParser {
         return true
     }
 
-    static func coverUpReactionMatcherIsCanonical(_ value: JSONValue?) -> Bool {
+    static func coverUpReactionMatcherIsCanonical(
+        _ value: JSONValue?,
+        shape: CoverUpAbilityWireShape
+    ) -> Bool {
         guard case let .object(matcher)? = value,
               Set(matcher.keys) == ["tag", "contents"],
               matcher["tag"] == .string("WouldDiscoverClues"),
               case let .array(contents)? = matcher["contents"],
-              contents.count == 4,
+              contents.count >= 4,
               contents[0] == .string("When"),
               contents[1] == .object(["tag": .string("You")]),
               contents[2] == .object([
@@ -243,7 +277,13 @@ private extension BasicChoiceParser {
               ]),
               coverUpAtLeastOneIsCanonical(contents[3])
         else { return false }
-        return true
+        switch shape {
+        case .legacy:
+            return contents.count == 4
+        case .schema153:
+            return contents.count == 5
+                && contents[4] == .object(["tag": .string("AnySource")])
+        }
     }
 
     static func coverUpAtLeastOneIsCanonical(_ value: JSONValue?) -> Bool {

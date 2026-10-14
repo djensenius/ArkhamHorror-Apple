@@ -144,6 +144,7 @@ struct ContractFixtureDigestTests {
             "mode-campaign-scenario",
             "mode-turn-zero",
             "movement",
+            "public-game-structured-log",
             "question-agenda-advance",
             "question-agenda-consequence",
             "question-agenda-horror-assignment",
@@ -219,6 +220,7 @@ struct ContractFixtureDigestTests {
             "raw-question-fixture.schema",
             "replay-attestation",
             "replay-attestation.schema",
+            "room-closed",
             "uuid-entity-map",
         ])
         #expect(Set(ContractFixtureDigests.all.map(\.fileName)) == expected)
@@ -289,7 +291,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "25a3eb8072d0b3a309a7090912c2a9c2b858c730"
+            ContractPin.current.backendCommit == "06d5df29d991cc69c83637b1833be81045e8b113"
         )
     }
 

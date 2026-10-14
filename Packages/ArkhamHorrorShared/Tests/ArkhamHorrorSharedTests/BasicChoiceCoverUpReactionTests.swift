@@ -6,7 +6,7 @@ enum CoverUpReactionFixtures {
     static let investigatorID = BoardTestFixtures.investigatorID("c01001")
     static let locationID = LocationID(
         // swiftlint:disable:next force_unwrapping
-        UUID(uuidString: "d5a66e84-c729-4066-8475-d8a155609025")!
+        UUID(uuidString: "782de537-8f5d-4eda-b849-2362e28402e5")!
     )
     static let alternateLocationID = BoardTestFixtures.locationID("000000000402")
     static let skillTestID = SkillTestID(

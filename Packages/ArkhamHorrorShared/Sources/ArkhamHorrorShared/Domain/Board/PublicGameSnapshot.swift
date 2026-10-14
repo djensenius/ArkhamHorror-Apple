@@ -35,7 +35,7 @@ enum PublicGameSnapshotError: Error, Equatable, Sendable {
 struct PublicGameSnapshot: Sendable {
     let name: String
     let id: GameID
-    let log: [String]
+    let log: [GameLogRow]
     let git: String
     let settings: GameSettings
     let gameSettings: GameSettings

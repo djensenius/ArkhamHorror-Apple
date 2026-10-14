@@ -81,7 +81,7 @@ struct PublicGameSnapshotFixtureTests {
         #expect(game.killedInvestigators.isEmpty)
 
         let locationID = try LocationID(
-            #require(UUID(uuidString: "d5a66e84-c729-4066-8475-d8a155609025"))
+            #require(UUID(uuidString: "782de537-8f5d-4eda-b849-2362e28402e5"))
         )
         guard case let .ordinary(location) = try #require(game.locations[locationID]) else {
             Issue.record("Expected an .ordinary location")
@@ -174,8 +174,8 @@ struct PublicGameSnapshotFixtureTests {
     func missingPhaseStepKeyFailsForBothEnvelopes() throws {
         let phaseStepBlock = """
             "phaseStep": {
-              "tag": "InvestigationPhaseStep",
-              "contents": "InvestigatorTakesActionStep"
+              "contents": "InvestigatorTakesActionStep",
+              "tag": "InvestigationPhaseStep"
             },
 
         """
@@ -207,7 +207,7 @@ struct PublicGameSnapshotFixtureTests {
         var fixture = try #require(
             String(data: fixtureData(named: "get-game"), encoding: .utf8)
         )
-        let lowercaseKey = "d5a66e84-c729-4066-8475-d8a155609025"
+        let lowercaseKey = "782de537-8f5d-4eda-b849-2362e28402e5"
         #expect(fixture.contains("\"\(lowercaseKey)\":"))
         fixture = fixture.replacingOccurrences(
             of: "\"\(lowercaseKey)\":", with: "\"\(lowercaseKey.uppercased())\":"

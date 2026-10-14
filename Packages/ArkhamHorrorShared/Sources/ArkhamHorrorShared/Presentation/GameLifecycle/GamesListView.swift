@@ -158,6 +158,26 @@ struct GamesListView: View {
             .navigationDestination(for: GameID.self) { gameID in
                 LiveGameView(model: model, gameID: gameID)
             }
+            .alert(liveGameRoomClosedTitle(), isPresented: isRoomClosedNoticePresented) {
+                Button(gameLifecycleLocalized("common.dismiss", "Dismiss"), role: .cancel) {
+                    model.dismissRoomClosedNotice()
+                }
+                .accessibilityIdentifier(AccountAccessibilityID.gameListRoomClosedDismissButton)
+            } message: {
+                Text(liveGameRoomClosedMessage())
+                    .accessibilityIdentifier(AccountAccessibilityID.gameListRoomClosedNoticeText)
+            }
+    }
+
+    private var isRoomClosedNoticePresented: Binding<Bool> {
+        Binding(
+            get: { model.roomClosedNotice != nil },
+            set: { isPresented in
+                if !isPresented {
+                    model.dismissRoomClosedNotice()
+                }
+            }
+        )
     }
 
     @ViewBuilder

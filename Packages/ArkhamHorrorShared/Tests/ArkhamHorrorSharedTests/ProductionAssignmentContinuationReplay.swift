@@ -706,7 +706,8 @@ enum AssignmentContinuationReplayRunner {
             switch model.liveGameState(for: configuration.promptIdentity.gameID) {
             case let .live(projection):
                 return projection
-            case .offline, .incompatiblePayload, .authenticationExpired, .terminalFailure:
+            case .offline, .incompatiblePayload, .authenticationExpired, .roomClosed,
+                 .terminalFailure:
                 throw ProductionAssignmentReplayError.liveSessionFailed
             case .idle, .loading, .reconnecting:
                 break
@@ -726,7 +727,8 @@ enum AssignmentContinuationReplayRunner {
                 where projection.counters.scenarioSteps
                 != configuration.expectedPromptVersion:
                 return projection
-            case .offline, .incompatiblePayload, .authenticationExpired, .terminalFailure:
+            case .offline, .incompatiblePayload, .authenticationExpired, .roomClosed,
+                 .terminalFailure:
                 throw ProductionAssignmentReplayError.liveSessionFailed
             case .idle, .loading, .live, .reconnecting:
                 break

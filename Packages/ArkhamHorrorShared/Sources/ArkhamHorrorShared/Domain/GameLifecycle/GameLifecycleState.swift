@@ -127,13 +127,14 @@ extension GameLifecycleError {
 }
 
 extension GameListEntry {
-    /// This entry's ``GameID``, if it decoded successfully. `nil` for a ``failed``
-    /// row, which carries only an opaque error string and never an ID.
+    /// This entry's ``GameID``, when the row carries one. Schema 0.1.53 failed rows
+    /// include an ID so clients can offer the same broken-game delete affordance as web.
     var gameID: GameID? {
-        if case let .game(summary) = self {
+        switch self {
+        case let .game(summary):
             summary.id
-        } else {
-            nil
+        case let .failed(entry):
+            entry.id
         }
     }
 }
