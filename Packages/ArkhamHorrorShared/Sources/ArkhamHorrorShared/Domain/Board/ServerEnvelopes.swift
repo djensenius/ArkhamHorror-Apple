@@ -88,6 +88,9 @@ enum BoardSnapshotUpdate: Sendable {
     case snapshot(PublicGameSnapshot)
     case gameError(rawMessage: String)
     case answerRejected(AnswerRejectedMessage)
+    /// The server closed the game room (for example because the game was deleted) and will
+    /// close the socket immediately after this frame.
+    case roomClosed(reason: String)
     /// A recognized-or-unrecognized `ServerMessage` tag this contract slice does not
     /// decode further. `rawContents` preserves whatever `contents`-shaped payload (if
     /// any) accompanied it, for diagnostics.
@@ -122,6 +125,11 @@ extension BoardSnapshotUpdate: Codable {
             }
             return
         }
+        if tag == "RoomClosed" {
+            let reason = (try? container.decode(String.self, forKey: .contents)) ?? "closed"
+            self = .roomClosed(reason: reason)
+            return
+        }
         guard tag == "GameUpdate" else {
             self = try .unsupportedMessage(
                 tag: tag,
@@ -145,6 +153,9 @@ extension BoardSnapshotUpdate: Codable {
             try container.encode("AnswerRejected", forKey: .tag)
             try container.encode(rejection.reason, forKey: .reason)
             try container.encode(rejection.questionVersion, forKey: .questionVersion)
+        case let .roomClosed(reason):
+            try container.encode("RoomClosed", forKey: .tag)
+            try container.encode(reason, forKey: .contents)
         case let .unsupportedMessage(tag, rawContents):
             try container.encode(tag, forKey: .tag)
             try container.encodeIfPresent(rawContents, forKey: .contents)

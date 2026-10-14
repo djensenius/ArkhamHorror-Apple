@@ -91,7 +91,8 @@ enum BoardTestFixtures {
     ) -> ChaosBag {
         ChaosBag(
             chaosTokens: chaosTokens, setAsideChaosTokens: setAsideChaosTokens,
-            revealedChaosTokens: revealedChaosTokens, choice: choice, forceDraw: forceDraw,
+            revealedChaosTokens: revealedChaosTokens, choice: choice,
+            forceDraw: forceDraw.map { [$0] } ?? [],
             tokenPool: [], totalRevealedChaosTokens: [], pendingRequests: []
         )
     }

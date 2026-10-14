@@ -75,7 +75,7 @@ extension PublicGameSnapshot: Codable {
         }
         name = try container.decode(String.self, forKey: .name)
         id = try container.decode(GameID.self, forKey: .id)
-        log = try container.decode([String].self, forKey: .log)
+        log = try GameLogRow.decodeLossyArray(from: container, forKey: .log)
         git = try container.decode(String.self, forKey: .git)
         settings = try container.decode(GameSettings.self, forKey: .settings)
         gameSettings = try container.decode(GameSettings.self, forKey: .gameSettings)

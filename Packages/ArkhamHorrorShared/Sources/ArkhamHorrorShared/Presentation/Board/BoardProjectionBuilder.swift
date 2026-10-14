@@ -297,7 +297,7 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
             revealedCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.revealedChaosTokens),
             setAsideCounts: BoardDisplayFormatting.groupChaosFaceCounts(bag.setAsideChaosTokens),
             tokens: makeChaosTokenNodes(bag.chaosTokens),
-            forceDrawFace: bag.forceDraw,
+            forceDrawFace: bag.forceDraw.first,
             hasPendingChoice: bag.choice != nil
         ))
     }

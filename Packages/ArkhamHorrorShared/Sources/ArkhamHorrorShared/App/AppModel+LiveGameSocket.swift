@@ -262,6 +262,14 @@ extension AppModel {
                 connectionID: connectionID,
                 rejection: rejection
             )
+        case .roomClosed:
+            confirmedDeletedGameIDs.insert(attempt.gameID)
+            liveGameStates[attempt.gameID] = .terminalFailure(
+                .unexpectedStatus(404),
+                lastKnown: projection
+            )
+            connection.close(code: .goingAway, reason: nil)
+            return false
         case .unsupportedMessage:
             break
         }
