@@ -263,6 +263,7 @@ extension AppModel {
                 rejection: rejection
             )
         case let .roomClosed(reason):
+            roomClosedNotice = RoomClosedNotice(gameID: attempt.gameID, reason: reason)
             confirmedDeletedGameIDs.insert(attempt.gameID)
             liveGameStates[attempt.gameID] = .roomClosed(reason: reason, lastKnown: projection)
             connection.close(code: .goingAway, reason: nil)

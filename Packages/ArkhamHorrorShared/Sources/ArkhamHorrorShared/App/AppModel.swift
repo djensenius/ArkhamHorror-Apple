@@ -265,6 +265,9 @@ final class AppModel {
     /// list refresh contains unrelated undecodable rows and therefore cannot prove
     /// every missing identifier is definitely absent.
     var confirmedDeletedGameIDs: Set<GameID> = []
+    /// A one-shot room-closed notice for the games-list surface that survives the
+    /// live route being popped by confirmed-delete reconciliation.
+    var roomClosedNotice: RoomClosedNotice?
     /// The most recently loaded open-seat list per game, populated by
     /// ``loadOpenSeats(for:)``.
     var gameOpenSeats: [GameID: OpenSeats] = [:]

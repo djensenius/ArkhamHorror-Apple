@@ -6,11 +6,13 @@ import Testing
 struct GameLifecycleLocalizationTests {
     private let expectedValues: [String: [String: String]] = [
         "en": [
+            "common.dismiss": "Dismiss",
             "games.broken.title": "Broken game",
             "games.live.roomClosed.message": "This game was closed on the server.",
             "games.live.roomClosed.title": "Game closed",
         ],
         "de": [
+            "common.dismiss": "Schließen",
             "games.broken.title": "Beschädigtes Spiel",
             "games.live.roomClosed.message": "Dieses Spiel wurde auf dem Server geschlossen.",
             "games.live.roomClosed.title": "Spiel geschlossen",

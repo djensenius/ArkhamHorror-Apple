@@ -173,8 +173,8 @@ struct Schema153ContractDriftTests {
     }
 
     @MainActor
-    @Test("RoomClosed closes the live room instead of retrying")
-    func roomClosedMarksGameDeleted() async throws {
+    @Test("RoomClosed closes the live room and leaves a list-level notice")
+    func roomClosedMarksGameDeletedAndSurfacesNotice() async throws {
         let (model, _) = AppModelLiveGameTests().makeSignedInModel()
         await model.flowTask?.value
         let gameID = GameID(UUID())
@@ -202,6 +202,23 @@ struct Schema153ContractDriftTests {
         #expect(!model.liveGameState(for: gameID).isRetryable)
         #expect(liveGameRoomClosedTitle() == "Game closed")
         #expect(liveGameRoomClosedMessage() == "This game was closed on the server.")
+
+        let notice = try #require(model.roomClosedNotice)
+        #expect(notice == RoomClosedNotice(gameID: gameID, reason: "deleted"))
+
+        var presentedGameID: GameID?
+        var liveGamePath = [gameID]
+        OpenGameSurfaceReconciler.reconcile(
+            presentedGameID: &presentedGameID,
+            liveGamePath: &liveGamePath,
+            gameListState: .loaded([]),
+            confirmedDeletedGameIDs: model.confirmedDeletedGameIDs
+        )
+        #expect(liveGamePath == [])
+        #expect(model.roomClosedNotice == notice)
+
+        model.dismissRoomClosedNotice()
+        #expect(model.roomClosedNotice == nil)
         await connection.waitUntilClosed()
     }
 

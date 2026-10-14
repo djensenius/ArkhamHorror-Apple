@@ -242,6 +242,8 @@ struct GamesListPresentationTests {
             AccountAccessibilityID.createGameFailureText,
             AccountAccessibilityID.gameDeleteConfirmButton,
             AccountAccessibilityID.gameListFailureText,
+            AccountAccessibilityID.gameListRoomClosedNoticeText,
+            AccountAccessibilityID.gameListRoomClosedDismissButton,
             AccountAccessibilityID.accountDetailButton,
             AccountAccessibilityID.gameRow(for: gameID),
             AccountAccessibilityID.gameDeleteButton(for: gameID),

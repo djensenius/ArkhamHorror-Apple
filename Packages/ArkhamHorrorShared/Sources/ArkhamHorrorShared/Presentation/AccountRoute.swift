@@ -193,6 +193,9 @@ enum AccountAccessibilityID {
         "account.games.actionFailure.\(gameID.uuidString)"
     }
 
+    static let gameListRoomClosedNoticeText = "account.games.roomClosedNotice.text"
+    static let gameListRoomClosedDismissButton = "account.games.roomClosedNotice.dismiss"
+
     /// A per-profile pending-cleanup-failure text identifier, distinct for every
     /// profile that currently has one (see ``AppModel/pendingCleanupFailures``).
     static func pendingCleanupFailureText(for profileID: UUID) -> String {
