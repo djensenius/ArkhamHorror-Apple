@@ -61,9 +61,9 @@ extension GamesListView {
         )
     }
 
-    func deleteFailurePresentation(for failedEntry: FailedGameEntry)
-        -> GameRowActionFailurePresentation?
-    {
+    func deleteFailurePresentation(
+        for failedEntry: FailedGameEntry
+    ) -> GameRowActionFailurePresentation? {
         guard let gameID = failedEntry.id else { return nil }
         return deleteFailurePresentation(for: gameID)
     }

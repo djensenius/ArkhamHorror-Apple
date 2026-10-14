@@ -180,9 +180,7 @@ extension AppModel {
         gameListState = .idle
         gameListRefreshCompletions = [:]
         gameLifecycleActions = [:]
-        gameLifecycleActionFailures = [:]
-        confirmedDeletedGameIDs = []
-        roomClosedNotice = nil
+        gameLifecycleActionFailures = [:]; confirmedDeletedGameIDs = []; roomClosedNotice = nil
         gameOpenSeats = [:]
         gameLobbyPlayerCounts = [:]
         gameLobbyViewerHasSeats = [:]
@@ -193,10 +191,6 @@ extension AppModel {
         gameLobbyDetailTaskIDs = [:]
         gameListGeneration += 1
         resetLiveGameState()
-    }
-
-    func dismissRoomClosedNotice() {
-        roomClosedNotice = nil
     }
 
     // MARK: - Games list
