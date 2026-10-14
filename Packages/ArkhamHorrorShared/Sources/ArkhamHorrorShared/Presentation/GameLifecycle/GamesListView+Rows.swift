@@ -61,6 +61,13 @@ extension GamesListView {
         )
     }
 
+    func deleteFailurePresentation(for failedEntry: FailedGameEntry)
+        -> GameRowActionFailurePresentation?
+    {
+        guard let gameID = failedEntry.id else { return nil }
+        return deleteFailurePresentation(for: gameID)
+    }
+
     @ViewBuilder
     func row(for entry: GameListEntry) -> some View {
         switch entry {
@@ -124,6 +131,7 @@ extension GamesListView {
 
     @ViewBuilder
     private func failedRow(for failedEntry: FailedGameEntry) -> some View {
+        let deleteFailure = deleteFailurePresentation(for: failedEntry)
         let label = VStack(alignment: .leading, spacing: 4) {
             Label(
                 failedEntry.name ?? gameLifecycleLocalized(
@@ -136,6 +144,11 @@ extension GamesListView {
             Text(failedEntry.error)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if let deleteFailure {
+                ArkhamFailureText(message: deleteFailure.message)
+                    .accessibilityLabel(deleteFailure.accessibilityLabel)
+                    .accessibilityIdentifier(deleteFailure.accessibilityIdentifier)
+            }
         }
         if let gameID = failedEntry.id {
             let actionInFlight = model.gameLifecycleActions[gameID] != nil

@@ -365,6 +365,31 @@ extension GamesListPresentationTests {
         _ = GameRowView(game: game, actionFailure: presentation).body
     }
 
+    @Test("Failed rows with IDs render the same row-local delete failure presentation")
+    func failedRowDeleteFailurePresentationUsesServerMessage() async throws {
+        let gameID = GameID(UUID())
+        let failedEntry = FailedGameEntry(
+            id: gameID,
+            name: "Broken contract fixture",
+            error: "Contract fixture failed to load."
+        )
+        let serverMessage = "Delete is disabled while this game is being updated."
+        let model = await model(gameListState: .loaded([.failed(failedEntry)]))
+        model.gameLifecycleActionFailures[gameID] = GameLifecycleActionFailure(
+            action: .deleting,
+            error: .operationFailed(DeckOperationError(errorMsg: serverMessage))
+        )
+        let view = GamesListView(model: model)
+
+        let presentation = try #require(view.deleteFailurePresentation(for: failedEntry))
+        #expect(presentation.message == serverMessage)
+        #expect(
+            presentation.accessibilityIdentifier
+                == AccountAccessibilityID.gameActionFailureText(for: gameID.rawValue)
+        )
+        _ = view.row(for: .failed(failedEntry))
+    }
+
     @Test("Only delete failures produce games-list row failure presentation")
     func rowFailurePresentationIsScopedToDeleteFailures() async {
         let game = sampleGame()
