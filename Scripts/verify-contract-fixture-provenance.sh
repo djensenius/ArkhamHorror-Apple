@@ -117,6 +117,7 @@ mode-campaign-only.json:contracts/fixtures/mode-campaign-only.json
 mode-campaign-scenario.json:contracts/fixtures/mode-campaign-scenario.json
 mode-turn-zero.json:contracts/fixtures/mode-turn-zero.json
 movement.json:contracts/fixtures/movement.json
+public-game-structured-log.json:contracts/fixtures/public-game-structured-log.json
 question-agenda-advance.json:contracts/fixtures/question-agenda-advance.json
 question-agenda-consequence.json:contracts/fixtures/question-agenda-consequence.json
 question-agenda-horror-assignment.json:contracts/fixtures/question-agenda-horror-assignment.json
@@ -192,6 +193,7 @@ question-window-choose-one.json:contracts/fixtures/question-window-choose-one.js
 raw-question-fixture.schema.json:contracts/schemas/raw-question-fixture.schema.json
 replay-attestation.json:contracts/fixtures/replay-attestation.json
 replay-attestation.schema.json:contracts/schemas/replay-attestation.schema.json
+room-closed.json:contracts/fixtures/room-closed.json
 uuid-entity-map.json:contracts/fixtures/uuid-entity-map.json
 
 "

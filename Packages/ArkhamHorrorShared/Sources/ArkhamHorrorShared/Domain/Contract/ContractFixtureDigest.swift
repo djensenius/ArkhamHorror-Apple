@@ -64,15 +64,15 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
-            sha256Hex: "b545376fafbd9dcc4aa47ad625d91bc96ddd2876ea5be6cbb7a5fc1ca0aa3649"
+            sha256Hex: "2d611ed83a47a8efb7843f989434dd772421528e9945f7e2c5054d4395f10172"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "38effc498e81e1cd5b9138476e4e8b1032663b4d9af4ed6fd9b19834308c7f25"
+            sha256Hex: "096e253b657ebbe286c080f3b4aca7def50861764959d56715da3e3e7c339f61"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities-locale-catalog",
-            sha256Hex: "d9b61ece46e8bd7416f9c5cd1d7c16b9f84daaf09b898125e8892d44afb7d036"
+            sha256Hex: "8a3e38bf22b53c4e09c407cb7f59413ca9463b0f6570b388b4df02f6fa85ea06"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities.schema",
@@ -108,43 +108,47 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "game-list",
-            sha256Hex: "5e89ffcf2cba73da7df12cd2f0a6fe6ccd951a2f1d7b5b404454abf2055785ff"
+            sha256Hex: "eb3d06e26059c20225389e22a945088899c4433480a39602818f4003365a1fbf"
         ),
         VendoredFixtureDigest(
             fileName: "game-update",
-            sha256Hex: "1c72d670d73e20f7923c8abc8817a89f198418bde23d1f0577e25386638ef827"
+            sha256Hex: "be2126433a0d50527145c0ee43cb442ce5bba5427e61899ba9d3b371c2f74985"
         ),
         VendoredFixtureDigest(
             fileName: "get-game",
-            sha256Hex: "9747de6984c2028a043f9fd5a20b29179ad0980705b010e5a196f9eb4cb8a80c"
+            sha256Hex: "e22ac8ec7dc35540bfb10ce1df5f97f208a8ef11c40f2dd9db32f5181c6a7671"
         ),
         VendoredFixtureDigest(
             fileName: "investigator-unhealed-horror-negative",
-            sha256Hex: "f251bd1a525fa0eb9508db084fbe7fb86928ec1ecb4472cf0c79cbaf9478762f"
+            sha256Hex: "46aca1c80dd8d592d03a5adf0a0824510ea7f3877839a8bfc114babc30be5643"
         ),
         VendoredFixtureDigest(
             fileName: "location-enemy-view",
-            sha256Hex: "fd2cc29b6ea081cfa340b02c93194433542ee27ea50c9e841c94d6ed37f419b4"
+            sha256Hex: "a17406992baa5ebb02c216c56bae7205804e6d20544c1ea08fa82aa1e6af348b"
         ),
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "a91257aefcab09ab3c5614edcbe0e4631a28d40f286cb8a55ea2c4d8d4a735f2"
+            sha256Hex: "5c74d543a47fa244a36e320460193f09eac9a906da7c365ea1dbab30d1b53739"
         ),
         VendoredFixtureDigest(
             fileName: "mode-campaign-only",
-            sha256Hex: "51162c3cbbd0e479f22f591639e7e8919a84aa3a7316be48f9aace545bf8e81f"
+            sha256Hex: "0a5e645bf7f4fd7399048a934d36c2021627bed8663e8f7916c67d132a5cceea"
         ),
         VendoredFixtureDigest(
             fileName: "mode-campaign-scenario",
-            sha256Hex: "7f4348da15b7fb2fe761753b9cdadc3124307a65a75bfcf9fd8546a7cc5c2897"
+            sha256Hex: "05a06d8c3d6a56e2014df7696b8c35af1d5f07dc86f596111c0867389bcd44ed"
         ),
         VendoredFixtureDigest(
             fileName: "mode-turn-zero",
-            sha256Hex: "ac598791652b79370375631658794554cc8af3de97379c11696793bf63ac8a20"
+            sha256Hex: "f24f746d33ebb36ed75f0263047f0340515652c01ca976a4c94a6a3d2877d839"
         ),
         VendoredFixtureDigest(
             fileName: "movement",
             sha256Hex: "c284c0b4244024a072ee7a486c5907db4981c6ff4fed1d55cbe33046fb0b63dc"
+        ),
+        VendoredFixtureDigest(
+            fileName: "public-game-structured-log",
+            sha256Hex: "9de1b601091ed9063ab0b3b67601851b2ffa1a4592324bb9aaace1ea7c61ec87"
         ),
         VendoredFixtureDigest(
             fileName: "question-agenda-advance",
@@ -164,7 +168,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-choose-one-location",
-            sha256Hex: "5ce62cbaee22e32f4b8d84e563d331b58d087c3d5f6b3061c7cbfdb177af0f79"
+            sha256Hex: "615bc00af5ff5c45377be33f1301e5c1d3892b422da45b3dcc22c3377afab617"
         ),
         VendoredFixtureDigest(
             fileName: "question-choose-one-location-multiple",
@@ -172,7 +176,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-cover-up-reaction",
-            sha256Hex: "970721a646443a5eb5770d3103ee266b579506b6c76b7f487d287c4f9dae7089"
+            sha256Hex: "4de68760c168088464d46affbebedcf0a8dba3ff470a3b2297ba53515fa824a0"
         ),
         VendoredFixtureDigest(
             fileName: "question-encounter-deck-draw",
@@ -200,11 +204,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-gathering-act-objective",
-            sha256Hex: "e192721b78db903beee104cd4bf25924f458a29a6cf408dbed62f16c003fe40d"
+            sha256Hex: "26435f5874cc374172e1b1c55d515efdf9307ec062f039e840d25e95cf95f224"
         ),
         VendoredFixtureDigest(
             fileName: "question-gathering-attic-entry-forced",
-            sha256Hex: "f0859c41b10dbe80f6236d7cfa1152116239c8fb04b0f8816a570a60122f3d7e"
+            sha256Hex: "b0622d1a4d3a546e11efbd64e4ddd4a4d508606ac8ac5ec55b1e732188fc6029"
         ),
         VendoredFixtureDigest(
             fileName: "question-gathering-attic-horror-assignment",
@@ -216,11 +220,11 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-gathering-cellar-entry-forced",
-            sha256Hex: "ea7c802ed3064fda9707c595ac98a3d96f8b6d4c923ae5ff4657f1e7379beba4"
+            sha256Hex: "ec1efb567e6bc8133ebef8df6b3bb07a85fc77e308d163a96f97e8d6973a0dc9"
         ),
         VendoredFixtureDigest(
             fileName: "question-gathering-movement",
-            sha256Hex: "bfef8a3ead15a37cd119da96e9173f9d8c01e17b9b29abb0d4dd920fd277221f"
+            sha256Hex: "abe2414c791467424d5fbf578b42dca6a2b96ea592838da59462252a6e5bc733"
         ),
         VendoredFixtureDigest(
             fileName: "question-generic-choose-amounts",
@@ -244,7 +248,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-generic-cost-ability-window",
-            sha256Hex: "ae4ca77aa580dfff8340ae9acc1f96811f52312ed4aa18f57b5298cf07f4fb43"
+            sha256Hex: "62c5375f001322ebd05ba8e10e551aadfaf2e19dd5be7559acb72aed26905606"
         ),
         VendoredFixtureDigest(
             fileName: "question-generic-invalid-info",
@@ -296,15 +300,15 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-player-window-choose-one",
-            sha256Hex: "0e29e060f65b8ec05886a0e1339d0dbb89995987dc006d9cd5f6311a5c491805"
+            sha256Hex: "f0819c56cdc88736add32ea61c87404043b57d88b8bebd8043495c5f934f164e"
         ),
         VendoredFixtureDigest(
             fileName: "question-player-window-enemy-actions",
-            sha256Hex: "8071d15dd7c4151757885d04cf6ac3b3b452ac6bd79590f4031b3993993a5187"
+            sha256Hex: "07c94499fc8dd2ad167dd19d0f16219302dee3ff8629b585008ad2f7510f237f"
         ),
         VendoredFixtureDigest(
             fileName: "question-player-window-engage-action",
-            sha256Hex: "fcda1583d42da4fca7c9f2be593bd0c878dca588fe15d32f24c512154fa8212b"
+            sha256Hex: "523da05a971f6c6173060aa37004de2f7b046b17e2571f4ca9cc09eaa327cc12"
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation-encounter-deck-draw",
@@ -316,7 +320,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation-gathering-act-objective",
-            sha256Hex: "70fdbf504aae36b7ae5a9fba45cc2d33bc0a1f950789c63d621fd7f9a5741f23"
+            sha256Hex: "30d8835cd49ec2944615eb82669e7cb636a447c79011940f5a31bee9fbb1eff9"
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation-gathering-attic-entry-forced",
@@ -392,7 +396,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation-representatives",
-            sha256Hex: "7d3b65869b5c880b1206d5c7921a3bcbcc93b69a5257e0eeb02479368e551ab0"
+            sha256Hex: "5286d86aac815dcd931a4eb665c585126313fdb19037bff508acb2f471f9ad79"
         ),
         VendoredFixtureDigest(
             fileName: "question-presentation-representatives.schema",
@@ -420,15 +424,15 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "question-roland-defeat-reaction",
-            sha256Hex: "13471177b2ec181fe80b846b8812b5e079bfc22eb763219edc99c05f860ae093"
+            sha256Hex: "3b4c5fa95e172f10edbfb81f990e75a38fe0c9f401e86d02b2a293a580d17127"
         ),
         VendoredFixtureDigest(
             fileName: "question-round-end-forced-ability",
-            sha256Hex: "ccf51b1cd6d4f35a23d05c69d6009d47c8ca60f531d69c7c429a26beac412f5f"
+            sha256Hex: "9441f141605642ce4d0d69c1aab05e5b0d7ce39202d7872c1ed52293004331ed"
         ),
         VendoredFixtureDigest(
             fileName: "question-treachery-forced-ability",
-            sha256Hex: "e06cd3debf7b77313c4d4fcf8732944915022e2f99df4535a4177c1521cf899f"
+            sha256Hex: "7ddeee49948feb86c56b6a44fbf85cb2d3e4d0b90c64f03a23d663093a04ae34"
         ),
         VendoredFixtureDigest(
             fileName: "question-window-choose-one",
@@ -440,7 +444,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "9530d53a5426c821913d78bff9c1d80e67a42e7dc4460916605df033cb92491f"
+            sha256Hex: "dd35364723200ac1d53ea2b991b2bdcc90804f72e3a199677e53ffec7315c9cf"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
@@ -449,6 +453,10 @@ enum ContractFixtureDigests {
         VendoredFixtureDigest(
             fileName: "uuid-entity-map",
             sha256Hex: "09ebbcb0bffbcfac4060c878976570b965f10b70a2597111b162662b56b7763d"
+        ),
+        VendoredFixtureDigest(
+            fileName: "room-closed",
+            sha256Hex: "fabfe52fd38ab86c7c210c681205d6aa2c992200a798063b982ba0a0aefcfae6"
         ),
     ]
 }
