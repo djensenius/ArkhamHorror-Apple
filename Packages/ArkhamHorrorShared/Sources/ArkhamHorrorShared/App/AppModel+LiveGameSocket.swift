@@ -262,12 +262,9 @@ extension AppModel {
                 connectionID: connectionID,
                 rejection: rejection
             )
-        case .roomClosed:
+        case let .roomClosed(reason):
             confirmedDeletedGameIDs.insert(attempt.gameID)
-            liveGameStates[attempt.gameID] = .terminalFailure(
-                .unexpectedStatus(404),
-                lastKnown: projection
-            )
+            liveGameStates[attempt.gameID] = .roomClosed(reason: reason, lastKnown: projection)
             connection.close(code: .goingAway, reason: nil)
             return false
         case .unsupportedMessage:

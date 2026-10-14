@@ -257,6 +257,7 @@ struct GamesListPresentationTests {
             AccountAccessibilityID.liveGameOfflineText,
             AccountAccessibilityID.liveGameIncompatiblePayloadText,
             AccountAccessibilityID.liveGameAuthenticationExpiredText,
+            AccountAccessibilityID.liveGameRoomClosedText,
             AccountAccessibilityID.liveGameTerminalFailureText,
             AccountAccessibilityID.liveGameEnterButton(for: gameID),
         ]

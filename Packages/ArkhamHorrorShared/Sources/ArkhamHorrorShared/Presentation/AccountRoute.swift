@@ -223,6 +223,7 @@ enum AccountAccessibilityID {
     static let liveGameOfflineText = "account.games.live.offline"
     static let liveGameIncompatiblePayloadText = "account.games.live.incompatiblePayload"
     static let liveGameAuthenticationExpiredText = "account.games.live.authenticationExpired"
+    static let liveGameRoomClosedText = "account.games.live.roomClosed"
     static let liveGameTerminalFailureText = "account.games.live.terminalFailure"
     static let campaignBetweenScenariosView = "account.games.live.campaign.betweenScenarios"
     static let campaignContinueButton = "account.games.live.campaign.continue"

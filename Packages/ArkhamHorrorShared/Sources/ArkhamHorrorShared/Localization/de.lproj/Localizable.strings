@@ -259,6 +259,8 @@
 "games.delete.action.accessibilityLabel" = "Spiel löschen";
 "games.delete.confirmation.title" = "Möchtest du dieses Spiel wirklich löschen?";
 "games.delete.failure.accessibilityLabel" = "Löschen fehlgeschlagen: %@";
+"games.live.roomClosed.message" = "Dieses Spiel wurde auf dem Server geschlossen.";
+"games.live.roomClosed.title" = "Spiel geschlossen";
 "games.joinInvite.title" = "Spiel beitreten";
 "games.joinInvite.section" = "Einladung";
 "games.joinInvite.placeholder" = "https://arkhamhorror.app/games/.../join";

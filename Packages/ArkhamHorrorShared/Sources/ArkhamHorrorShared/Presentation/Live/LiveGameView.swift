@@ -8,14 +8,14 @@ import SwiftUI
 /// documentation for why), and renders every ``LiveGameState`` case with an explicit,
 /// accessible presentation -- loading, the live ``BoardView``, a non-blocking
 /// reconnecting banner over the last known board, and dedicated
-/// offline/incompatible-payload/authentication-expired/terminal-failure states with
-/// a Retry action for the two states retrying could actually help
+/// offline/incompatible-payload/authentication-expired/room-closed/terminal-failure states
+/// with a Retry action for the two states retrying could actually help
 /// (``LiveGameState/offline(lastKnown:)``, ``LiveGameState/terminalFailure(_:lastKnown:)``)
-/// or a Dismiss action for the two
-/// it cannot (authentication expiry requires signing in again rather than merely
-/// retrying the same rejected token; an incompatible payload is a genuine contract
-/// mismatch reconnecting cannot fix) -- never a success-shaped fallback, and never a
-/// Retry action offered where ``LiveGameState/isRetryable`` reports `false`.
+/// or a Dismiss action for the states it cannot (authentication expiry requires signing in
+/// again rather than merely retrying the same rejected token; an incompatible payload is a
+/// genuine contract mismatch reconnecting cannot fix; a closed room is terminal server state)
+/// -- never a success-shaped fallback, and never a Retry action offered where
+/// ``LiveGameState/isRetryable`` reports `false`.
 ///
 /// ## Subscription ownership
 ///
@@ -117,6 +117,13 @@ struct LiveGameView: View {
                 systemImage: "person.crop.circle.badge.exclamationmark",
                 message: "Your session has expired. Sign in again to continue.",
                 accessibilityID: AccountAccessibilityID.liveGameAuthenticationExpiredText
+            )
+        case .roomClosed:
+            dismissibleFailureContent(
+                title: liveGameRoomClosedTitle(),
+                systemImage: "xmark.circle",
+                message: liveGameRoomClosedMessage(),
+                accessibilityID: AccountAccessibilityID.liveGameRoomClosedText
             )
         case let .terminalFailure(error, _):
             retryableFailureContent(
@@ -302,8 +309,9 @@ struct LiveGameView: View {
     /// with a Dismiss action instead of Retry -- for states where retrying could
     /// not possibly change the outcome (``LiveGameState/authenticationExpired``
     /// requires signing in again; ``LiveGameState/incompatiblePayload(lastKnown:)``
-    /// is a genuine contract mismatch reconnecting cannot fix), matching
-    /// ``LiveGameState/isRetryable`` reporting `false` for both.
+    /// is a genuine contract mismatch reconnecting cannot fix; and
+    /// ``LiveGameState/roomClosed(reason:lastKnown:)`` is terminal server state),
+    /// matching ``LiveGameState/isRetryable`` reporting `false` for all three.
     private func dismissibleFailureContent(
         title: String,
         systemImage: String,

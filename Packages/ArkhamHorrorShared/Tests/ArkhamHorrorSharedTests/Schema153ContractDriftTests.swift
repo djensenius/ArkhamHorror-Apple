@@ -190,6 +190,13 @@ struct Schema153ContractDriftTests {
         )
         #expect(outcome == .stopped)
         #expect(model.confirmedDeletedGameIDs.contains(gameID))
+        #expect(model.liveGameState(for: gameID) == .roomClosed(
+            reason: "deleted",
+            lastKnown: projection
+        ))
+        #expect(!model.liveGameState(for: gameID).isRetryable)
+        #expect(liveGameRoomClosedTitle() == "Game closed")
+        #expect(liveGameRoomClosedMessage() == "This game was closed on the server.")
         await connection.waitUntilClosed()
     }
 

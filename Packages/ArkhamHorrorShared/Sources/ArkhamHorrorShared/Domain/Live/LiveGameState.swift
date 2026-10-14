@@ -45,6 +45,10 @@ enum LiveGameState: Equatable, Sendable {
     /// endpoint's 401 handling; this game screen has nothing further to retry on its
     /// own.
     case authenticationExpired
+    /// The server intentionally closed this room (for example because the game was
+    /// deleted). Terminal and non-retryable: the socket has already been closed and
+    /// the games-list reconciler will dismiss a deleted open board.
+    case roomClosed(reason: String, lastKnown: BoardProjection?)
     /// An unrecoverable, non-authentication failure (an unexpected HTTP status, or a
     /// defensive/should-be-unreachable request-construction failure). Reuses
     /// ``GameLifecycleError`` rather than a second, parallel error vocabulary.
@@ -64,9 +68,9 @@ extension LiveGameState {
             projection
         case let .reconnecting(lastKnown),
              let .offline(lastKnown),
-             let .incompatiblePayload(lastKnown):
-            lastKnown
-        case let .terminalFailure(_, lastKnown):
+             let .incompatiblePayload(lastKnown),
+             let .roomClosed(_, lastKnown),
+             let .terminalFailure(_, lastKnown):
             lastKnown
         }
     }
@@ -84,7 +88,8 @@ extension LiveGameState {
         switch self {
         case .offline, .terminalFailure:
             true
-        case .idle, .loading, .live, .reconnecting, .incompatiblePayload, .authenticationExpired:
+        case .idle, .loading, .live, .reconnecting, .incompatiblePayload, .authenticationExpired,
+             .roomClosed:
             false
         }
     }

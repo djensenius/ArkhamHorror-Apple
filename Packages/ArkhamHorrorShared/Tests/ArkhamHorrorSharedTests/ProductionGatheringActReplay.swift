@@ -912,7 +912,7 @@ enum ProductionGatheringActReplayRunner {
             case let .live(projection)
                 where projection.counters.scenarioSteps > version:
                 throw ProductionGatheringActReplayError.promptVersionMismatch
-            case .offline, .incompatiblePayload, .authenticationExpired,
+            case .offline, .incompatiblePayload, .authenticationExpired, .roomClosed,
                  .terminalFailure:
                 throw ProductionGatheringActReplayError.liveSessionFailed
             case .idle, .loading, .live, .reconnecting:
