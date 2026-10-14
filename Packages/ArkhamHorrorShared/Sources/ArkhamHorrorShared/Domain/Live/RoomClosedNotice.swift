@@ -7,5 +7,7 @@ struct RoomClosedNotice: Equatable, Identifiable, Sendable {
     let gameID: GameID
     let reason: String
 
-    var id: GameID { gameID }
+    var id: GameID {
+        gameID
+    }
 }
