@@ -3,11 +3,11 @@ import Foundation
 /// One row of `PublicGame.log`, accepting both the legacy flat-string format used by
 /// 0.1.48-0.1.52 servers and the structured `LogRow` union introduced in 0.1.53.
 ///
-/// Web references for the 0.1.53 shape and rendering behavior:
-/// `/Users/david/Developer/ArkhamHorror/ArkhamHorror/frontend/src/arkham/types/GameLog.ts:334-365`
-/// defines the `LogRow` union; `frontend/src/arkham/components/GameLog.vue:47-54` filters
-/// `OnlyPlayer` rows against the viewing player; and
-/// `frontend/src/arkham/components/LogPart.vue:96-122` renders `LogText`, `LogI18n`, and refs.
+/// Web references for the 0.1.53 shape and audience behavior:
+/// `frontend/src/arkham/types/GameLog.ts:356-380` defines the `LogRow` union, and
+/// `frontend/src/arkham/components/GameLog.vue:56-61` filters `OnlyPlayer` rows against
+/// the viewing player. Rendering is deliberately not modelled here until a native log view
+/// can match the web renderer's localization, grouping, and legacy brace-DSL behavior.
 enum GameLogRow: Sendable, Equatable, Hashable {
     case legacy(text: String, step: Int?)
     case structured(GameLogEntry)
@@ -18,19 +18,6 @@ enum GameLogRow: Sendable, Equatable, Hashable {
             true
         case let .structured(entry):
             entry.isVisible(to: playerID)
-        }
-    }
-
-    func renderedText(
-        for playerID: PlayerID? = nil,
-        localeCatalogResolver: LocaleCatalogResolver? = nil
-    ) -> String? {
-        guard isVisible(to: playerID) else { return nil }
-        switch self {
-        case let .legacy(text, _):
-            return text
-        case let .structured(entry):
-            return entry.renderedText(localeCatalogResolver: localeCatalogResolver)
         }
     }
 }
@@ -145,15 +132,6 @@ struct GameLogEntry: Sendable, Equatable, Hashable, Codable {
         case let .onlyPlayer(rowPlayerID):
             rowPlayerID == playerID
         }
-    }
-
-    func renderedText(localeCatalogResolver: LocaleCatalogResolver? = nil) -> String {
-        let rendered = body
-            .map { $0.renderedText(localeCatalogResolver: localeCatalogResolver) }
-            .joined()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !rendered.isEmpty else { return "Log entry #\(seq)" }
-        return rendered
     }
 }
 
@@ -320,74 +298,6 @@ enum GameLogPart: Sendable, Equatable, Hashable, Codable {
         case let .list(parts):
             try container.encode("LogList", forKey: .tag)
             try container.encode(parts, forKey: .contents)
-        }
-    }
-
-    func renderedText(localeCatalogResolver: LocaleCatalogResolver? = nil) -> String {
-        switch self {
-        case let .text(text):
-            text
-        case let .i18n(key, variables):
-            renderI18n(key: key, variables: variables, localeCatalogResolver: localeCatalogResolver)
-        case let .ref(ref):
-            ref.name
-        case let .number(number):
-            number.description
-        case let .delta(number):
-            number.sign == .minus ? number.description : "+\(number.description)"
-        case let .token(token):
-            token
-        case let .icon(icon):
-            icon
-        case let .campaignKey(value):
-            renderCampaignKey(value)
-        case let .list(parts):
-            parts.map { $0.renderedText(localeCatalogResolver: localeCatalogResolver) }
-                .joined(separator: ", ")
-        }
-    }
-
-    private func renderI18n(
-        key: String,
-        variables: [String: GameLogPart],
-        localeCatalogResolver: LocaleCatalogResolver?
-    ) -> String {
-        let renderedVariables = variables.mapValues {
-            $0.renderedText(localeCatalogResolver: localeCatalogResolver)
-        }
-        if let localeCatalogResolver {
-            let jsonVariables = JSONValue.object(
-                renderedVariables.mapValues { .string($0) }
-            )
-            if case let .success(nodes) = localeCatalogResolver.render(
-                key: key,
-                variables: jsonVariables
-            ) {
-                let text = nodes.map(\.plainText).joined()
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty {
-                    return text
-                }
-            }
-        }
-        guard !renderedVariables.isEmpty else { return key }
-        return key + "(" + renderedVariables
-            .sorted { $0.key < $1.key }
-            .map { "\($0.key): \($0.value)" }
-            .joined(separator: ", ") + ")"
-    }
-
-    private func renderCampaignKey(_ value: JSONValue) -> String {
-        switch value {
-        case let .string(text):
-            return text
-        case let .object(object):
-            if case let .string(tag)? = object["tag"] {
-                return tag
-            }
-            return "campaign log entry"
-        default:
-            return "campaign log entry"
         }
     }
 }

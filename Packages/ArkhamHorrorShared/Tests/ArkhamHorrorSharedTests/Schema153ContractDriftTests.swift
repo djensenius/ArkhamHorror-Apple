@@ -57,8 +57,8 @@ struct Schema153ContractDriftTests {
         #expect(try #require(scenario(in: nullEnvelope.game.mode)).chaosBag.forceDraw == [])
     }
 
-    @Test("structured public-game log decodes and renders captured rows")
-    func structuredLogDecodesAndRenders() throws {
+    @Test("structured public-game log decodes captured rows and filters audiences")
+    func structuredLogDecodesAndFiltersAudiences() throws {
         let snapshot = try ContractJSON.decode(
             PublicGameSnapshot.self,
             from: fixtureData(named: "public-game-structured-log")
@@ -71,12 +71,40 @@ struct Schema153ContractDriftTests {
         )))
 
         #expect(snapshot.log.count == 3)
-        let viewerText = snapshot.log.compactMap { $0.renderedText(for: viewer) }
-        #expect(viewerText.contains("Legacy contract fixture row."))
-        #expect(viewerText.contains { $0.contains("Everyone sees Contract fixture card") })
-        #expect(viewerText.contains("Private contract row."))
-        let otherText = snapshot.log.compactMap { $0.renderedText(for: other) }
-        #expect(!otherText.contains("Private contract row."))
+        #expect(snapshot.log.map { $0.isVisible(to: viewer) } == [true, true, true])
+        #expect(snapshot.log.map { $0.isVisible(to: other) } == [true, true, false])
+        #expect(snapshot.log.map { $0.isVisible(to: nil) } == [true, true, false])
+
+        guard case let .legacy(text, step) = snapshot.log[0] else {
+            Issue.record("Expected legacy log row")
+            return
+        }
+        #expect(text == "Legacy contract fixture row.")
+        #expect(step == 7)
+
+        guard case let .structured(publicEntry) = snapshot.log[1] else {
+            Issue.record("Expected public structured log row")
+            return
+        }
+        #expect(publicEntry.seq == 1)
+        #expect(publicEntry.children.count == 1)
+        #expect(publicEntry.children[0].seq == 0)
+        #expect(publicEntry.children[0].body == [.text("Nested contract child.")])
+        #expect(publicEntry.body.count == 3)
+        #expect(publicEntry.body[0] == .text("Everyone sees "))
+        guard case let .i18n(key, variables) = publicEntry.body[2] else {
+            Issue.record("Expected structured LogI18n part")
+            return
+        }
+        #expect(key == "contract.log.everyone")
+        #expect(variables["count"] == .number(.integer(2)))
+
+        guard case let .structured(privateEntry) = snapshot.log[2] else {
+            Issue.record("Expected private structured log row")
+            return
+        }
+        #expect(privateEntry.audience == .onlyPlayer(viewer))
+        #expect(privateEntry.body == [.text("Private contract row.")])
     }
 
     @Test("legacy string logs and malformed rows do not fail the snapshot")
@@ -91,8 +119,8 @@ struct Schema153ContractDriftTests {
                 ]
             }
         )
-        let rendered = envelope.game.log.compactMap { $0.renderedText() }
-        #expect(rendered == ["legacy text row", "legacy object row"])
+        let legacyRows = envelope.game.log.compactMap(legacyLogText)
+        #expect(legacyRows == ["legacy text row", "legacy object row"])
     }
 
     @Test("RoomClosed captured WebSocket message decodes to terminal room-closed case")
@@ -172,6 +200,11 @@ struct Schema153ContractDriftTests {
         case .campaignOnly:
             nil
         }
+    }
+
+    private func legacyLogText(_ row: GameLogRow) -> String? {
+        guard case let .legacy(text, _) = row else { return nil }
+        return text
     }
 
     private enum MutationError: Error {
