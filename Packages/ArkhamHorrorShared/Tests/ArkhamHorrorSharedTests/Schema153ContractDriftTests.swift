@@ -21,8 +21,8 @@ struct Schema153ContractDriftTests {
             GetGameEnvelope.self,
             from: fixtureData(named: "get-game")
         )
-        let scenario = try #require(scenario(in: envelope.game.mode))
-        #expect(scenario.chaosBag.forceDraw == [])
+        let decodedScenario = try #require(contractScenario(in: envelope.game.mode))
+        #expect(decodedScenario.chaosBag.forceDraw == [])
     }
 
     @Test("0.1.52 forceDraw string and null shapes still decode")
@@ -39,9 +39,10 @@ struct Schema153ContractDriftTests {
                 game["mode"] = mode
             }
         )
-        let stringScenario = try #require(scenario(in: stringEnvelope.game.mode))
+        let stringScenario = try #require(contractScenario(in: stringEnvelope.game.mode))
+        let encodedStringForceDraw = try encodedForceDrawValue(in: stringEnvelope)
         #expect(stringScenario.chaosBag.forceDraw == [.elderSign])
-        #expect(try encodedForceDrawValue(in: stringEnvelope) == .array([.string("ElderSign")]))
+        #expect(encodedStringForceDraw == .array([.string("ElderSign")]))
 
         let nullEnvelope = try ContractJSON.decode(
             GetGameEnvelope.self,
@@ -55,8 +56,10 @@ struct Schema153ContractDriftTests {
                 game["mode"] = mode
             }
         )
-        #expect(try #require(scenario(in: nullEnvelope.game.mode)).chaosBag.forceDraw == [])
-        #expect(try encodedForceDrawValue(in: nullEnvelope) == .array([]))
+        let nullScenario = try #require(contractScenario(in: nullEnvelope.game.mode))
+        let encodedNullForceDraw = try encodedForceDrawValue(in: nullEnvelope)
+        #expect(nullScenario.chaosBag.forceDraw == [])
+        #expect(encodedNullForceDraw == .array([]))
     }
 
     @Test("structured public-game log decodes captured rows and filters audiences")
@@ -202,7 +205,7 @@ struct Schema153ContractDriftTests {
         await connection.waitUntilClosed()
     }
 
-    private func scenario(in mode: GameMode) -> Scenario? {
+    private func contractScenario(in mode: GameMode) -> Scenario? {
         switch mode {
         case let .scenarioOnly(scenario), let .campaignAndScenario(_, scenario):
             scenario
