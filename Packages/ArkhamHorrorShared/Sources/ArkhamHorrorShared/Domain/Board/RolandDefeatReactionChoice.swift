@@ -92,21 +92,34 @@ extension BasicChoiceParser {
 private extension BasicChoiceParser {
     static let rolandCardCode = "c01001"
 
-    static let rolandAbilityKeys: Set<String> = [
-        "additionalCosts", "basic", "canBeCancelled", "cardCode", "chaosTokenEffects",
-        "criteria", "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
+    enum RolandAbilityWireShape {
+        case legacy
+        case schema153
+    }
+
+    /// Roland's reaction is accepted in exactly two governed shapes: the pre-0.1.53
+    /// ability object without `chaosTokenEffects`/`resultLabel`, and the 0.1.53
+    /// ability object with both fields at their canonical empty/null values. A
+    /// partially-updated object remains update-required instead of silently parsing.
+    static let rolandAbilityLegacyKeys: Set<String> = [
+        "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
+        "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
-        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "resultLabel",
-        "skipForAll", "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
+        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "skipForAll",
+        "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
         "window",
     ]
 
-    static var rolandAbilityFixedValues: [String: JSONValue] {
-        [
+    static let rolandAbilitySchema153Keys: Set<String> = rolandAbilityLegacyKeys
+        .union(["chaosTokenEffects", "resultLabel"])
+
+    static func rolandAbilityFixedValues(
+        for shape: RolandAbilityWireShape
+    ) -> [String: JSONValue] {
+        var values: [String: JSONValue] = [
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
-            "chaosTokenEffects": .array([]),
             "criteria": rolandReactionCriteria,
             "delayAdditionalCosts": .null,
             "displayAs": .null,
@@ -118,7 +131,6 @@ private extension BasicChoiceParser {
             "limit": rolandReactionLimit,
             "metadata": .null,
             "requestor": rolandInvestigatorSource,
-            "resultLabel": .null,
             "skipForAll": .bool(false),
             "source": rolandInvestigatorSource,
             "target": .null,
@@ -128,12 +140,17 @@ private extension BasicChoiceParser {
             "wantsSkillTest": .null,
             "window": rolandReactionMatcher,
         ]
+        if shape == .schema153 {
+            values["chaosTokenEffects"] = .array([])
+            values["resultLabel"] = .null
+        }
+        return values
     }
 
     static func parseRolandDefeatReactionAbility(_ value: JSONValue?) -> CardCode? {
         guard case let .object(ability)? = value,
-              rolandAbilityHasAllowedKeys(ability),
-              rolandAbilityFixedValues.allSatisfy({
+              let wireShape = rolandAbilityWireShape(ability),
+              rolandAbilityFixedValues(for: wireShape).allSatisfy({
                   ability[$0.key] == $0.value
               }),
               rolandAbilityBlockingFieldsAreCanonical(ability),
@@ -154,9 +171,18 @@ private extension BasicChoiceParser {
         return InvestigatorID(cardCode)
     }
 
-    static func rolandAbilityHasAllowedKeys(_ ability: [String: JSONValue]) -> Bool {
+    static func rolandAbilityWireShape(
+        _ ability: [String: JSONValue]
+    ) -> RolandAbilityWireShape? {
         let additiveKeys: Set = ["blocksIn", "nonBlocking"]
-        return Set(ability.keys).subtracting(additiveKeys) == rolandAbilityKeys
+        let governedKeys = Set(ability.keys).subtracting(additiveKeys)
+        if governedKeys == rolandAbilityLegacyKeys {
+            return .legacy
+        }
+        if governedKeys == rolandAbilitySchema153Keys {
+            return .schema153
+        }
+        return nil
     }
 
     static func rolandAbilityBlockingFieldsAreCanonical(_ ability: [String: JSONValue]) -> Bool {

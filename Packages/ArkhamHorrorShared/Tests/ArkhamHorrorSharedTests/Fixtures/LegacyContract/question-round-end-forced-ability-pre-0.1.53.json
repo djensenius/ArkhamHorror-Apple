@@ -1,0 +1,168 @@
+{
+  "tag": "WindowChooseOne",
+  "choices": [
+    {
+      "tag": "AbilityLabel",
+      "investigatorId": "c01001",
+      "ability": {
+        "source": {
+          "tag": "TreacherySource",
+          "contents": "9e2f9137-ff19-4993-b001-acc24d0d3736"
+        },
+        "cardCode": "c01165",
+        "index": 1,
+        "type": {
+          "tag": "ForcedAbility",
+          "window": {
+            "tag": "RoundEnds",
+            "contents": "When"
+          }
+        },
+        "limit": {
+          "tag": "GroupLimit",
+          "contents": [
+            {
+              "tag": "PerWindow"
+            },
+            1
+          ]
+        },
+        "window": {
+          "tag": "RoundEnds",
+          "contents": "When"
+        },
+        "metadata": null,
+        "criteria": {
+          "tag": "InThreatAreaOf",
+          "contents": {
+            "tag": "You"
+          }
+        },
+        "doesNotProvokeAttacksOfOpportunity": null,
+        "tooltip": null,
+        "canBeCancelled": true,
+        "displayAs": null,
+        "delayAdditionalCosts": null,
+        "basic": false,
+        "additionalCosts": [],
+        "requestor": {
+          "tag": "TreacherySource",
+          "contents": "9e2f9137-ff19-4993-b001-acc24d0d3736"
+        },
+        "triggersSkillTest": false,
+        "wantsSkillTest": null,
+        "target": null,
+        "highlightFromWindow": false,
+        "skipForAll": false,
+        "ignoreAllCosts": false,
+        "fightCriteriaOverride": null,
+        "evadeCriteriaOverride": null,
+        "nonBlocking": false,
+        "blocksIn": null
+      },
+      "windows": [
+        {
+          "windowTiming": "When",
+          "windowType": {
+            "tag": "AtEndOfRound"
+          },
+          "windowBatchId": null,
+          "windowConditionTick": null
+        }
+      ],
+      "before": [],
+      "messages": [
+        {
+          "tag": "MoveWithSkillTest",
+          "contents": {
+            "tag": "ResolveWindowInitiations",
+            "contents": [
+              "c01001",
+              [
+                {
+                  "windowTiming": "When",
+                  "windowType": {
+                    "tag": "AtEndOfRound"
+                  },
+                  "windowBatchId": null,
+                  "windowConditionTick": null
+                }
+              ],
+              [
+                [
+                  {
+                    "source": {
+                      "tag": "TreacherySource",
+                      "contents": "9e2f9137-ff19-4993-b001-acc24d0d3736"
+                    },
+                    "cardCode": "c01165",
+                    "index": 1,
+                    "type": {
+                      "tag": "ForcedAbility",
+                      "window": {
+                        "tag": "RoundEnds",
+                        "contents": "When"
+                      }
+                    },
+                    "limit": {
+                      "tag": "GroupLimit",
+                      "contents": [
+                        {
+                          "tag": "PerWindow"
+                        },
+                        1
+                      ]
+                    },
+                    "window": {
+                      "tag": "RoundEnds",
+                      "contents": "When"
+                    },
+                    "metadata": null,
+                    "criteria": {
+                      "tag": "InThreatAreaOf",
+                      "contents": {
+                        "tag": "You"
+                      }
+                    },
+                    "doesNotProvokeAttacksOfOpportunity": null,
+                    "tooltip": null,
+                    "canBeCancelled": true,
+                    "displayAs": null,
+                    "delayAdditionalCosts": null,
+                    "basic": false,
+                    "additionalCosts": [],
+                    "requestor": {
+                      "tag": "TreacherySource",
+                      "contents": "9e2f9137-ff19-4993-b001-acc24d0d3736"
+                    },
+                    "triggersSkillTest": false,
+                    "wantsSkillTest": null,
+                    "target": null,
+                    "highlightFromWindow": false,
+                    "skipForAll": false,
+                    "ignoreAllCosts": false,
+                    "fightCriteriaOverride": null,
+                    "evadeCriteriaOverride": null,
+                    "nonBlocking": false,
+                    "blocksIn": null
+                  },
+                  [
+                    {
+                      "windowTiming": "When",
+                      "windowType": {
+                        "tag": "AtEndOfRound"
+                      },
+                      "windowBatchId": null,
+                      "windowConditionTick": null
+                    }
+                  ],
+                  []
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
