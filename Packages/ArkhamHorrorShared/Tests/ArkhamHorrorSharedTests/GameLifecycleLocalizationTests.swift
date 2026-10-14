@@ -22,7 +22,12 @@ struct GameLifecycleLocalizationTests {
         for (language, values) in expectedValues {
             let bundle = try moduleBundle(locale: language)
             for (key, value) in values {
-                #expect(NSLocalizedString(key, bundle: bundle, value: "__missing__", comment: "") == value)
+                #expect(NSLocalizedString(
+                    key,
+                    bundle: bundle,
+                    value: "__missing__",
+                    comment: ""
+                ) == value)
             }
         }
     }

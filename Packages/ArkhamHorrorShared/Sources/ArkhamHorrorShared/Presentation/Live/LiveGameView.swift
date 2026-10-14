@@ -27,6 +27,7 @@ import SwiftUI
 /// belongs entirely to ``AppModel/unsubscribeFromLiveGame(_:)``; see its
 /// documentation for why this makes multiple simultaneous scenes viewing the same
 /// game safe).
+// swiftlint:disable:next type_body_length
 struct LiveGameView: View {
     let model: AppModel
     let gameID: GameID

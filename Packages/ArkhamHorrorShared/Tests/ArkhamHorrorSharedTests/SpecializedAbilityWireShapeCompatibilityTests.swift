@@ -4,7 +4,7 @@ import Testing
 
 @MainActor
 @Suite("Specialized ability wire-shape compatibility")
-struct SpecializedAbilityWireShapeCompatibilityTests {
+struct AbilityWireShapeCompatibilityTests {
     @Test("Roland defeat reaction accepts legacy and schema 0.1.53 shapes")
     func rolandDefeatReactionAcceptsBothExactShapes() throws {
         let legacyQuestion = try #require(
@@ -123,8 +123,7 @@ struct SpecializedAbilityWireShapeCompatibilityTests {
     }
 
     private func payload(named fileName: String, legacy: Bool = false) throws
-        -> BasicChoiceQuestionPayload
-    {
+        -> BasicChoiceQuestionPayload {
         try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
             from: fixtureData(named: fileName, legacy: legacy)
