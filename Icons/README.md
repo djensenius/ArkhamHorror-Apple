@@ -40,7 +40,9 @@ PNG files.
 
 ## Licensing caveat
 
-The elder sign glyph comes from the unlicensed "AH LCG" fan icon font and uses
-Fantasy Flight Games iconography. It is acceptable here for personal/internal
-TestFlight builds, but it **must be replaced with original art before any App
-Store submission or other public distribution**.
+The elder sign glyph comes from the AH LCG fan icon font (Fantasy Flight Games
+iconography), which has no explicit licence. It is used here for personal and
+fan builds, including internal TestFlight and self-built packages; the same font
+is already published by the upstream ArkhamHorror web app. It **must be replaced
+with original artwork before any public store listing (App Store, Flathub,
+etc.)**.
