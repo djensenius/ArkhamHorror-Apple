@@ -1,0 +1,426 @@
+require "English"
+require "fileutils"
+require "open3"
+require "shellwords"
+
+opt_out_usage
+skip_docs
+
+default_platform(:ios)
+
+API_KEY = {
+  key_id: "XP65R4N5A2",
+  issuer_id: "69a6de7e-a5f5-47e3-e053-5b8c7c11a4d1",
+  key_filepath: File.expand_path("~/.appstoreconnect/AuthKey_XP65R4N5A2.p8")
+}.freeze
+
+TEAM_ID = "9JALHNGRBQ"
+APP_NAME = "Arkham"
+APP_SKU = "arkham-horror"
+PRIMARY_BUNDLE_ID = "org.davidjensenius.ArkhamHorror"
+PRIMARY_LANGUAGE = "en-CA"
+REPO_ROOT = File.expand_path("..", __dir__)
+PROJECT_PATH = File.join(REPO_ROOT, "ArkhamHorror.xcodeproj")
+EXPORT_OPTIONS_PLIST = File.join(REPO_ROOT, "fastlane/ExportOptions.plist")
+DEVELOPER_DIR = "/Applications/Xcode.app/Contents/Developer"
+# xcode-select on the build host points at the Command Line Tools. fastlane's
+# Helper.xcode_path ignores DEVELOPER_DIR and reads `xcode-select -p`, so pilot
+# cannot find xcodebuild/iTMSTransporter (nil xcode_version). Point fastlane at
+# full Xcode for this process only instead of changing xcode-select system-wide.
+ENV["DEVELOPER_DIR"] = DEVELOPER_DIR
+FastlaneCore::Helper.define_singleton_method(:xcode_path) { "#{DEVELOPER_DIR}/" }
+ARCHIVE_ROOT = File.join(REPO_ROOT, "fastlane/archives")
+BUILD_ROOT = File.join(REPO_ROOT, "fastlane/builds")
+XBUILD = "xbuild"
+
+# Release/TestFlight builds require no Developer Portal capabilities beyond the
+# default universal App ID. macOS sandbox and network-client entitlements are
+# local signing entitlements and do not need a portal capability toggle.
+REQUIRED_CAPABILITIES = {}.freeze
+
+XBUILD_AUTH_ARGS = [
+  "-allowProvisioningUpdates",
+  "-authenticationKeyPath", API_KEY[:key_filepath],
+  "-authenticationKeyID", API_KEY[:key_id],
+  "-authenticationKeyIssuerID", API_KEY[:issuer_id]
+].freeze
+
+# Dedicated signing keychain shared with the owner's other apps. These defaults
+# can be overridden by environment for another build host. The password file
+# holds a random password for this keychain only; never print or commit it.
+BUILD_KEYCHAIN_PATH = File.expand_path(
+  ENV.fetch("ARKHAM_BUILD_KEYCHAIN_PATH", "~/Library/Keychains/canadian-ham-build.keychain-db")
+)
+BUILD_KEYCHAIN_PASSWORD_FILE = File.expand_path(
+  ENV.fetch("ARKHAM_BUILD_KEYCHAIN_PASSWORD_FILE", "~/.appstoreconnect/build-keychain.pw")
+)
+
+BETA_PLATFORMS = {
+  ios: {
+    scheme: "ArkhamHorror-iOS",
+    destination: "generic/platform=iOS",
+    artifact: :ipa,
+    app_platform: "ios"
+  },
+  mac: {
+    scheme: "ArkhamHorror-macOS",
+    destination: "generic/platform=macOS",
+    artifact: :pkg,
+    app_platform: "osx"
+  },
+  appletvos: {
+    scheme: "ArkhamHorror-tvOS",
+    destination: "generic/platform=tvOS",
+    artifact: :ipa,
+    app_platform: "appletvos"
+  },
+  xros: {
+    scheme: "ArkhamHorror-visionOS",
+    destination: "generic/platform=visionOS",
+    artifact: :ipa,
+    app_platform: "xros"
+  }
+}.freeze
+
+SIGNING_IDENTITY_MARKERS = [
+  "Apple Development",
+  "Apple Distribution",
+  "3rd Party Mac Developer Installer"
+].freeze
+
+desc "Verify the existing dedicated build keychain and reusable team signing identities without creating certificates."
+lane :signing_certificates do
+  unlock_and_verify_build_keychain_identities
+end
+
+platform :ios do
+  before_all do
+    app_store_connect_api_key(**API_KEY)
+  end
+
+  desc "Register the universal Developer Portal bundle ID using the App Store Connect API key. Idempotent."
+  lane :register_bundle_ids do
+    register_universal_bundle_id
+  end
+
+  desc "Create the App Store Connect app record for Arkham if needed (record id 6822282565 exists). Requires Apple ID + 2FA; do not run non-interactively."
+  lane :create_app_record do
+    create_arkham_horror_app_record
+  end
+
+  desc "Print the App Store Connect app record and version states."
+  lane :asc_status do
+    print_asc_status
+  end
+
+  desc "Archive/export the iOS Release build with xbuild and upload it to internal TestFlight."
+  lane :beta do |options|
+    upload_beta(:ios, options)
+  end
+end
+
+platform :mac do
+  before_all do
+    app_store_connect_api_key(**API_KEY)
+  end
+
+  desc "Archive/export the macOS Release build with xbuild and upload it to internal TestFlight."
+  lane :beta do |options|
+    upload_beta(:mac, options)
+  end
+end
+
+platform :appletvos do
+  before_all do
+    app_store_connect_api_key(**API_KEY)
+  end
+
+  desc "Archive/export the tvOS Release build with xbuild and upload it to internal TestFlight."
+  lane :beta do |options|
+    upload_beta(:appletvos, options)
+  end
+end
+
+platform :xros do
+  before_all do
+    app_store_connect_api_key(**API_KEY)
+  end
+
+  desc "Archive/export the visionOS Release build with xbuild and upload it to internal TestFlight."
+  lane :beta do |options|
+    upload_beta(:xros, options)
+  end
+end
+
+def register_universal_bundle_id
+  require "spaceship"
+
+  Spaceship::ConnectAPI.token = connect_api_token
+  existing = Spaceship::ConnectAPI::BundleId.find(PRIMARY_BUNDLE_ID)
+  if existing
+    UI.success("Bundle ID already exists on Developer Portal: #{PRIMARY_BUNDLE_ID}")
+  else
+    UI.message("Registering bundle ID on Developer Portal: #{PRIMARY_BUNDLE_ID}")
+    Spaceship::ConnectAPI::BundleId.create(
+      name: APP_NAME,
+      identifier: PRIMARY_BUNDLE_ID,
+      platform: "UNIVERSAL"
+    )
+    UI.success("Created bundle ID: #{PRIMARY_BUNDLE_ID}")
+  end
+
+  if REQUIRED_CAPABILITIES.empty?
+    UI.success("No Developer Portal capabilities are required for #{PRIMARY_BUNDLE_ID}.")
+  end
+end
+
+def create_arkham_horror_app_record
+  produce(
+    app_identifier: PRIMARY_BUNDLE_ID,
+    app_name: APP_NAME,
+    sku: APP_SKU,
+    language: PRIMARY_LANGUAGE,
+    app_version: marketing_version,
+    # produce only supports ios, osx and tvos; add visionOS in App Store Connect
+    # (App Information → Add Platform) after the record exists.
+    platforms: %w[ios osx tvos],
+    skip_devcenter: true
+  )
+end
+
+# project.yml is the single source of truth for the marketing version.
+def marketing_version
+  project_yml = File.read(File.join(REPO_ROOT, "project.yml"))
+  version = project_yml[/^\s*MARKETING_VERSION:\s*"?([0-9][0-9.]*)"?\s*$/, 1]
+  UI.user_error!("MARKETING_VERSION not found in project.yml") unless version
+  version
+end
+
+def print_asc_status
+  require "spaceship"
+  Spaceship::ConnectAPI.token = connect_api_token
+
+  app = Spaceship::ConnectAPI::App.find(PRIMARY_BUNDLE_ID)
+  if app.nil?
+    UI.important("APP NOT FOUND on App Store Connect for #{PRIMARY_BUNDLE_ID}")
+    return
+  end
+
+  UI.success("APP FOUND: #{app.name} (id=#{app.id}) sku=#{app.sku}")
+  app.get_app_store_versions.each do |version|
+    UI.message("  version #{version.version_string} platform=#{version.platform} state=#{version.app_store_state}")
+    begin
+      build = version.get_build
+      UI.message("    build: #{build ? build.version : 'NONE ATTACHED'}")
+    rescue StandardError => e
+      UI.error("    build error: #{e.class}: #{e.message}")
+    end
+  end
+end
+
+# Pass artifact_path:<exported .ipa/.pkg> to upload an existing export
+# without re-archiving (for example, after an upload-only failure).
+def upload_beta(platform_key, options = {})
+  result =
+    if option_value(options, :artifact_path)
+      config = BETA_PLATFORMS.fetch(platform_key)
+      path = File.expand_path(option_value(options, :artifact_path))
+      UI.user_error!("No artifact at #{path}") unless File.file?(path)
+      { artifact: config[:artifact], artifact_path: path, app_platform: config[:app_platform] }
+    else
+      archive_and_export(platform_key)
+    end
+  upload_args = {
+    app_identifier: PRIMARY_BUNDLE_ID,
+    app_platform: result[:app_platform],
+    skip_waiting_for_build_processing: true
+  }
+  upload_args[result[:artifact]] = result[:artifact_path]
+  upload_to_testflight(**upload_args)
+end
+
+def option_value(options, key)
+  options[key] || options[key.to_s]
+end
+
+def build_keychain_password
+  unless File.file?(BUILD_KEYCHAIN_PASSWORD_FILE)
+    UI.user_error!("Missing #{BUILD_KEYCHAIN_PASSWORD_FILE}; see the signing keychain setup in docs/release/testflight.md")
+  end
+  File.read(BUILD_KEYCHAIN_PASSWORD_FILE).strip
+end
+
+def unlock_build_keychain
+  UI.user_error!("Missing #{BUILD_KEYCHAIN_PATH}; see docs/release/testflight.md") unless File.exist?(BUILD_KEYCHAIN_PATH)
+  unlock_keychain(path: BUILD_KEYCHAIN_PATH, password: build_keychain_password, add_to_search_list: true, set_default: false)
+end
+
+def unlock_and_verify_build_keychain_identities
+  unlock_build_keychain
+  verify_existing_signing_identities
+end
+
+def verify_existing_signing_identities
+  command = "security find-identity -v #{Shellwords.escape(BUILD_KEYCHAIN_PATH)}"
+  success, output = capture_command(command)
+  UI.user_error!("Unable to inspect #{BUILD_KEYCHAIN_PATH}: #{output}") unless success
+
+  ensure_openssl_available
+  certificates_by_hash = build_keychain_certificates_by_hash
+  identities = signing_identities(output)
+
+  # Apple Development certificates created via the API are named after the API
+  # key id, so verify the team from the certificate subject OU instead of the
+  # display name suffix shown by `security find-identity`.
+  matched_identities = {}
+  missing = SIGNING_IDENTITY_MARKERS.reject do |marker|
+    matched_identity = identities.find do |identity|
+      identity[:name].start_with?(marker) &&
+        certificate_team_ids(certificates_by_hash[identity[:sha1]]).include?(TEAM_ID)
+    end
+    matched_identities[marker] = matched_identity if matched_identity
+    matched_identity
+  end
+  unless missing.empty?
+    UI.user_error!("Missing reusable signing identities for team #{TEAM_ID} in #{BUILD_KEYCHAIN_PATH}: #{missing.join(', ')}. Restore the existing certificates before running beta lanes; automatic signing may update provisioning profiles only, not create certificates.")
+  end
+
+  SIGNING_IDENTITY_MARKERS.each do |marker|
+    UI.success("Found #{marker} signing identity for team #{TEAM_ID}: #{matched_identities.fetch(marker).fetch(:name)}")
+  end
+  UI.success("Build keychain contains the required reusable team signing identities for team #{TEAM_ID}.")
+end
+
+IDENTITY_LINE_PATTERN = /^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"([^"]+)"/.freeze
+
+CERTIFICATE_BLOCK_PATTERN = /^SHA-1 hash:\s*([0-9A-Fa-f]{40})\s*$\n(.*?-----END CERTIFICATE-----)/m.freeze
+
+PEM_CERTIFICATE_PATTERN = /-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/m.freeze
+
+RFC2253_FIELD_SEPARATOR = /(?<!\\),/.freeze
+
+def signing_identities(output)
+  output.each_line.filter_map do |line|
+    match = line.match(IDENTITY_LINE_PATTERN)
+    next unless match
+
+    { sha1: match[1].upcase, name: match[2] }
+  end
+end
+
+def build_keychain_certificates_by_hash
+  command = "security find-certificate -a -Z -p #{Shellwords.escape(BUILD_KEYCHAIN_PATH)}"
+  success, output = capture_command(command)
+  UI.user_error!("Unable to read certificates from #{BUILD_KEYCHAIN_PATH}: #{output}") unless success
+
+  output.scan(CERTIFICATE_BLOCK_PATTERN).each_with_object({}) do |(sha1, block), certificates|
+    pem = block[PEM_CERTIFICATE_PATTERN]
+    certificates[sha1.upcase] = pem if pem
+  end
+end
+
+def ensure_openssl_available
+  success, = capture_command("command -v openssl")
+  return if success
+
+  UI.user_error!("Unable to inspect signing certificate subjects: openssl is not installed or not on PATH.")
+end
+
+def certificate_team_ids(pem)
+  return [] unless pem
+
+  output, error, status = Open3.capture3(
+    "openssl", "x509", "-noout", "-subject", "-nameopt", "RFC2253",
+    stdin_data: pem
+  )
+  unless status.success?
+    UI.user_error!("Unable to inspect signing certificate subject with openssl: #{error}#{output}")
+  end
+
+  subject = output.each_line.find { |line| line.start_with?("subject=") }.to_s.delete_prefix("subject=").strip
+  rfc2253_attribute_values(subject, "OU")
+rescue Errno::ENOENT
+  UI.user_error!("Unable to inspect signing certificate subjects: openssl is not installed or not on PATH.")
+end
+
+def rfc2253_attribute_values(subject, attribute)
+  values = []
+  subject.split(RFC2253_FIELD_SEPARATOR).each do |field|
+    key, value = field.split("=", 2)
+    values << value if key == attribute && value
+  end
+  values
+end
+
+def capture_command(command)
+  output = `#{command} 2>&1`
+  [$CHILD_STATUS.success?, output]
+end
+
+def archive_and_export(platform_key)
+  unlock_and_verify_build_keychain_identities
+  ensure_xbuild_available
+  config = BETA_PLATFORMS.fetch(platform_key)
+  build_number = Time.now.strftime("%Y%m%d%H%M")
+  archive_path = File.join(ARCHIVE_ROOT, platform_key.to_s, "#{config[:scheme]}-#{build_number}.xcarchive")
+  export_path = File.join(BUILD_ROOT, platform_key.to_s, build_number)
+  FileUtils.rm_rf(export_path)
+  FileUtils.mkdir_p(File.dirname(archive_path))
+  FileUtils.mkdir_p(export_path)
+
+  archive_args = [
+    "-project", PROJECT_PATH,
+    "-scheme", config[:scheme],
+    "-configuration", "Release",
+    "-destination", config[:destination],
+    "-archivePath", archive_path,
+    *XBUILD_AUTH_ARGS,
+    "archive",
+    "CURRENT_PROJECT_VERSION=#{build_number}",
+    "CODE_SIGNING_ALLOWED=YES",
+    *(config[:build_settings] || [])
+  ]
+  run_xbuild(archive_args)
+
+  export_args = [
+    "-exportArchive",
+    "-archivePath", archive_path,
+    "-exportPath", export_path,
+    "-exportOptionsPlist", EXPORT_OPTIONS_PLIST,
+    *XBUILD_AUTH_ARGS
+  ]
+  run_xbuild(export_args)
+
+  pattern = config[:artifact] == :pkg ? "*.pkg" : "*.ipa"
+  artifact_path = Dir[File.join(export_path, pattern)].first
+  UI.user_error!("xbuild export did not produce #{pattern} in #{export_path}") unless artifact_path
+
+  UI.success("Archived #{config[:scheme]} build #{build_number} to #{archive_path}")
+  UI.success("Exported #{artifact_path}")
+  {
+    artifact: config[:artifact],
+    artifact_path: artifact_path,
+    app_platform: config[:app_platform]
+  }
+end
+
+def ensure_xbuild_available
+  success, output = capture_command("which #{Shellwords.escape(XBUILD)}")
+  UI.user_error!("#{XBUILD} must be on PATH for archive/export lanes") unless success
+  UI.message("Using #{XBUILD}: #{output.strip}")
+end
+
+def run_xbuild(args)
+  command = (["DEVELOPER_DIR=#{Shellwords.escape(DEVELOPER_DIR)}", XBUILD] + args.map { |arg| Shellwords.escape(arg) }).join(" ")
+  UI.command(command)
+  sh(command)
+end
+
+def connect_api_token
+  require "spaceship"
+  Spaceship::ConnectAPI::Token.create(
+    key_id: API_KEY[:key_id],
+    issuer_id: API_KEY[:issuer_id],
+    filepath: API_KEY[:key_filepath]
+  )
+end

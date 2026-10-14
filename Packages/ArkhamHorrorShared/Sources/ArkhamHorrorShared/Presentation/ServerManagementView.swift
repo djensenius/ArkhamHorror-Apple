@@ -365,14 +365,18 @@ struct ServerProfileEditorView: View {
     }
 }
 
-#Preview("Manage Servers") {
-    NavigationStack {
-        ServerManagementView(model: previewAppModel(profiles: [.hosted]))
+#if DEBUG
+    #Preview("Manage Servers") {
+        NavigationStack {
+            ServerManagementView(model: previewAppModel(profiles: [.hosted]))
+        }
     }
-}
+#endif
 
-#Preview("Add Server") {
-    NavigationStack {
-        ServerProfileEditorView(model: previewAppModel(), mode: .add)
+#if DEBUG
+    #Preview("Add Server") {
+        NavigationStack {
+            ServerProfileEditorView(model: previewAppModel(), mode: .add)
+        }
     }
-}
+#endif
