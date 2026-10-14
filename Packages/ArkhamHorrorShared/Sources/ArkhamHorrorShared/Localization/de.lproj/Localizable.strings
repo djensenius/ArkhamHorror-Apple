@@ -253,6 +253,7 @@
 "campaign.upgrade.done" = "Fertig";
 
 "common.cancel" = "Abbrechen";
+"games.broken.title" = "Beschädigtes Spiel";
 "games.delete.action" = "Löschen";
 "games.delete.action.accessibilityHint" = "Fragt vor dem Löschen dieses Spiels nach einer Bestätigung.";
 "games.delete.action.accessibilityLabel" = "Spiel löschen";
