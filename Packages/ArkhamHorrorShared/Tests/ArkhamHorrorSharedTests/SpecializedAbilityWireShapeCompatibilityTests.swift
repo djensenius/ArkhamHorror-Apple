@@ -5,10 +5,11 @@ import Testing
 @MainActor
 @Suite("Specialized ability wire-shape compatibility")
 struct AbilityWireShapeCompatibilityTests {
+    private typealias Payload = BasicChoiceQuestionPayload
     @Test("Roland defeat reaction accepts legacy and schema 0.1.53 shapes")
     func rolandDefeatReactionAcceptsBothExactShapes() throws {
         let legacyQuestion = try #require(
-            payload(named: "question-roland-defeat-reaction-pre-0.1.53", legacy: true)
+            payload("question-roland-defeat-reaction-pre-0.1.53", legacy: true)
                 .supportedQuestion
         )
         guard case let .rolandDefeatReaction(legacyReaction) =
@@ -21,7 +22,7 @@ struct AbilityWireShapeCompatibilityTests {
         #expect(legacyReaction.defeatedEnemyID == RolandReactionFixtures.enemyID)
 
         let schemaQuestion = try #require(
-            payload(named: "question-roland-defeat-reaction").supportedQuestion
+            payload("question-roland-defeat-reaction").supportedQuestion
         )
         guard case let .rolandDefeatReaction(schemaReaction) =
             schemaQuestion.choices.first?.content
@@ -54,7 +55,7 @@ struct AbilityWireShapeCompatibilityTests {
     @Test("Round-end forced ability accepts legacy and schema 0.1.53 shapes")
     func roundEndForcedAbilityAcceptsBothExactShapes() throws {
         let legacyQuestion = try #require(
-            payload(named: "question-round-end-forced-ability-pre-0.1.53", legacy: true)
+            payload("question-round-end-forced-ability-pre-0.1.53", legacy: true)
                 .supportedQuestion
         )
         guard case let .resolveForcedAbility(legacyChoice) = legacyQuestion.choices.first?.content
@@ -66,7 +67,7 @@ struct AbilityWireShapeCompatibilityTests {
         #expect(legacyChoice.treacheryID == RoundTransitionFixtures.treacheryID)
 
         let schemaQuestion = try #require(
-            payload(named: "question-round-end-forced-ability").supportedQuestion
+            payload("question-round-end-forced-ability").supportedQuestion
         )
         guard case let .resolveForcedAbility(schemaChoice) = schemaQuestion.choices.first?.content
         else {
@@ -122,11 +123,10 @@ struct AbilityWireShapeCompatibilityTests {
         try ContractJSON.decode(JSONValue.self, from: fixtureData(named: fileName, legacy: legacy))
     }
 
-    private func payload(named fileName: String, legacy: Bool = false) throws
-        -> BasicChoiceQuestionPayload {
+    private func payload(_ name: String, legacy: Bool = false) throws -> Payload {
         try ContractJSON.decode(
             BasicChoiceQuestionPayload.self,
-            from: fixtureData(named: fileName, legacy: legacy)
+            from: fixtureData(named: name, legacy: legacy)
         )
     }
 

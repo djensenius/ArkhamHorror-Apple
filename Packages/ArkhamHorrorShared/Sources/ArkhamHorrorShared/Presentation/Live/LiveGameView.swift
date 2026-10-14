@@ -1,5 +1,6 @@
 import SwiftUI
 
+// swiftlint:disable type_body_length
 /// The native, read-only live-game screen: subscribes to `gameID`'s live session
 /// (``AppModel/subscribeToLiveGame(_:)``) for as long as this screen is visible and
 /// its scene is not backgrounded (``LiveGameSubscriptionPolicy`` deliberately keeps
@@ -27,7 +28,6 @@ import SwiftUI
 /// belongs entirely to ``AppModel/unsubscribeFromLiveGame(_:)``; see its
 /// documentation for why this makes multiple simultaneous scenes viewing the same
 /// game safe).
-// swiftlint:disable:next type_body_length
 struct LiveGameView: View {
     let model: AppModel
     let gameID: GameID
@@ -330,3 +330,5 @@ struct LiveGameView: View {
         .accessibilityIdentifier(accessibilityID)
     }
 }
+
+// swiftlint:enable type_body_length
