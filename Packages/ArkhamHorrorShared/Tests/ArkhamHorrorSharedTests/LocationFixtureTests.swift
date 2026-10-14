@@ -38,7 +38,7 @@ struct LocationFixtureTests {
         let getGameData = try fixtureData(named: "get-game")
         let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: getGameData)
         let locationID = try LocationID(
-            #require(UUID(uuidString: "d5a66e84-c729-4066-8475-d8a155609025"))
+            #require(UUID(uuidString: "782de537-8f5d-4eda-b849-2362e28402e5"))
         )
         guard case let .ordinary(location) = try #require(envelope.game.locations[locationID])
         else {

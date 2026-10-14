@@ -128,11 +128,12 @@ enum BoardTestFixtures {
             difficulty: difficulty, discard: [], encounterDeck: [], encounterDecks: [],
             grid: ScenarioGrid(gridAbove: [], gridBelow: [], gridCenter: []),
             hasEncounterDeck: false, id: id, inResolution: inResolution, inShuffle: false,
-            isPrelude: isPrelude, isSideStory: isSideStory, keys: [], locationLayout: [], log: [],
+            isPrelude: isPrelude, isSideStory: isSideStory, keys: [], locationGroups: nil,
+            locationLayout: [], log: [],
             meta: .null, name: name, noRemainingInvestigatorsHandler: .null, options: .null,
             playerDecks: .null, reference: "reference", resignedCardCodes: [],
             resolvedStories: resolvedStories, scope: "scope", search: .null, setAsideCards: [],
-            setAsideKeys: [],
+            setAsideKeys: [], substitutions: nil,
             standaloneCampaignLog: ScenarioCampaignLog(
                 crossedOut: [], options: [], orderedKeys: [], partners: .null, recorded: [],
                 recordedCounts: [], recordedSets: []
@@ -171,7 +172,8 @@ enum BoardTestFixtures {
             costToEnterUnrevealed: costToEnterUnrevealed, canBeFlipped: false,
             investigateSkill: investigateSkill, placement: placement, keys: [], seals: [],
             sealedChaosTokens: [], placedChaosTokens: [], floodLevel: .null, brazier: .null,
-            breaches: .null, withoutClues: false, meta: .null, globalMeta: .null, position: .null,
+            breaches: .null, withoutClues: false, meta: .null, globalMeta: .null, group: nil,
+            grantedConnections: nil, position: .null,
             beingRemoved: false, concealedCards: concealedCards, outOfGame: false,
             connectedLocations: connectedLocations, investigators: investigators, enemies: enemies,
             assets: assets, events: events, treacheries: treacheries, scarletKeys: [], modifiers: []

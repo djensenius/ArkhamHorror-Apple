@@ -87,6 +87,10 @@ struct OrdinaryLocation: Sendable {
     let meta: JSONValue
     /// Free-form shared scenario metadata, keyed by arbitrary string keys.
     let globalMeta: JSONValue
+    /// Optional 0.1.53 location group metadata. Broad and out of scope for this contract slice.
+    let group: JSONValue?
+    /// Additive 0.1.53 connection grants. Broad and out of scope for this contract slice.
+    let grantedConnections: [JSONValue]?
     /// The grid position, when this location is placed on a grid-based board. Broad, out
     /// of scope for this contract slice.
     let position: JSONValue
@@ -140,6 +144,8 @@ extension OrdinaryLocation: Codable {
         case withoutClues
         case meta
         case globalMeta
+        case group
+        case grantedConnections
         case position
         case beingRemoved
         case concealedCards
@@ -202,6 +208,19 @@ extension OrdinaryLocation: Codable {
         withoutClues = try container.decode(Bool.self, forKey: .withoutClues)
         meta = try container.decode(JSONValue.self, forKey: .meta)
         globalMeta = try container.decode(JSONValue.self, forKey: .globalMeta)
+        if container.contains(.group) {
+            if try container.decodeNil(forKey: .group) {
+                group = .null
+            } else {
+                group = try container.decode(JSONValue.self, forKey: .group)
+            }
+        } else {
+            group = nil
+        }
+        grantedConnections = try container.decodeIfPresent(
+            [JSONValue].self,
+            forKey: .grantedConnections
+        )
         position = try container.decode(JSONValue.self, forKey: .position)
         beingRemoved = try container.decode(Bool.self, forKey: .beingRemoved)
         concealedCards = try container.decode([JSONValue].self, forKey: .concealedCards)
@@ -247,6 +266,10 @@ extension OrdinaryLocation: Codable {
         try container.encode(withoutClues, forKey: .withoutClues)
         try container.encode(meta, forKey: .meta)
         try container.encode(globalMeta, forKey: .globalMeta)
+        if let group {
+            try container.encode(group, forKey: .group)
+        }
+        try container.encodeIfPresent(grantedConnections, forKey: .grantedConnections)
         try container.encode(position, forKey: .position)
         try container.encode(beingRemoved, forKey: .beingRemoved)
         try container.encode(concealedCards, forKey: .concealedCards)

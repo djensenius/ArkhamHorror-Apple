@@ -43,6 +43,7 @@ extension Investigator: Codable {
         case health
         case horrorHealed
         case id
+        case ignoredPerformedActions
         case intellect
         case keys
         case killed
@@ -147,6 +148,10 @@ extension Investigator: Codable {
         health = try container.decode(Int.self, forKey: .health)
         horrorHealed = try container.decode(Int.self, forKey: .horrorHealed)
         id = try container.decode(InvestigatorID.self, forKey: .id)
+        ignoredPerformedActions = try container.decodeIfPresent(
+            [JSONValue].self,
+            forKey: .ignoredPerformedActions
+        )
         intellect = try container.decode(Int.self, forKey: .intellect)
         keys = try container.decode([JSONValue].self, forKey: .keys)
         killed = try container.decode(Bool.self, forKey: .killed)
@@ -294,6 +299,7 @@ extension Investigator: Codable {
         try container.encode(health, forKey: .health)
         try container.encode(horrorHealed, forKey: .horrorHealed)
         try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(ignoredPerformedActions, forKey: .ignoredPerformedActions)
         try container.encode(intellect, forKey: .intellect)
         try container.encode(keys, forKey: .keys)
         try container.encode(killed, forKey: .killed)

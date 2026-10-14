@@ -64,11 +64,11 @@ private extension BasicChoiceParser {
     }
 
     static let roundEndAbilityKeys: Set<String> = [
-        "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
-        "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
+        "additionalCosts", "basic", "canBeCancelled", "cardCode", "chaosTokenEffects",
+        "criteria", "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
-        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "skipForAll",
-        "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
+        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "resultLabel",
+        "skipForAll", "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
         "window",
     ]
 
@@ -77,6 +77,7 @@ private extension BasicChoiceParser {
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
+            "chaosTokenEffects": .array([]),
             "criteria": .object([
                 "tag": .string("InThreatAreaOf"),
                 "contents": .object(["tag": .string("You")]),
@@ -96,6 +97,7 @@ private extension BasicChoiceParser {
                 ]),
             ]),
             "metadata": .null,
+            "resultLabel": .null,
             "skipForAll": .bool(false),
             "target": .null,
             "tooltip": .null,

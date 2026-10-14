@@ -93,11 +93,11 @@ private extension BasicChoiceParser {
     static let rolandCardCode = "c01001"
 
     static let rolandAbilityKeys: Set<String> = [
-        "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
-        "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
+        "additionalCosts", "basic", "canBeCancelled", "cardCode", "chaosTokenEffects",
+        "criteria", "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
-        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "skipForAll",
-        "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
+        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "resultLabel",
+        "skipForAll", "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
         "window",
     ]
 
@@ -106,6 +106,7 @@ private extension BasicChoiceParser {
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
+            "chaosTokenEffects": .array([]),
             "criteria": rolandReactionCriteria,
             "delayAdditionalCosts": .null,
             "displayAs": .null,
@@ -117,6 +118,7 @@ private extension BasicChoiceParser {
             "limit": rolandReactionLimit,
             "metadata": .null,
             "requestor": rolandInvestigatorSource,
+            "resultLabel": .null,
             "skipForAll": .bool(false),
             "source": rolandInvestigatorSource,
             "target": .null,

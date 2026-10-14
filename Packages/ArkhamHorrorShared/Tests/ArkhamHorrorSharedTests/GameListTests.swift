@@ -175,7 +175,8 @@ struct GameListTests {
         {"id": "00000000-0000-0000-0000-000000000099", "error": "diagnostic"}
         """
         let entry = try ContractJSON.decode(GameListEntry.self, from: Data(json.utf8))
-        #expect(entry == .failed(FailedGameEntry(error: "diagnostic")))
+        let gameID = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000099"))
+        #expect(entry == .failed(FailedGameEntry(id: GameID(gameID), error: "diagnostic")))
     }
 
     // MARK: - Forward-compatible enums

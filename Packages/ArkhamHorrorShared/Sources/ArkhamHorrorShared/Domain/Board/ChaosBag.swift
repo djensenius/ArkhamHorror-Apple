@@ -145,7 +145,7 @@ extension ChaosBag: Codable {
         try container.encode(revealedChaosTokens, forKey: .revealedChaosTokens)
         try container.encode(choice, forKey: .choice)
         if forceDraw.isEmpty {
-            try container.encodeNil(forKey: .forceDraw)
+            try container.encode(forceDraw, forKey: .forceDraw)
         } else if forceDraw.count == 1 {
             try container.encode(forceDraw[0], forKey: .forceDraw)
         } else {

@@ -94,11 +94,11 @@ private extension BasicChoiceParser {
     static let coverUpCardCode = "c01007"
 
     static let coverUpAbilityKeys: Set<String> = [
-        "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
-        "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
+        "additionalCosts", "basic", "canBeCancelled", "cardCode", "chaosTokenEffects",
+        "criteria", "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
-        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "skipForAll",
-        "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
+        "ignoreAllCosts", "index", "limit", "metadata", "requestor", "resultLabel",
+        "skipForAll", "source", "target", "tooltip", "triggersSkillTest", "type", "wantsSkillTest",
         "window",
     ]
 
@@ -107,6 +107,7 @@ private extension BasicChoiceParser {
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
+            "chaosTokenEffects": .array([]),
             "delayAdditionalCosts": .null,
             "displayAs": .null,
             "doesNotProvokeAttacksOfOpportunity": .null,
@@ -115,6 +116,7 @@ private extension BasicChoiceParser {
             "highlightFromWindow": .bool(false),
             "ignoreAllCosts": .bool(false),
             "metadata": .null,
+            "resultLabel": .null,
             "skipForAll": .bool(false),
             "target": .null,
             "tooltip": .null,
@@ -234,14 +236,15 @@ private extension BasicChoiceParser {
               Set(matcher.keys) == ["tag", "contents"],
               matcher["tag"] == .string("WouldDiscoverClues"),
               case let .array(contents)? = matcher["contents"],
-              contents.count == 4,
+              contents.count == 5,
               contents[0] == .string("When"),
               contents[1] == .object(["tag": .string("You")]),
               contents[2] == .object([
                   "tag": .string("LocationWithInvestigator"),
                   "contents": .object(["tag": .string("You")]),
               ]),
-              coverUpAtLeastOneIsCanonical(contents[3])
+              coverUpAtLeastOneIsCanonical(contents[3]),
+              contents[4] == .object(["tag": .string("AnySource")])
         else { return false }
         return true
     }

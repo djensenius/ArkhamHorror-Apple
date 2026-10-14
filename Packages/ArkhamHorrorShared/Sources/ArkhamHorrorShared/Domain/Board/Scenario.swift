@@ -67,6 +67,8 @@ struct Scenario: Sendable {
     let isPrelude: Bool
     let isSideStory: Bool
     let keys: [JSONValue]
+    /// Additive 0.1.53 location group metadata. Broad and out of scope.
+    let locationGroups: [JSONValue]?
     /// The scenario's fixed grid-topology reference art, one string per row.
     let locationLayout: [String]
     /// Scenario-specific bookkeeping log entries. Broad tagged union, out of scope.
@@ -91,6 +93,8 @@ struct Scenario: Sendable {
     /// scope.
     let setAsideCards: [JSONValue]
     let setAsideKeys: [JSONValue]
+    /// Additive 0.1.53 scenario substitutions. Broad and out of scope.
+    let substitutions: JSONValue?
     let standaloneCampaignLog: ScenarioCampaignLog
     let started: Bool
     let storyCards: JSONValue
@@ -144,6 +148,7 @@ extension Scenario: Codable {
         case isPrelude
         case isSideStory
         case keys
+        case locationGroups
         case locationLayout
         case log
         case meta
@@ -158,6 +163,7 @@ extension Scenario: Codable {
         case search
         case setAsideCards
         case setAsideKeys
+        case substitutions
         case standaloneCampaignLog
         case started
         case storyCards
@@ -216,6 +222,7 @@ extension Scenario: Codable {
         isPrelude = try container.decode(Bool.self, forKey: .isPrelude)
         isSideStory = try container.decode(Bool.self, forKey: .isSideStory)
         keys = try container.decode([JSONValue].self, forKey: .keys)
+        locationGroups = try container.decodeIfPresent([JSONValue].self, forKey: .locationGroups)
         locationLayout = try container.decode([String].self, forKey: .locationLayout)
         log = try container.decode([JSONValue].self, forKey: .log)
         meta = try container.decode(JSONValue.self, forKey: .meta)
@@ -232,6 +239,7 @@ extension Scenario: Codable {
         search = try container.decode(JSONValue.self, forKey: .search)
         setAsideCards = try container.decode([JSONValue].self, forKey: .setAsideCards)
         setAsideKeys = try container.decode([JSONValue].self, forKey: .setAsideKeys)
+        substitutions = try container.decodeIfPresent(JSONValue.self, forKey: .substitutions)
         standaloneCampaignLog = try container.decode(
             ScenarioCampaignLog.self, forKey: .standaloneCampaignLog
         )
@@ -289,6 +297,7 @@ extension Scenario: Codable {
         try container.encode(isPrelude, forKey: .isPrelude)
         try container.encode(isSideStory, forKey: .isSideStory)
         try container.encode(keys, forKey: .keys)
+        try container.encodeIfPresent(locationGroups, forKey: .locationGroups)
         try container.encode(locationLayout, forKey: .locationLayout)
         try container.encode(log, forKey: .log)
         try container.encode(meta, forKey: .meta)
@@ -305,6 +314,7 @@ extension Scenario: Codable {
         try container.encode(search, forKey: .search)
         try container.encode(setAsideCards, forKey: .setAsideCards)
         try container.encode(setAsideKeys, forKey: .setAsideKeys)
+        try container.encodeIfPresent(substitutions, forKey: .substitutions)
         try container.encode(standaloneCampaignLog, forKey: .standaloneCampaignLog)
         try container.encode(started, forKey: .started)
         try container.encode(storyCards, forKey: .storyCards)
