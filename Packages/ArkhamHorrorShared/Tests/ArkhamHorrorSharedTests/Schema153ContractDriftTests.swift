@@ -41,6 +41,7 @@ struct Schema153ContractDriftTests {
         )
         let stringScenario = try #require(scenario(in: stringEnvelope.game.mode))
         #expect(stringScenario.chaosBag.forceDraw == [.elderSign])
+        #expect(try encodedForceDrawValue(in: stringEnvelope) == .array([.string("ElderSign")]))
 
         let nullEnvelope = try ContractJSON.decode(
             GetGameEnvelope.self,
@@ -55,6 +56,7 @@ struct Schema153ContractDriftTests {
             }
         )
         #expect(try #require(scenario(in: nullEnvelope.game.mode)).chaosBag.forceDraw == [])
+        #expect(try encodedForceDrawValue(in: nullEnvelope) == .array([]))
     }
 
     @Test("structured public-game log decodes captured rows and filters audiences")
@@ -212,6 +214,18 @@ struct Schema153ContractDriftTests {
     private func legacyLogText(_ row: GameLogRow) -> String? {
         guard case let .legacy(text, _) = row else { return nil }
         return text
+    }
+
+    private func encodedForceDrawValue(in envelope: GetGameEnvelope) throws -> JSONValue {
+        let value = try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(envelope))
+        guard case let .object(root) = value,
+              case let .object(game)? = root["game"],
+              case let .object(mode)? = game["mode"],
+              case let .object(scenario)? = mode["That"],
+              case let .object(chaosBag)? = scenario["chaosBag"],
+              let forceDraw = chaosBag["forceDraw"]
+        else { throw MutationError.unexpectedShape }
+        return forceDraw
     }
 
     private enum MutationError: Error {

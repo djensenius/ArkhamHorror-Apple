@@ -144,13 +144,9 @@ extension ChaosBag: Codable {
         try container.encode(setAsideChaosTokens, forKey: .setAsideChaosTokens)
         try container.encode(revealedChaosTokens, forKey: .revealedChaosTokens)
         try container.encode(choice, forKey: .choice)
-        if forceDraw.isEmpty {
-            try container.encode(forceDraw, forKey: .forceDraw)
-        } else if forceDraw.count == 1 {
-            try container.encode(forceDraw[0], forKey: .forceDraw)
-        } else {
-            try container.encode(forceDraw, forKey: .forceDraw)
-        }
+        // Response-only in this client: the decoded bag is not echoed to the server, so
+        // encoding normalizes to the 0.1.53 array shape instead of preserving legacy spellings.
+        try container.encode(forceDraw, forKey: .forceDraw)
         try container.encode(tokenPool, forKey: .tokenPool)
         try container.encode(totalRevealedChaosTokens, forKey: .totalRevealedChaosTokens)
         try container.encode(pendingRequests, forKey: .pendingRequests)
