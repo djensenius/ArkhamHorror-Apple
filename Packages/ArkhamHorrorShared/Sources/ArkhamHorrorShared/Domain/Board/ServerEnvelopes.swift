@@ -126,8 +126,14 @@ extension BoardSnapshotUpdate: Codable {
             return
         }
         if tag == "RoomClosed" {
-            let reason = (try? container.decode(String.self, forKey: .contents)) ?? "closed"
-            self = .roomClosed(reason: reason)
+            if let reason = try? container.decode(String.self, forKey: .contents) {
+                self = .roomClosed(reason: reason)
+            } else {
+                self = try .unsupportedMessage(
+                    tag: tag,
+                    rawContents: Self.rawContents(from: container)
+                )
+            }
             return
         }
         guard tag == "GameUpdate" else {
