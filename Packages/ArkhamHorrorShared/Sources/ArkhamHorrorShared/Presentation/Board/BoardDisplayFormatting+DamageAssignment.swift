@@ -3,7 +3,7 @@ import Foundation
 extension BoardDisplayFormatting {
     static func enemyAttackAssignmentDisplayTitle(
         _ assignment: EnemyAttackDamageAssignment,
-        fallback: String,
+        fallback _: String,
         in projection: BoardProjection
     ) -> String {
         let targetName: String? = switch assignment.target {
@@ -14,7 +14,32 @@ extension BoardDisplayFormatting {
                 $0.id == .asset(assetID)
             }?.displayName
         }
-        guard let targetName else { return fallback }
-        return "\(assignment.kind.actionTitle) to \(targetName)"
+        return localizedAssignmentDisplayTitle(
+            for: assignment.kind,
+            targetName: targetName ?? BoardLocalization.localized(
+                "board.damageAssignment.targetUnavailable", "unavailable target"
+            )
+        )
+    }
+
+    private static func localizedAssignmentDisplayTitle(
+        for kind: EnemyAttackAssignmentKind,
+        targetName: String
+    ) -> String {
+        let (key, fallback) = switch kind {
+        case .damage:
+            (
+                "board.damageAssignment.assignOneDamage",
+                "Assign 1 damage to \(targetName)"
+            )
+        case .horror:
+            (
+                "board.damageAssignment.assignOneHorror",
+                "Assign 1 horror to \(targetName)"
+            )
+        }
+        let format = BoardLocalization.localized(key, fallback)
+        guard format != fallback else { return fallback }
+        return String(format: format, locale: Locale.current, targetName)
     }
 }

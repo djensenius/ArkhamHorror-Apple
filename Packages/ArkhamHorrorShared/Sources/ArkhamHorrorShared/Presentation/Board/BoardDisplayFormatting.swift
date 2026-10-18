@@ -79,9 +79,6 @@ enum BoardDisplayFormatting {
         case let .resolveEnemyAttack(_, id, _):
             investigatorID = id
             prefix = "Resolve enemy attack against"
-        case let .assignEnemyAttackDamage(assignment):
-            investigatorID = assignment.investigatorID
-            prefix = "\(assignment.kind.actionTitle) to"
         case let .assignAgendaHorror(assignment):
             investigatorID = assignment.investigatorID
             prefix = "Assign 2 horror to"
