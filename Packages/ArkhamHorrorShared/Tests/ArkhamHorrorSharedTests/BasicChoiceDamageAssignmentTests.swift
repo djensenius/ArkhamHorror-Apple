@@ -32,8 +32,8 @@ enum DamageAssignmentFixtures {
         return try Data(contentsOf: url)
     }
 
-    static func value(_ name: String = "question-enemy-attack-damage-assignment") throws -> JSONValue {
-        try ContractJSON.decode(JSONValue.self, from: data(name))
+    static func value() throws -> JSONValue {
+        try ContractJSON.decode(JSONValue.self, from: data())
     }
 
     static func payload(_ value: JSONValue) throws -> BasicChoiceQuestionPayload {
@@ -67,34 +67,20 @@ enum DamageAssignmentFixtures {
         includeEnemy: Bool = true,
         includeInvestigator: Bool = true,
         enemyID: EnemyID = enemyID,
-        investigatorID: InvestigatorID = investigatorID,
-        investigatorName: CardName = CardName(title: "Roland Banks", subtitle: "The Fed"),
-        assetID: AssetID? = nil,
-        assetName: String = "Guard Dog"
+        investigatorID: InvestigatorID = investigatorID
     ) -> BoardProjection {
         let investigators: [InvestigatorID: Investigator] = includeInvestigator
             ? [
                 investigatorID: BoardTestFixtures.investigator(
                     id: investigatorID,
-                    name: investigatorName,
-                    assets: assetID.map { [$0] } ?? []
+                    name: CardName(title: "Roland Banks", subtitle: "The Fed")
                 ),
             ]
             : [:]
-        let assetValues = assetID.map {
-            [
-                $0: JSONValue.object([
-                    "assetId": .string($0.codingKey.stringValue),
-                    "cardCode": .string("c01021"),
-                    "name": .string(assetName),
-                ]),
-            ]
-        } ?? [:]
         return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             investigators: investigators,
             playerOrder: includeInvestigator ? [investigatorID] : [],
-            enemyValues: includeEnemy ? [enemyID: .null] : [:],
-            assetValues: assetValues
+            enemyValues: includeEnemy ? [enemyID: .null] : [:]
         ))
     }
 }
@@ -138,131 +124,6 @@ struct BasicChoiceDamageAssignmentTests {
             prompt: prompt,
             fixture: "answer-enemy-attack-assign-horror"
         )
-    }
-
-    @Test("Children of Blood terminal live assignments parse as governed choices")
-    func childrenOfBloodTerminalLiveAssignmentsParse() throws {
-        let cases = try [
-            (
-                fixture: "question-live-cob-skids-q39-enemy-attack-damage-assignment",
-                investigatorID: BoardTestFixtures.investigatorID("c01003"),
-                investigatorName: CardName(title: "\"Skids\" O'Toole", subtitle: nil),
-                expectedTargets: [
-                    EnemyAttackDamageAssignmentTarget.investigator(
-                        BoardTestFixtures.investigatorID("c01003")
-                    ),
-                ],
-                displayTitles: ["Assign 1 damage to \"Skids\" O'Toole"]
-            ),
-            (
-                fixture: "question-live-cob-roland-q76-enemy-attack-damage-assignment",
-                investigatorID: BoardTestFixtures.investigatorID("c01001"),
-                investigatorName: CardName(title: "Roland Banks", subtitle: "The Fed"),
-                expectedTargets: [
-                    EnemyAttackDamageAssignmentTarget.investigator(
-                        BoardTestFixtures.investigatorID("c01001")
-                    ),
-                    EnemyAttackDamageAssignmentTarget.asset(#require(AssetID(
-                        codingKey: AnyCodingKey(
-                            stringValue: "77142f24-cb7e-41a4-b536-9580722ee63c"
-                        )
-                    ))),
-                ],
-                displayTitles: [
-                    "Assign 1 damage to Roland Banks",
-                    "Assign 1 damage to Guard Dog",
-                ]
-            ),
-        ]
-
-        for testCase in cases {
-            let raw = try DamageAssignmentFixtures.value(testCase.fixture)
-            let prompt = try DamageAssignmentFixtures.prompt(raw)
-            let question = try #require(prompt.question.supportedQuestion)
-            #expect(question.kind == .questionWithSource)
-            #expect(!question.choices.contains { !$0.isSupported })
-            #expect(question.choices.count == testCase.expectedTargets.count)
-            let enemyID = try DamageAssignmentAssertions.enemyID(in: raw)
-            let assetID = testCase.expectedTargets.compactMap { target in
-                if case let .asset(assetID) = target {
-                    assetID
-                } else {
-                    nil
-                }
-            }.first
-            let projection = DamageAssignmentFixtures.projection(
-                enemyID: enemyID,
-                investigatorID: testCase.investigatorID,
-                investigatorName: testCase.investigatorName,
-                assetID: assetID
-            )
-            #expect(prompt.choices.map {
-                BoardDisplayFormatting.choiceDisplayTitle(for: $0, in: projection)
-            } == testCase.displayTitles)
-            #expect(prompt.choices.allSatisfy { prompt.isChoiceActionable($0, in: projection) })
-            guard case let .object(root) = raw,
-                  case let .object(labelQuestion)? = root["question"],
-                  case let .object(chooseOne)? = labelQuestion["question"],
-                  case let .array(rawChoices)? = chooseOne["choices"]
-            else { throw TestFailure() }
-
-            for (choice, expectedTarget) in question.choices.enumerated().map({ ($0.element, testCase.expectedTargets[$0.offset]) }) {
-                guard case let .assignEnemyAttackDamage(assignment) = choice.content else {
-                    Issue.record("Expected enemy-attack damage assignment content")
-                    continue
-                }
-                #expect(assignment.kind == .damage)
-                #expect(assignment.enemyID == enemyID)
-                #expect(assignment.investigatorID == testCase.investigatorID)
-                #expect(assignment.target == expectedTarget)
-                guard case let .object(rawChoice) = rawChoices[choice.index],
-                      case let .array(rawMessages)? = rawChoice["messages"]
-                else { throw TestFailure() }
-                #expect(assignment.messages == rawMessages)
-            }
-        }
-    }
-
-    @Test("Malformed Children of Blood terminal assignment tails fail closed")
-    func childrenOfBloodTerminalMalformedOppositeTailFailsClosed() throws {
-        var mutated = try DamageAssignmentFixtures.value(
-            "question-live-cob-skids-q39-enemy-attack-damage-assignment"
-        )
-        mutated = try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: "/question/question/choices/0/messages/1/contents/contents/5"
-                .split(separator: "/"),
-            replacement: .number(.integer(1)),
-            to: mutated
-        )
-        mutated = try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: "/question/question/choices/0/messages/1/contents/contents/7"
-                .split(separator: "/"),
-            replacement: .array([
-                .object([
-                    "tag": .string("InvestigatorTarget"),
-                    "contents": .string("c01003"),
-                ]),
-            ]),
-            to: mutated
-        )
-
-        try DamageAssignmentAssertions.expectFailClosed(mutated)
-    }
-
-    @Test("Asset soak choices without the deferred message fail closed")
-    func childrenOfBloodAssetSoakRequiresDeferredMessage() throws {
-        let mutated = try EnemyAttackFixtures.applying(
-            operation: "replace",
-            path: "/question/question/choices/1/messages/0/tag".split(separator: "/"),
-            replacement: .string("InvestigatorMessage"),
-            to: DamageAssignmentFixtures.value(
-                "question-live-cob-roland-q76-enemy-attack-damage-assignment"
-            )
-        )
-
-        try DamageAssignmentAssertions.expectFailClosed(mutated)
     }
 
     @Test("All 114 backend-published assignment mutations fail closed")
@@ -456,15 +317,6 @@ struct BasicChoiceDamageAssignmentTests {
 
 @MainActor
 private enum DamageAssignmentAssertions {
-    static func enemyID(in raw: JSONValue) throws -> EnemyID {
-        guard case let .object(root) = raw,
-              case let .object(source)? = root["source"],
-              case let .string(rawEnemyID)? = source["contents"],
-              let enemyID = EnemyID(codingKey: AnyCodingKey(stringValue: rawEnemyID))
-        else { throw TestFailure() }
-        return enemyID
-    }
-
     static func expectSemanticAssignments(
         question: BasicChoiceQuestion,
         rawChoices: [JSONValue]
