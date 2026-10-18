@@ -321,7 +321,7 @@ struct ReadStoryQuestionTests {
             Issue.record("Expected .chooseLocation")
             return
         }
-        #expect(locationID == expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025"))
+        #expect(locationID == expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5"))
         #expect(messages.count == 2)
     }
 
@@ -401,13 +401,13 @@ struct ReadStoryQuestionTests {
         arguments: [
             // Non-Location Target variant (e.g. EnemyTarget) remains unsupported here,
             // though it stays opaque wherever it appears inside PublicGame.
-            #"{"tag":"TargetLabel","target":{"tag":"EnemyTarget","contents":"d5a66e84-c729-4066-8475-d8a155609025"},"messages":[]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"EnemyTarget","contents":"782de537-8f5d-4eda-b849-2362e28402e5"},"messages":[]}"#,
             // Canonical UUID pattern rejects uppercase spelling.
             #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"D5A66E84-C729-4066-8475-D8A155609025"},"messages":[]}"#,
             // Closed shape rejects a cross-variant alias field.
-            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"d5a66e84-c729-4066-8475-d8a155609025"},"messages":[],"investigatorId":"c01001"}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"782de537-8f5d-4eda-b849-2362e28402e5"},"messages":[],"investigatorId":"c01001"}"#,
             // locationTarget itself is closed against extra keys.
-            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"d5a66e84-c729-4066-8475-d8a155609025","extra":1},"messages":[]}"#,
+            #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"782de537-8f5d-4eda-b849-2362e28402e5","extra":1},"messages":[]}"#,
             // Non-UUID contents.
             #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"not-a-uuid"},"messages":[]}"#,
         ]
@@ -430,8 +430,8 @@ struct ReadStoryQuestionTests {
         let bytes = Data(
             (
                 #"{"tag":"ChooseOne","choices":["# +
-                    #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"d5a66e84-c729-4066-8475-d8a155609025"},"messages":[]},"# +
-                    #"{"tag":"TargetLabel","target":{"tag":"EnemyTarget","contents":"d5a66e84-c729-4066-8475-d8a155609025"},"messages":[]},"# +
+                    #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"782de537-8f5d-4eda-b849-2362e28402e5"},"messages":[]},"# +
+                    #"{"tag":"TargetLabel","target":{"tag":"EnemyTarget","contents":"782de537-8f5d-4eda-b849-2362e28402e5"},"messages":[]},"# +
                     #"{"tag":"TargetLabel","target":{"tag":"LocationTarget","contents":"00000000-0000-0000-0000-000000000399"},"messages":[]}"# +
                     "]}"
             ).utf8
@@ -441,7 +441,7 @@ struct ReadStoryQuestionTests {
         #expect(question.choices.map(\.index) == [0, 1, 2])
         #expect(question.choices.map(\.isSupported) == [true, false, true])
         #expect(question.choices[0].locationID
-            == expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025"))
+            == expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5"))
         #expect(question.choices[2].locationID == BoardTestFixtures.locationID("000000000399"))
     }
 
@@ -449,7 +449,7 @@ struct ReadStoryQuestionTests {
 
     @Test("choiceDisplayTitle resolves a location choice against the authoritative projection")
     func choiceDisplayTitleResolvesKnownLocation() throws {
-        let locationID = expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025")
+        let locationID = expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5")
         let snapshot = BoardTestFixtures.snapshot(
             locations: [
                 (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(

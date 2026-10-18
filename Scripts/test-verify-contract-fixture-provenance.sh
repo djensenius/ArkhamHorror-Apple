@@ -29,7 +29,7 @@ game-lifecycle.json game-list.json game-update.json get-game.json \
 investigator-unhealed-horror-negative.json location-enemy-view.json mode-campaign-only.json mode-campaign-scenario.json \
 mode-turn-zero.json movement.json question-agenda-advance.json question-agenda-consequence.json \
 question-agenda-horror-assignment.json question-choose-one-location-multiple.json question-choose-one-location.json question-choose-one.json \
-question-cover-up-reaction.json question-encounter-deck-draw.json question-enemy-attack-damage-assignment.json question-enemy-attack-remaining-damage-assignment.json \
+public-game-structured-log.json question-cover-up-reaction.json question-encounter-deck-draw.json question-enemy-attack-damage-assignment.json question-enemy-attack-remaining-damage-assignment.json \
 question-enemy-attack-remaining-horror-assignment.json question-enemy-attack.json question-gathering-act-advance.json question-gathering-act-objective.json \
 question-gathering-attic-entry-forced.json question-gathering-attic-horror-assignment.json question-gathering-cellar-damage-assignment.json question-gathering-cellar-entry-forced.json \
 question-gathering-movement.json question-generic-choose-amounts.json question-generic-choose-deck.json question-generic-choose-n.json \
@@ -45,7 +45,7 @@ question-presentation-generic-invalid-info.json question-presentation-generic-on
 question-presentation-generic-read.json question-presentation-generic-skill-label.json question-presentation-generic-wrapped.json question-presentation-representatives.json \
 question-presentation-treachery-forced-ability.json question-read-scenario-intro.json question-read-with-cards.json question-read.json \
 question-roland-defeat-reaction.json question-round-end-forced-ability.json question-treachery-forced-ability.json question-window-choose-one.json \
-replay-attestation.json uuid-entity-map.json"
+replay-attestation.json room-closed.json uuid-entity-map.json"
 
 schema_names="
 basic-choice-question.schema.json capabilities.schema.json campaign-catalog.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.52",'
+    echo '  "schemaRevision": "0.1.53",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

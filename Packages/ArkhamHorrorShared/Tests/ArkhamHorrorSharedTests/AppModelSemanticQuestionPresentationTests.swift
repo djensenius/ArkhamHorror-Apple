@@ -1009,7 +1009,7 @@ extension AppModelLiveGameTests {
                 kind: .costLabel,
                 cost: .groupClue(
                     amount: .fixed(1),
-                    scope: .location("d5a66e84-c729-4066-8475-d8a155609025")
+                    scope: .location("782de537-8f5d-4eda-b849-2362e28402e5")
                 )
             ),
             .init(
@@ -1056,11 +1056,11 @@ extension AppModelLiveGameTests {
               case var .object(game)? = root["game"],
               case var .object(locations)? = game["locations"],
               case var .object(location)? = locations[
-                  "d5a66e84-c729-4066-8475-d8a155609025"
+                  "782de537-8f5d-4eda-b849-2362e28402e5"
               ]
         else { throw SemanticFixtureError.unexpectedShape }
         location["label"] = .string(locationLabel)
-        locations["d5a66e84-c729-4066-8475-d8a155609025"] = .object(location)
+        locations["782de537-8f5d-4eda-b849-2362e28402e5"] = .object(location)
         game["locations"] = .object(locations)
         root["game"] = .object(game)
         envelope = .object(root)

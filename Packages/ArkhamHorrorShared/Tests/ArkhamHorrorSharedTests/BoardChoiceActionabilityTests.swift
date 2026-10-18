@@ -15,7 +15,7 @@ extension ReadStoryQuestionTests {
 
     @Test("isChoiceActionable is true for a location choice present in the projection")
     func isChoiceActionableTrueWhenLocationKnown() throws {
-        let locationID = expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025")
+        let locationID = expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5")
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [
                 (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(
@@ -82,7 +82,7 @@ extension ReadStoryQuestionTests {
         "A location choice's actionability tracks a location appearing, then disappearing, in successive projections -- never cached from an earlier snapshot"
     )
     func isChoiceActionableTracksLocationAppearingAndDisappearing() throws {
-        let locationID = expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025")
+        let locationID = expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5")
         let payload = try ContractJSON.decode(
             BasicChoiceQuestionPayload.self, from: fixture("question-choose-one-location")
         )
@@ -171,7 +171,7 @@ extension ReadStoryQuestionTests {
 
     @Test("choiceAccessibilityHint announces activation for an actionable, submittable choice")
     func choiceAccessibilityHintAnnouncesActivation() throws {
-        let locationID = expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025")
+        let locationID = expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5")
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [
                 (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(
@@ -194,7 +194,7 @@ extension ReadStoryQuestionTests {
         "choiceAccessibilityHint reports the read-only status message (or a deterministic fallback) for an actionable choice that cannot currently be submitted"
     )
     func choiceAccessibilityHintReportsReadOnlyState() throws {
-        let locationID = expectedLocationID("d5a66e84-c729-4066-8475-d8a155609025")
+        let locationID = expectedLocationID("782de537-8f5d-4eda-b849-2362e28402e5")
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
             locations: [
                 (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(

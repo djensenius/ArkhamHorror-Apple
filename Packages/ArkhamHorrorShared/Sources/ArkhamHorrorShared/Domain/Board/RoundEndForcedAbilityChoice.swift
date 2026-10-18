@@ -48,8 +48,8 @@ private extension BasicChoiceParser {
         _ value: JSONValue?
     ) -> RoundEndAbilityIdentity? {
         guard case let .object(ability)? = value,
-              roundEndAbilityHasAllowedKeys(ability),
-              roundEndAbilityFixedValues.allSatisfy({
+              let wireShape = roundEndAbilityWireShape(ability),
+              roundEndAbilityFixedValues(for: wireShape).allSatisfy({
                   ability[$0.key] == $0.value
               }),
               roundEndAbilityBlockingFieldsAreCanonical(ability),
@@ -63,7 +63,16 @@ private extension BasicChoiceParser {
         return RoundEndAbilityIdentity(cardCode: cardCode, treacheryID: treacheryID)
     }
 
-    static let roundEndAbilityKeys: Set<String> = [
+    enum RoundEndAbilityWireShape {
+        case legacy
+        case schema153
+    }
+
+    /// Dissonant Voices' forced ability is strict for both relevant wire shapes:
+    /// the pre-0.1.53 ability object without `chaosTokenEffects`/`resultLabel`,
+    /// and the 0.1.53 object with both fields at their canonical values. Mixed
+    /// shapes are rejected so partial server drift does not gain answer authority.
+    static let roundEndAbilityLegacyKeys: Set<String> = [
         "additionalCosts", "basic", "canBeCancelled", "cardCode", "criteria",
         "delayAdditionalCosts", "displayAs", "doesNotProvokeAttacksOfOpportunity",
         "evadeCriteriaOverride", "fightCriteriaOverride", "highlightFromWindow",
@@ -72,8 +81,13 @@ private extension BasicChoiceParser {
         "window",
     ]
 
-    static var roundEndAbilityFixedValues: [String: JSONValue] {
-        [
+    static let roundEndAbilitySchema153Keys: Set<String> = roundEndAbilityLegacyKeys
+        .union(["chaosTokenEffects", "resultLabel"])
+
+    static func roundEndAbilityFixedValues(
+        for shape: RoundEndAbilityWireShape
+    ) -> [String: JSONValue] {
+        var values: [String: JSONValue] = [
             "additionalCosts": .array([]),
             "basic": .bool(false),
             "canBeCancelled": .bool(true),
@@ -107,6 +121,11 @@ private extension BasicChoiceParser {
             "wantsSkillTest": .null,
             "window": roundEndsWhenWindow,
         ]
+        if shape == .schema153 {
+            values["chaosTokenEffects"] = .array([])
+            values["resultLabel"] = .null
+        }
+        return values
     }
 
     static var roundEndsWhenWindow: JSONValue {
@@ -116,9 +135,18 @@ private extension BasicChoiceParser {
         ])
     }
 
-    static func roundEndAbilityHasAllowedKeys(_ ability: [String: JSONValue]) -> Bool {
+    static func roundEndAbilityWireShape(
+        _ ability: [String: JSONValue]
+    ) -> RoundEndAbilityWireShape? {
         let additiveKeys: Set = ["blocksIn", "nonBlocking"]
-        return Set(ability.keys).subtracting(additiveKeys) == roundEndAbilityKeys
+        let governedKeys = Set(ability.keys).subtracting(additiveKeys)
+        if governedKeys == roundEndAbilityLegacyKeys {
+            return .legacy
+        }
+        if governedKeys == roundEndAbilitySchema153Keys {
+            return .schema153
+        }
+        return nil
     }
 
     static func roundEndAbilityBlockingFieldsAreCanonical(

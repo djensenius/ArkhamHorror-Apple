@@ -2,8 +2,8 @@ import SwiftUI
 
 extension GamesListView {
     /// Pairs each row with a stable identity: a successfully decoded game's own
-    /// ``GameID`` when available, falling back to its position only for a
-    /// ``GameListEntry/failed(_:)`` row (which carries no identifier of its own).
+    /// ``GameID`` when available, falling back to its position only for legacy
+    /// ``GameListEntry/failed(_:)`` rows that carry no identifier of their own.
     /// Using the row's own `GameID` -- rather than always keying by position --
     /// keeps a row's swipe actions/context menu/focus bound to the same game
     /// across a refresh that reorders or removes other rows, instead of SwiftUI
@@ -59,6 +59,13 @@ extension GamesListView {
                 for: gameID.rawValue
             )
         )
+    }
+
+    func deleteFailurePresentation(
+        for failedEntry: FailedGameEntry
+    ) -> GameRowActionFailurePresentation? {
+        guard let gameID = failedEntry.id else { return nil }
+        return deleteFailurePresentation(for: gameID)
     }
 
     @ViewBuilder
@@ -118,9 +125,52 @@ extension GamesListView {
                 )
             }
         case let .failed(failedEntry):
-            Label(failedEntry.error, systemImage: "exclamationmark.triangle")
+            failedRow(for: failedEntry)
+        }
+    }
+
+    @ViewBuilder
+    private func failedRow(for failedEntry: FailedGameEntry) -> some View {
+        let deleteFailure = deleteFailurePresentation(for: failedEntry)
+        let label = VStack(alignment: .leading, spacing: 4) {
+            Label(
+                failedEntry.name ?? gameLifecycleLocalized(
+                    "games.broken.title",
+                    "Broken game"
+                ),
+                systemImage: "exclamationmark.triangle"
+            )
+            .font(.subheadline)
+            Text(failedEntry.error)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+            if let deleteFailure {
+                ArkhamFailureText(message: deleteFailure.message)
+                    .accessibilityLabel(deleteFailure.accessibilityLabel)
+                    .accessibilityIdentifier(deleteFailure.accessibilityIdentifier)
+            }
+        }
+        if let gameID = failedEntry.id {
+            let actionInFlight = model.gameLifecycleActions[gameID] != nil
+            label
+                .modifier(GameRowSwipeActions(
+                    gameID: gameID,
+                    isDeleteDisabled: actionInFlight,
+                    onDelete: { pendingDeletion = gameID }
+                ))
+                .contextMenu {
+                    Button(role: .destructive) {
+                        pendingDeletion = gameID
+                    } label: {
+                        Label(
+                            gameLifecycleLocalized("games.delete.action", "Delete"),
+                            systemImage: "trash"
+                        )
+                    }
+                    .disabled(actionInFlight)
+                }
+        } else {
+            label
         }
     }
 

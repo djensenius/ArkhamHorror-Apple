@@ -1,0 +1,150 @@
+{
+  "tag": "WindowChooseOne",
+  "choices": [
+    {
+      "tag": "AbilityLabel",
+      "investigatorId": "c01001",
+      "ability": {
+        "source": {
+          "tag": "InvestigatorSource",
+          "contents": "c01001"
+        },
+        "cardCode": "c01001",
+        "index": 1,
+        "type": {
+          "tag": "ReactionAbility",
+          "window": {
+            "tag": "IfEnemyDefeated",
+            "contents": [
+              "After",
+              {
+                "tag": "You"
+              },
+              {
+                "tag": "ByAny"
+              },
+              {
+                "tag": "AnyEnemy"
+              }
+            ]
+          },
+          "cost": {
+            "tag": "Free"
+          },
+          "actions": {
+            "contents": [],
+            "tag": "AndActions"
+          }
+        },
+        "limit": {
+          "tag": "PlayerLimit",
+          "contents": [
+            {
+              "tag": "PerRound"
+            },
+            1
+          ]
+        },
+        "window": {
+          "tag": "IfEnemyDefeated",
+          "contents": [
+            "After",
+            {
+              "tag": "You"
+            },
+            {
+              "tag": "ByAny"
+            },
+            {
+              "tag": "AnyEnemy"
+            }
+          ]
+        },
+        "metadata": null,
+        "criteria": {
+          "tag": "Criteria",
+          "contents": [
+            {
+              "tag": "Self"
+            },
+            {
+              "tag": "LocationExists",
+              "contents": {
+                "tag": "LocationMatchAll",
+                "contents": [
+                  {
+                    "tag": "LocationWithInvestigator",
+                    "contents": {
+                      "tag": "You"
+                    }
+                  },
+                  {
+                    "tag": "LocationWithDiscoverableCluesBy",
+                    "contents": {
+                      "tag": "You"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "doesNotProvokeAttacksOfOpportunity": null,
+        "tooltip": null,
+        "canBeCancelled": true,
+        "displayAs": null,
+        "delayAdditionalCosts": null,
+        "basic": false,
+        "additionalCosts": [],
+        "requestor": {
+          "tag": "InvestigatorSource",
+          "contents": "c01001"
+        },
+        "triggersSkillTest": false,
+        "wantsSkillTest": null,
+        "target": null,
+        "highlightFromWindow": false,
+        "skipForAll": false,
+        "ignoreAllCosts": false,
+        "fightCriteriaOverride": null,
+        "evadeCriteriaOverride": null,
+        "nonBlocking": false,
+        "blocksIn": null
+      },
+      "windows": [
+        {
+          "windowTiming": "After",
+          "windowType": {
+            "tag": "IfEnemyDefeated",
+            "contents": [
+              "c01001",
+              {
+                "tag": "DefeatedByDamage",
+                "contents": {
+                  "tag": "UseAbilitySource",
+                  "contents": [
+                    "c01001",
+                    {
+                      "tag": "EnemySource",
+                      "contents": "6420b429-88f1-44b2-9a51-e5eb8ae44598"
+                    },
+                    100
+                  ]
+                }
+              },
+              "6420b429-88f1-44b2-9a51-e5eb8ae44598"
+            ]
+          },
+          "windowBatchId": null,
+          "windowConditionTick": null
+        }
+      ],
+      "before": [],
+      "messages": []
+    },
+    {
+      "tag": "SkipTriggersButton",
+      "investigatorId": "c01001"
+    }
+  ]
+}

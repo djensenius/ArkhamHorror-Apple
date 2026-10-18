@@ -57,7 +57,7 @@ struct InvestigatorFixtureTests {
             )
         )
         fixture = fixture.replacingOccurrences(
-            of: "\"placement\": {\n    \"contents\": \"d5a66e84-c729-4066-8475-d8a155609025\",\n"
+            of: "\"placement\": {\n    \"contents\": \"782de537-8f5d-4eda-b849-2362e28402e5\",\n"
                 + "    \"tag\": \"AtLocation\"\n  },",
             with: "\"placement\": null,"
         )

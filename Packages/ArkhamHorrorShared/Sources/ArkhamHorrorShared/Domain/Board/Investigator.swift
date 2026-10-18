@@ -79,6 +79,8 @@ struct Investigator: Sendable {
     let health: Int
     let horrorHealed: Int
     let id: InvestigatorID
+    /// Additive 0.1.53 action bookkeeping. Broad and out of scope for this contract slice.
+    let ignoredPerformedActions: [JSONValue]?
     let intellect: Int
     /// Arkham keys held by this investigator. Broad, out of scope for this contract
     /// slice.

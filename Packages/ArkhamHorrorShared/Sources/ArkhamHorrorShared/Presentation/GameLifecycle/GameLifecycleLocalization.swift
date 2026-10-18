@@ -29,3 +29,14 @@ func gameLifecycleLocalizedPlural(
         gameLifecycleLocalizedFormat(manyKey, manyFallback, count)
     }
 }
+
+func liveGameRoomClosedTitle() -> String {
+    gameLifecycleLocalized("games.live.roomClosed.title", "Game closed")
+}
+
+func liveGameRoomClosedMessage() -> String {
+    gameLifecycleLocalized(
+        "games.live.roomClosed.message",
+        "This game was closed on the server."
+    )
+}

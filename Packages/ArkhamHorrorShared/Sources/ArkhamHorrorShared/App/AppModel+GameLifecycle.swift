@@ -180,7 +180,7 @@ extension AppModel {
         gameListState = .idle
         gameListRefreshCompletions = [:]
         gameLifecycleActions = [:]
-        gameLifecycleActionFailures = [:]; confirmedDeletedGameIDs = []
+        gameLifecycleActionFailures = [:]; confirmedDeletedGameIDs = []; roomClosedNotice = nil
         gameOpenSeats = [:]
         gameLobbyPlayerCounts = [:]
         gameLobbyViewerHasSeats = [:]

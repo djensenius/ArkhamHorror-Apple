@@ -115,8 +115,31 @@ struct InvestigatorSummary: Sendable, Equatable, Codable {
 }
 
 /// A game entry that failed to load; `GameListEntry`'s alternative to ``GameSummary``.
+/// Servers before schema 0.1.53 emitted only `error`; 0.1.53 restores the web shape
+/// `{id,name,error}` so native rows can display and delete the broken game.
 struct FailedGameEntry: Sendable, Equatable, Codable {
+    let id: GameID?
+    let name: String?
     let error: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case error
+    }
+
+    init(id: GameID? = nil, name: String? = nil, error: String) {
+        self.id = id
+        self.name = name
+        self.error = error
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(GameID.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        error = try container.decode(String.self, forKey: .error)
+    }
 }
 
 /// A single successfully loaded game summary, as returned by `GET /arkham/games`.

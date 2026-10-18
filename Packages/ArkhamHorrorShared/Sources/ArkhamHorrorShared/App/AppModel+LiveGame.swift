@@ -103,8 +103,9 @@ extension AppModel {
     /// states ``LiveGameState/isRetryable`` reports `true` for. A no-op for any
     /// other state -- including ``LiveGameState/incompatiblePayload(lastKnown:)``
     /// (a genuine contract mismatch retrying cannot fix; the user must update the
-    /// app) and ``LiveGameState/authenticationExpired`` (requires signing in again
-    /// rather than merely retrying the same rejected token) -- or when `id`
+    /// app), ``LiveGameState/authenticationExpired`` (requires signing in again rather
+    /// than merely retrying the same rejected token), and
+    /// ``LiveGameState/roomClosed(reason:lastKnown:)`` (terminal server state) -- or when `id`
     /// currently has no viewer at all (defensive; the only caller is a subscribed
     /// `LiveGameView`'s own retry action).
     func retryLiveGame(_ id: GameID) {

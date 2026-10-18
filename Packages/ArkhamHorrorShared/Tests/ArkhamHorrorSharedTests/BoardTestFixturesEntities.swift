@@ -48,7 +48,7 @@ extension BoardTestFixtures {
             drivenInsane: drivenInsane, eliminated: eliminated, endedTurn: false,
             engagedEnemies: engagedEnemies, events: events, excludeFromMulligan: [], form: .null,
             formMeta: .null, hand: hand, handSize: hand.count, health: health, horrorHealed: 0,
-            id: id,
+            id: id, ignoredPerformedActions: nil,
             intellect: 3, keys: [], killed: killed, log: .null, mentalTrauma: mentalTrauma,
             meta: .null, modifiers: [], movement: movement, mulligansTaken: 0, mutated: .null,
             name: name, physicalTrauma: physicalTrauma, placement: placement,
