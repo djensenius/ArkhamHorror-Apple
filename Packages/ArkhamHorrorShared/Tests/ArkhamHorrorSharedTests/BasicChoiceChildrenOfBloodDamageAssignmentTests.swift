@@ -136,7 +136,12 @@ private enum ChildrenOfBloodDamageAssignmentFixtures {
     }
 
     static func value(_ name: String) throws -> JSONValue {
-        try ContractJSON.decode(JSONValue.self, from: DamageAssignmentFixtures.data(name))
+        let url = try #require(Bundle.module.url(
+            forResource: name,
+            withExtension: "json",
+            subdirectory: "Fixtures/LiveChildrenOfBloodPlaythrough"
+        ))
+        return try ContractJSON.decode(JSONValue.self, from: Data(contentsOf: url))
     }
 
     static func enemyID(in raw: JSONValue) throws -> EnemyID {

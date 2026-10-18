@@ -61,6 +61,15 @@ enum AssignmentContinuationFixture: String, CaseIterable, Sendable {
         case .remainingHorror: (0, 1)
         }
     }
+
+    var emptyOppositeListPath: String {
+        switch self {
+        case .remainingDamage:
+            "/question/question/choices/0/messages/1/contents/contents/7"
+        case .remainingHorror:
+            "/question/question/choices/0/messages/1/contents/contents/6"
+        }
+    }
 }
 
 extension DamageAssignmentFixtures {
