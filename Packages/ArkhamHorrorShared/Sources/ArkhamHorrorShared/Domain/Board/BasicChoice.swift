@@ -87,10 +87,16 @@ enum EnemyAttackAssignmentKind: Sendable, Equatable, Hashable {
     }
 }
 
+enum EnemyAttackDamageAssignmentTarget: Sendable, Equatable, Hashable {
+    case investigator(InvestigatorID)
+    case asset(AssetID)
+}
+
 struct EnemyAttackDamageAssignment: Sendable, Equatable, Hashable {
     let kind: EnemyAttackAssignmentKind
     let enemyID: EnemyID
     let investigatorID: InvestigatorID
+    let target: EnemyAttackDamageAssignmentTarget
     let messages: [JSONValue]
 }
 

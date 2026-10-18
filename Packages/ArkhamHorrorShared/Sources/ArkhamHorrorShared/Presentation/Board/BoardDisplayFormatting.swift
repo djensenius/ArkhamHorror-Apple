@@ -54,14 +54,37 @@ enum BoardDisplayFormatting {
         case .finishMulligan, .chooseAgendaConsequence:
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
-        case .resolveEnemyAttack, .assignEnemyAttackDamage, .assignAgendaHorror:
+        case .resolveEnemyAttack, .assignAgendaHorror:
             return investigatorChoiceDisplayTitle(for: choice, in: projection)
+        case let .assignEnemyAttackDamage(assignment):
+            return enemyAttackAssignmentDisplayTitle(
+                assignment,
+                fallback: choice.title,
+                in: projection
+            )
         case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
              .rolandDefeatReaction, .coverUpReaction, .resolveForcedAbility, .advanceAgenda,
              .continueReading, .skipTriggers, .startSkillTest, .applySkillTestResults,
              .drawEncounterCard, .unsupported:
             return choice.title
         }
+    }
+
+    private static func enemyAttackAssignmentDisplayTitle(
+        _ assignment: EnemyAttackDamageAssignment,
+        fallback: String,
+        in projection: BoardProjection
+    ) -> String {
+        let targetName: String? = switch assignment.target {
+        case let .investigator(investigatorID):
+            projection.investigators.first { $0.id == investigatorID }?.displayName
+        case let .asset(assetID):
+            projection.inPlayCardsByPlayer.values.flatMap(\.self).first {
+                $0.id == .asset(assetID)
+            }?.displayName
+        }
+        guard let targetName else { return fallback }
+        return "\(assignment.kind.actionTitle) to \(targetName)"
     }
 
     private static func investigatorChoiceDisplayTitle(

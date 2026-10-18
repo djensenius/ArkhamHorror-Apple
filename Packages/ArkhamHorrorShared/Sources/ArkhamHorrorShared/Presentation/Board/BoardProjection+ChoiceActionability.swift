@@ -119,10 +119,22 @@ extension BoardProjection {
         case let .assignEnemyAttackDamage(assignment):
             enemyIDs.contains(assignment.enemyID)
                 && investigators.contains { $0.id == assignment.investigatorID }
+                && isAssignmentTargetActionable(assignment.target)
         case let .fight(_, enemyID), let .evade(_, enemyID), let .engage(_, enemyID):
             enemyIDs.contains(enemyID)
         default:
             false
+        }
+    }
+
+    private func isAssignmentTargetActionable(
+        _ target: EnemyAttackDamageAssignmentTarget
+    ) -> Bool {
+        switch target {
+        case let .investigator(investigatorID):
+            investigators.contains { $0.id == investigatorID }
+        case let .asset(assetID):
+            inPlayCardsByPlayer.values.flatMap(\.self).contains { $0.id == .asset(assetID) }
         }
     }
 
