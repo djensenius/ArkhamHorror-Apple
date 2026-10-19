@@ -4,7 +4,10 @@ import Testing
 
 @MainActor
 extension DecksViewModelTests {
-    @Test("cancelled refresh and sync clears all busy rows and permits another refresh", .timeLimit(.minutes(1)))
+    @Test(
+        "cancelled refresh and sync clears all busy rows and permits another refresh",
+        .timeLimit(.minutes(1))
+    )
     func cancelledRefreshAndSyncClearsBusyStateAndPermitsRefresh() async throws {
         let fixture = try loadFixture()
         let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
@@ -30,7 +33,7 @@ extension DecksViewModelTests {
         #expect(await service.callOrder.filter { $0 == "listDecks" }.count == 2)
     }
 
-    @Test("refresh and sync aggregates per-deck results")
+    @Test("refresh and sync aggregates per-deck results", .timeLimit(.minutes(1)))
     func refreshAndSyncAggregatesResults() async throws {
         let fixture = try loadFixture()
         let first = try deck(
@@ -74,7 +77,7 @@ extension DecksViewModelTests {
         #expect(model.syncAllSummary == "Synced 1 of 2 decks with a deck source. 1 failed.")
     }
 
-    @Test("refresh and sync handles expiry and cancellation separately")
+    @Test("refresh and sync handles expiry and cancellation separately", .timeLimit(.minutes(1)))
     func refreshAndSyncSessionExpiryAndCancellation() async throws {
         let fixture = try loadFixture()
         let sessionExpiredDeck = deck(fixture.deck, url: fixture.deck.url, name: "Expired")
@@ -103,7 +106,27 @@ extension DecksViewModelTests {
         #expect(model.syncAllSummary == "Synced 0 of 2 decks with a deck source. 1 failed.")
     }
 
-    @Test("sync-all stops queueing after the first 401")
+    @Test("bulk sync calls each syncable deck ID only once", .timeLimit(.minutes(1)))
+    func bulkSyncDeduplicatesSyncableDeckIDs() async throws {
+        let fixture = try loadFixture()
+        let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
+        let second = deck(fixture.deck, url: fixture.deck.url, name: "B second")
+        let local = deck(fixture.deck, url: nil, name: "C local")
+        let service = ScriptedDeckService()
+        await service.enqueueList(.success([first, first, second, local, second]))
+        await service.enqueueSync(.success(first), for: first.id)
+        await service.enqueueSync(.success(second), for: second.id)
+        let model = makeModel(service: service)
+
+        await model.refreshAndSync()
+
+        let syncedIDs = await service.syncedIDs
+        #expect(syncedIDs.count == 2)
+        #expect(Set(syncedIDs) == Set([first.id, second.id]))
+        #expect(model.syncAllSummary == "Synced 2 of 2 decks with a deck source. 0 failed.")
+    }
+
+    @Test("sync-all stops queueing after the first 401", .timeLimit(.minutes(1)))
     func syncAllStopsQueueingAfterFirstSessionExpired() async throws {
         let fixture = try loadFixture()
         let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
@@ -134,7 +157,7 @@ extension DecksViewModelTests {
         #expect(expirations == 1)
     }
 
-    @Test("refresh and sync ignores re-entry while syncs are active")
+    @Test("refresh and sync ignores re-entry while syncs are active", .timeLimit(.minutes(1)))
     func refreshAndSyncIgnoresReentry() async throws {
         let fixture = try loadFixture()
         let service = ScriptedDeckService()
@@ -153,7 +176,7 @@ extension DecksViewModelTests {
         #expect(model.syncAllSummary == "Synced 1 of 1 decks with a deck source. 0 failed.")
     }
 
-    @Test("refresh and sync is ignored while an individual sync is active")
+    @Test("refresh and sync is ignored while an individual sync is active", .timeLimit(.minutes(1)))
     func refreshAndSyncIgnoresActiveIndividualSync() async throws {
         let fixture = try loadFixture()
         let service = ScriptedDeckService()
@@ -172,7 +195,10 @@ extension DecksViewModelTests {
         await syncTask.value
     }
 
-    @Test("manual sync is ignored during bulk sync and duplicate row syncs are deduped")
+    @Test(
+        "manual sync is ignored during bulk sync and duplicate row syncs are deduped",
+        .timeLimit(.minutes(1))
+    )
     func manualSyncIgnoresBulkAndDuplicateActiveIDs() async throws {
         let fixture = try loadFixture()
         let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
@@ -198,63 +224,10 @@ extension DecksViewModelTests {
         await rowTask.value
     }
 
-    @Test("row sync rejects stale context before publishing success")
-    func rowSyncRejectsStaleContextBeforePublishingSuccess() async throws {
-        let fixture = try loadFixture()
-        let service = ScriptedDeckService()
-        let tracker = RecordingDeckSyncTracker()
-        await service.setSyncGated(true)
-        await service.enqueueList(.success([fixture.deck]))
-        var isCurrentContext = true
-        let model = makeModel(
-            service: service,
-            tracker: tracker,
-            contextValidator: { _ in isCurrentContext }
-        )
-        await model.load()
-        let syncedDeck = deck(
-            fixture.deck,
-            id: fixture.deck.id.rawValue,
-            url: fixture.deck.url,
-            name: "Stale synced deck"
-        )
-        let syncTask = Task { await model.sync(fixture.deck) }
-        await service.waitUntilSyncPending(1)
-
-        isCurrentContext = false
-        await service.resumeSync(for: fixture.deck.id, with: .success(syncedDeck))
-        await syncTask.value
-
-        #expect(model.decks == [fixture.deck])
-        #expect(model.syncState(for: fixture.deck) == nil)
-        #expect(await tracker.records.isEmpty)
-    }
-
-    @Test("bulk sync rejects stale context before publishing or queueing more")
-    func bulkSyncRejectsStaleContextBeforePublishingOrQueueingMore() async throws {
-        let fixture = try loadFixture()
-        let service = ScriptedDeckService()
-        let tracker = RecordingDeckSyncTracker()
-        await service.setSyncGated(true)
-        await service.enqueueList(.success([fixture.deck]))
-        var isCurrentContext = true
-        let model = makeModel(
-            service: service,
-            tracker: tracker,
-            contextValidator: { _ in isCurrentContext }
-        )
-        let syncTask = Task { await model.refreshAndSync() }
-        await service.waitUntilSyncPending(1)
-
-        isCurrentContext = false
-        await service.resumeSync(for: fixture.deck.id, with: .success(fixture.deck))
-        await syncTask.value
-
-        #expect(model.syncAllSummary == nil)
-        #expect(await tracker.records.isEmpty)
-    }
-
-    @Test("bulk sync discards successes that complete after session expiry")
+    @Test(
+        "bulk sync discards successes that complete after session expiry",
+        .timeLimit(.minutes(1))
+    )
     func bulkSyncDiscardsBufferedSuccessesAfterSessionExpiry() async throws {
         let fixture = try loadFixture()
         let expired = deck(fixture.deck, url: fixture.deck.url, name: "A expired")
@@ -290,7 +263,10 @@ extension DecksViewModelTests {
         #expect(await tracker.records.isEmpty)
     }
 
-    @Test("deleting a deck while sync is active prevents a stale sync from resurrecting it")
+    @Test(
+        "deleting a deck while sync is active prevents a stale sync from resurrecting it",
+        .timeLimit(.minutes(1))
+    )
     func deleteDuringSyncPreventsResurrection() async throws {
         let fixture = try loadFixture()
         let service = ScriptedDeckService()

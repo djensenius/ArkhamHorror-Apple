@@ -39,6 +39,35 @@ struct AppModelDeckSyncChoiceTests {
         #expect(model.deckChoiceSyncNote(for: deck.id, on: .hosted) == deckSyncSuccessMessage())
     }
 
+    @Test(
+        "REST ChooseDeck session expiry during sync signs out without sending",
+        .timeLimit(.minutes(1))
+    )
+    func chooseSavedDeckSessionExpiryDuringSyncAborts() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService()
+        let gameID = GameID(UUID())
+        let deck = try deckSyncChoiceSampleDeck()
+        await deckService.enqueueSync(.failure(DeckServiceError.sessionExpired))
+        await service.enqueueChooseDeckResult(.success(()))
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: service,
+            deckService: deckService
+        )
+
+        model.chooseDeck(deck, investigatorId: "01001", in: gameID)
+        await model.gameLifecycleActionTasks[gameID]?.value
+
+        #expect(await deckService.syncedIDs == [deck.id])
+        #expect(await service.lastChooseDeckRequest == nil)
+        guard case let .signedOut(profile, _) = model.sessionState,
+              profile == .hosted
+        else {
+            Issue.record("Expected hosted signed-out session after sync 401")
+            return
+        }
+    }
+
     @Test("sync timeout falls back to the saved deck and leaves a visible note")
     func chooseSavedDeckSyncTimeoutFallsBack() async throws {
         let service = ScriptedGameLifecycleService()

@@ -143,34 +143,6 @@ actor ScriptedDeckService: DeckServicing {
     }
 }
 
-actor RecordingDeckSyncTracker: DeckSyncTracking {
-    private(set) var records: [(DeckID, Date)] = []
-    private var decks: [DeckID: Deck] = [:]
-
-    func lastSyncedAt(for _: DeckID, on _: ServerProfile) -> Date? {
-        nil
-    }
-
-    func lastSyncedDeck(for deckID: DeckID, on _: ServerProfile) -> Deck? {
-        decks[deckID]
-    }
-
-    func recordSync(_ deck: Deck, on _: ServerProfile, at date: Date) {
-        records.append((deck.id, date))
-        decks[deck.id] = deck
-    }
-
-    func removeSync(for deckID: DeckID, on _: ServerProfile) {
-        records.removeAll { $0.0 == deckID }
-        decks[deckID] = nil
-    }
-
-    func clear() {
-        records = []
-        decks = [:]
-    }
-}
-
 struct DecksViewModelFixture: Decodable {
     let deck: Deck
     let operationError: DeckOperationError
@@ -200,6 +172,7 @@ struct DecksViewModelTests {
             )
         },
         sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in },
+        syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in },
         contextValidator: @escaping DecksViewModel.ContextValidator = { _ in true }
     ) -> DecksViewModel {
         DecksViewModel(
@@ -208,6 +181,7 @@ struct DecksViewModelTests {
             deckSyncTracker: tracker,
             tokenProvider: tokenProvider,
             sessionExpiredHandler: sessionExpiredHandler,
+            syncedDeckRecorder: syncedDeckRecorder,
             contextValidator: contextValidator
         )
     }

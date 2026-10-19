@@ -5,7 +5,7 @@ import Testing
 @MainActor
 @Suite("AppModel — deck sync before choice state")
 struct AppModelDeckSyncChoiceStateTests {
-    @Test("session-expired sign-out clears cached deck-choice sync state")
+    @Test("session-expired sign-out clears cached deck-choice sync state", .timeLimit(.minutes(1)))
     func sessionExpiredSignOutClearsCachedDeckChoiceSyncState() async throws {
         let service = ScriptedGameLifecycleService()
         let deck = try deckSyncChoiceSampleDeck()
@@ -38,7 +38,7 @@ struct AppModelDeckSyncChoiceStateTests {
         #expect(await tracker.lastSyncedAt(for: deck.id, on: .hosted) == nil)
     }
 
-    @Test("loaded deck lists drop differing cached synced deck bodies")
+    @Test("loaded deck lists drop differing cached synced deck bodies", .timeLimit(.minutes(1)))
     func loadedDeckListDropsDifferingCachedSyncedDeck() async throws {
         let model = AppModel(
             profileStore: FakeServerProfileStore(),
@@ -70,7 +70,10 @@ struct AppModelDeckSyncChoiceStateTests {
         #expect(model.deckForChoice(loadedDeck, on: .hosted) == loadedDeck)
     }
 
-    @Test("loaded differing deck invalidates recent-sync skip before choosing")
+    @Test(
+        "loaded differing deck invalidates recent-sync skip before choosing",
+        .timeLimit(.minutes(1))
+    )
     func loadedDifferingDeckInvalidatesRecentSyncSkipBeforeChoosing() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService()
@@ -111,7 +114,7 @@ struct AppModelDeckSyncChoiceStateTests {
         #expect(sentRequest.deckList == DeckListInput(loadedDeck.playableList))
     }
 
-    @Test("recent sync skip sends the cached synced deck body")
+    @Test("recent sync skip sends the cached synced deck body", .timeLimit(.minutes(1)))
     func chooseSavedDeckSkipUsesCachedSyncedDeck() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService()
@@ -144,7 +147,10 @@ struct AppModelDeckSyncChoiceStateTests {
         #expect(model.deckForChoice(deck, on: .hosted) == syncedDeck)
     }
 
-    @Test("profile switch waits for deck sync tracker clear before starting the new flow")
+    @Test(
+        "profile switch waits for deck sync tracker clear before starting the new flow",
+        .timeLimit(.minutes(1))
+    )
     func profileSwitchWaitsForDeckSyncTrackerClearBeforeNewFlow() async {
         let tracker = GatedChoiceSyncTracker()
         let probe = ScriptedCapabilityProbe(.outcome(.legacyFallback))

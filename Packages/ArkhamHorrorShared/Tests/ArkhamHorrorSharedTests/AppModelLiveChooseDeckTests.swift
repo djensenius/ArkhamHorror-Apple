@@ -152,7 +152,10 @@ struct AppModelLiveChooseDeckTests {
         )
     }
 
-    @Test("DeckAnswer is sent with the governed shape for the prompt owner")
+    @Test(
+        "DeckAnswer is sent with the governed shape for the prompt owner",
+        .timeLimit(.minutes(1))
+    )
     func sendsDeckAnswerForPromptOwner() async throws {
         let service = ScriptedGameLifecycleService()
         let model = await makeSignedInModel(service: service)
@@ -184,7 +187,7 @@ struct AppModelLiveChooseDeckTests {
         ]))
     }
 
-    @Test("Live ChooseDeck syncs saved deck before sending")
+    @Test("Live ChooseDeck syncs saved deck before sending", .timeLimit(.minutes(1)))
     func liveChooseDeckSyncsBeforeSending() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService()
@@ -217,7 +220,7 @@ struct AppModelLiveChooseDeckTests {
         ))
     }
 
-    @Test("Live ChooseDeck prompt changes during sync stop the send")
+    @Test("Live ChooseDeck prompt changes during sync stop the send", .timeLimit(.minutes(1)))
     func liveChooseDeckPromptChangeDuringSyncStopsSend() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService(syncGated: true)
@@ -250,7 +253,7 @@ struct AppModelLiveChooseDeckTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Live ChooseDeck sign-out during sync rejects stale writes")
+    @Test("Live ChooseDeck sign-out during sync rejects stale writes", .timeLimit(.minutes(1)))
     func liveChooseDeckSignOutDuringSyncRejectsStaleWrites() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService(syncGated: true)
@@ -290,7 +293,10 @@ struct AppModelLiveChooseDeckTests {
         #expect(await connection.sentData.isEmpty)
     }
 
-    @Test("Live ChooseDeck session expiry during sync signs out and aborts")
+    @Test(
+        "Live ChooseDeck session expiry during sync signs out and aborts",
+        .timeLimit(.minutes(1))
+    )
     func liveChooseDeckSessionExpiryDuringSyncAborts() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService()
@@ -323,7 +329,10 @@ struct AppModelLiveChooseDeckTests {
         }
     }
 
-    @Test("Live ChooseDeck sync failure sends saved deck and leaves fallback note")
+    @Test(
+        "Live ChooseDeck sync failure sends saved deck and leaves fallback note",
+        .timeLimit(.minutes(1))
+    )
     func liveChooseDeckSyncFailureLeavesNote() async throws {
         let service = ScriptedGameLifecycleService()
         let deckService = GameLifecycleDeckService()
