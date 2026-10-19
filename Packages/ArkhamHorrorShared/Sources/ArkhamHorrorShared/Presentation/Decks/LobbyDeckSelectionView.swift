@@ -86,36 +86,7 @@ struct LobbyDeckSelectionView: View {
                 Image(systemName: "rectangle.stack.fill")
                     .foregroundStyle(ArkhamTheme.accent)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Use \(resolvedDeck.name)")
-                        .font(.headline)
-                    Text(resolvedDeck.investigatorName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    validationText(for: state, deck: resolvedDeck)
-                    if model.deckChoiceIsSyncing(resolvedDeck.id) {
-                        Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.lobbyDeckSyncingText(
-                                    for: gameID.rawValue,
-                                    deckID: resolvedDeck.id.rawValue
-                                )
-                            )
-                    }
-                    if let syncNote = model.deckChoiceSyncNote(for: resolvedDeck.id) {
-                        Text(syncNote)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.lobbyDeckSyncNoteText(
-                                    for: gameID.rawValue,
-                                    deckID: resolvedDeck.id.rawValue
-                                )
-                            )
-                    }
-                }
+                deckButtonDetails(for: resolvedDeck, state: state)
                 Spacer()
                 if action == .choosingDeck || state == .pending {
                     ProgressView().controlSize(.small)
@@ -127,6 +98,47 @@ struct LobbyDeckSelectionView: View {
         .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
             for: gameID.rawValue, deckID: resolvedDeck.id.rawValue
         ))
+    }
+
+    private func deckButtonDetails(
+        for deck: Deck,
+        state: LobbyDeckSelectionViewModel.ValidationState
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Use \(deck.name)")
+                .font(.headline)
+            Text(deck.investigatorName)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            validationText(for: state, deck: deck)
+            deckSyncStatus(for: deck)
+        }
+    }
+
+    @ViewBuilder
+    private func deckSyncStatus(for deck: Deck) -> some View {
+        if model.deckChoiceIsSyncing(deck.id) {
+            Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.lobbyDeckSyncingText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
+        }
+        if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+            Text(syncNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.lobbyDeckSyncNoteText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
+        }
     }
 
     @ViewBuilder

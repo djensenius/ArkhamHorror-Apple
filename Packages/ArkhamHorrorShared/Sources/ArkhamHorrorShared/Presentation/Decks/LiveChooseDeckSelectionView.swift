@@ -167,45 +167,14 @@ struct LiveChooseDeckSelectionView: View {
             in: gameID
         )
         return Button {
-            guard pickerEnabled,
-                  let attempt = submissionState.beginSending(deckID: resolvedDeck.id)
-            else { return }
-            Task {
-                let didSend = await model.chooseDeckForLivePrompt(resolvedDeck, in: gameID)
-                submissionState.finish(attempt, didSend: didSend)
-            }
+            startSubmission(for: resolvedDeck, when: pickerEnabled)
         } label: {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(resolvedDeck.name)
-                        .font(.headline)
-                    Text(resolvedDeck.investigatorName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    validationText(for: state, restrictionError: restrictionError)
-                    if model.deckChoiceIsSyncing(resolvedDeck.id) {
-                        Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.liveChooseDeckSyncingText(
-                                    for: gameID.rawValue,
-                                    deckID: resolvedDeck.id.rawValue
-                                )
-                            )
-                    }
-                    if let syncNote = model.deckChoiceSyncNote(for: resolvedDeck.id) {
-                        Text(syncNote)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier(
-                                AccountAccessibilityID.liveChooseDeckSyncNoteText(
-                                    for: gameID.rawValue,
-                                    deckID: resolvedDeck.id.rawValue
-                                )
-                            )
-                    }
-                }
+                deckButtonDetails(
+                    for: resolvedDeck,
+                    state: state,
+                    restrictionError: restrictionError
+                )
                 Spacer()
                 if submissionState.isSending(deckID: resolvedDeck.id) || state == .pending {
                     ProgressView().controlSize(.small)
@@ -215,6 +184,58 @@ struct LiveChooseDeckSelectionView: View {
         .disabled(!pickerEnabled)
         .onChange(of: pickerEnabled) { _, isEnabled in
             submissionState.releaseActiveAttemptIfPickerEnabled(isEnabled)
+        }
+    }
+
+    private func startSubmission(for deck: Deck, when pickerEnabled: Bool) {
+        guard pickerEnabled,
+              let attempt = submissionState.beginSending(deckID: deck.id)
+        else { return }
+        Task {
+            let didSend = await model.chooseDeckForLivePrompt(deck, in: gameID)
+            submissionState.finish(attempt, didSend: didSend)
+        }
+    }
+
+    private func deckButtonDetails(
+        for deck: Deck,
+        state: LobbyDeckSelectionViewModel.ValidationState,
+        restrictionError: String?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(deck.name)
+                .font(.headline)
+            Text(deck.investigatorName)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            validationText(for: state, restrictionError: restrictionError)
+            deckSyncStatus(for: deck)
+        }
+    }
+
+    @ViewBuilder
+    private func deckSyncStatus(for deck: Deck) -> some View {
+        if model.deckChoiceIsSyncing(deck.id) {
+            Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.liveChooseDeckSyncingText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
+        }
+        if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+            Text(syncNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.liveChooseDeckSyncNoteText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
         }
     }
 

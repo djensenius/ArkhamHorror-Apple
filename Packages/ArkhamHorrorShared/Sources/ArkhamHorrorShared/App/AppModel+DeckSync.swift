@@ -58,17 +58,8 @@ extension AppModel {
             return DeckChoiceSyncResult(deck: deck, note: nil, didAttemptSync: false)
         }
 
-        let now = Date()
-        if let lastSyncedAt = await deckSyncTracker.lastSyncedAt(for: deck.id, on: profile) {
-            let elapsed = now.timeIntervalSince(lastSyncedAt)
-            if elapsed < deckChoiceSyncMinimumInterval {
-                if let cachedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile) {
-                    recordSyncedDeckForChoice(cachedDeck)
-                    return DeckChoiceSyncResult(deck: cachedDeck, note: nil, didAttemptSync: false)
-                }
-                let cachedDeck = deckForChoice(deck)
-                return DeckChoiceSyncResult(deck: cachedDeck, note: nil, didAttemptSync: false)
-            }
+        if let cachedDeck = await recentlySyncedChoiceDeck(deck, profile: profile) {
+            return DeckChoiceSyncResult(deck: cachedDeck, note: nil, didAttemptSync: false)
         }
 
         deckChoiceSyncingIDs.insert(deck.id)
@@ -106,6 +97,20 @@ extension AppModel {
             deckChoiceSyncingIDs.remove(deck.id)
             return DeckChoiceSyncResult(deck: fallbackDeck, note: note, didAttemptSync: true)
         }
+    }
+
+    private func recentlySyncedChoiceDeck(
+        _ deck: Deck,
+        profile: ServerProfile
+    ) async -> Deck? {
+        guard let lastSyncedAt = await deckSyncTracker.lastSyncedAt(for: deck.id, on: profile),
+              Date().timeIntervalSince(lastSyncedAt) < deckChoiceSyncMinimumInterval
+        else { return nil }
+        if let cachedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile) {
+            recordSyncedDeckForChoice(cachedDeck)
+            return cachedDeck
+        }
+        return deckForChoice(deck)
     }
 
     private func withDeckChoiceSyncTimeout<T: Sendable>(
