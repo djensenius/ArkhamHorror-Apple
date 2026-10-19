@@ -602,18 +602,33 @@ actor GameLifecycleDeckService: DeckServicing {
 actor GameLifecycleDeckSyncTracker: DeckSyncTracking {
     private(set) var records: [(DeckID, Date)] = []
     var lastSyncedAtByID: [DeckID: Date] = [:]
+    var lastSyncedDeckByID: [DeckID: Deck] = [:]
 
-    func lastSyncedAt(for deckID: DeckID) -> Date? {
+    func lastSyncedAt(for deckID: DeckID, on _: ServerProfile) -> Date? {
         lastSyncedAtByID[deckID]
     }
 
-    func recordSync(for deckID: DeckID, at date: Date) {
-        records.append((deckID, date))
-        lastSyncedAtByID[deckID] = date
+    func lastSyncedDeck(for deckID: DeckID, on _: ServerProfile) -> Deck? {
+        lastSyncedDeckByID[deckID]
     }
 
-    func seed(_ date: Date, for deckID: DeckID) {
+    func recordSync(_ deck: Deck, on _: ServerProfile, at date: Date) {
+        records.append((deck.id, date))
+        lastSyncedAtByID[deck.id] = date
+        lastSyncedDeckByID[deck.id] = deck
+    }
+
+    func clear() {
+        records = []
+        lastSyncedAtByID = [:]
+        lastSyncedDeckByID = [:]
+    }
+
+    func seed(_ date: Date, for deckID: DeckID, deck: Deck? = nil) {
         lastSyncedAtByID[deckID] = date
+        if let deck {
+            lastSyncedDeckByID[deckID] = deck
+        }
     }
 }
 

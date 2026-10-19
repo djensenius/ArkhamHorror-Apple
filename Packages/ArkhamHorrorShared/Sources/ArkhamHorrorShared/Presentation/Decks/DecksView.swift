@@ -14,6 +14,9 @@ struct DecksView: View {
                 tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
                 sessionExpiredHandler: { context in
                     await model.handleDeckSessionExpired(profile: profile, context: context)
+                },
+                syncedDeckRecorder: { deck in
+                    model.recordSyncedDeckForChoice(deck)
                 }
             )
         )
@@ -75,7 +78,7 @@ struct DecksView: View {
                         systemImage: "arrow.triangle.2.circlepath"
                     )
                 }
-                .disabled(isLoading)
+                .disabled(isBusy)
                 .accessibilityIdentifier(AccountAccessibilityID.decksRefreshButton)
             }
         }
@@ -124,11 +127,11 @@ struct DecksView: View {
             .accessibilityIdentifier(AccountAccessibilityID.deckImportURLField)
     }
 
-    private var isLoading: Bool {
+    private var isBusy: Bool {
         if case .loading = viewModel.loadState {
             return true
         }
-        return false
+        return viewModel.isSyncingAll
     }
 
     @ViewBuilder
@@ -201,9 +204,12 @@ private struct DeckRow: View {
     private var syncStatusText: some View {
         switch syncState {
         case .syncing:
-            Text(deckLocalized("deck.sync.status.syncing", "Syncing with ArkhamDB…"))
+            Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.deckSyncStatusText(for: deck.id.rawValue)
+                )
         case let .succeeded(message):
             Text(message)
                 .font(.caption)

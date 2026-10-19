@@ -65,8 +65,9 @@ extension AppModel {
         operation = .idle
         operationFailure = nil
         // The signed-out session must never leave a previous profile's game-lifecycle/
-        // lobby content active.
+        // lobby/deck-choice sync content active.
         resetGameLifecycleState()
+        await resetDeckChoiceSyncState()
         sessionState = .signedOut(profile: profile, compatibility: compatibility)
     }
 }

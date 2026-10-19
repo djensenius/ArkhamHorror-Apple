@@ -122,6 +122,18 @@ enum AccountAccessibilityID {
         "account.games.chooseDeck.syncNote.\(gameID.uuidString).\(deckID.uuidString)"
     }
 
+    static func lobbyDeckSyncingText(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.chooseDeck.syncing.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func liveChooseDeckSyncNoteText(for gameID: UUID, deckID: UUID) -> String {
+        "account.live.chooseDeck.syncNote.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func liveChooseDeckSyncingText(for gameID: UUID, deckID: UUID) -> String {
+        "account.live.chooseDeck.syncing.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
     // MARK: - Games list/lobby
 
     // These stay under the same "account." namespace as every identifier above --
@@ -259,6 +271,22 @@ enum AccountAccessibilityID {
         deckID: UUID
     ) -> String {
         "account.games.live.campaign.upgradeDeck.savedDeck.validation."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func campaignUpgradeSavedDeckSyncNoteText(
+        for gameID: UUID,
+        deckID: UUID
+    ) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.syncNote."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func campaignUpgradeSavedDeckSyncingText(
+        for gameID: UUID,
+        deckID: UUID
+    ) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.syncing."
             + "\(gameID.uuidString).\(deckID.uuidString)"
     }
 

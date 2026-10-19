@@ -13,7 +13,6 @@ struct DeckLocalizationTests {
             "deck.sync.status.syncing",
             "deck.sync.success",
             "deck.sync.staleFallback",
-            "deck.sync.staleFallback.unknownDate",
             "deck.syncAll.none",
             "deck.syncAll.summary",
         ]

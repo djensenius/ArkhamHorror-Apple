@@ -18,17 +18,33 @@ struct AppModelDeckSyncChoiceTests {
         return try ContractJSON.decode(DeckFixture.self, from: Data(contentsOf: url)).deck
     }
 
-    private func modifiedDeck(_ source: Deck, url: String?, name: String) -> Deck {
-        Deck(
+    private func modifiedDeck(
+        _ source: Deck,
+        url: String?,
+        name: String,
+        listName: String? = nil
+    ) -> Deck {
+        let updatedList = DeckList(
+            slots: source.list.slots,
+            sideSlots: source.list.sideSlots,
+            investigatorCode: source.list.investigatorCode,
+            investigatorName: source.list.investigatorName,
+            meta: source.list.meta,
+            tabooId: source.list.tabooId,
+            url: url,
+            id: source.list.id,
+            name: listName ?? source.list.name
+        )
+        return Deck(
             id: source.id,
             userId: source.userId,
             url: url,
             name: name,
             investigatorName: source.investigatorName,
-            list: source.list,
+            list: updatedList,
             lastUsedAt: source.lastUsedAt,
             overlay: source.overlay,
-            playList: source.playList
+            playList: nil
         )
     }
 
@@ -39,7 +55,12 @@ struct AppModelDeckSyncChoiceTests {
         let tracker = GameLifecycleDeckSyncTracker()
         let gameID = GameID(UUID())
         let deck = try sampleDeck()
-        let syncedDeck = modifiedDeck(deck, url: deck.url, name: "Synced deck")
+        let syncedDeck = modifiedDeck(
+            deck,
+            url: "https://arkhamdb.com/deck/view/synced-lobby",
+            name: "Synced deck",
+            listName: "Synced list"
+        )
         await deckService.enqueueSync(.success(syncedDeck))
         await service.enqueueChooseDeckResult(.success(()))
         await service.enqueueListGamesResult(.success([]))
@@ -82,7 +103,7 @@ struct AppModelDeckSyncChoiceTests {
         #expect(await deckService.syncedIDs == [deck.id])
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckList == DeckListInput(deck.playableList))
-        #expect(model.deckChoiceSyncNote(for: deck.id)?.contains("Couldn't reach ArkhamDB") == true)
+        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
     }
 
     @Test("sync failure falls back to the saved deck and leaves a visible note")
@@ -107,7 +128,7 @@ struct AppModelDeckSyncChoiceTests {
 
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckList == DeckListInput(deck.playableList))
-        #expect(model.deckChoiceSyncNote(for: deck.id)?.contains("Couldn't reach ArkhamDB") == true)
+        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
         #expect(model.gameLifecycleActionFailures[gameID] == nil)
     }
 
@@ -147,5 +168,38 @@ struct AppModelDeckSyncChoiceTests {
         await localModel.gameLifecycleActionTasks[localGameID]?.value
         await localModel.gameListTask?.value
         #expect(await localDeckService.syncedIDs.isEmpty)
+    }
+
+    @Test("recent sync skip sends the cached synced deck body")
+    func chooseSavedDeckSkipUsesCachedSyncedDeck() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService()
+        let tracker = GameLifecycleDeckSyncTracker()
+        let gameID = GameID(UUID())
+        let deck = try sampleDeck()
+        let syncedDeck = modifiedDeck(
+            deck,
+            url: "https://arkhamdb.com/deck/view/cached-synced",
+            name: "Cached synced deck",
+            listName: "Cached synced list"
+        )
+        await tracker.seed(Date(), for: deck.id, deck: syncedDeck)
+        await service.enqueueChooseDeckResult(.success(()))
+        await service.enqueueListGamesResult(.success([]))
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: service,
+            deckService: deckService,
+            deckSyncTracker: tracker
+        )
+
+        model.chooseDeck(deck, investigatorId: "01001", in: gameID)
+        await model.gameLifecycleActionTasks[gameID]?.value
+        await model.gameListTask?.value
+
+        #expect(await deckService.syncedIDs.isEmpty)
+        let sentRequest = try #require(await service.lastChooseDeckRequest)
+        #expect(sentRequest.deckUrl == syncedDeck.url)
+        #expect(sentRequest.deckList == DeckListInput(syncedDeck.playableList))
+        #expect(model.deckForChoice(deck) == syncedDeck)
     }
 }

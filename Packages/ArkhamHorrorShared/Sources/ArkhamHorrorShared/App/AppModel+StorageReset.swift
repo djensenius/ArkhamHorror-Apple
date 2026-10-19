@@ -110,6 +110,7 @@ extension AppModel {
         }) else { return }
         guard isCurrent(generation) else { return }
 
+        await resetDeckChoiceSyncState()
         profiles = resetProfiles
         selectedProfile = .hosted
         operation = .idle

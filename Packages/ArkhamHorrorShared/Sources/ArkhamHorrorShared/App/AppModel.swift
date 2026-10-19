@@ -134,7 +134,11 @@ final class AppModel {
     @ObservationIgnored let deckChoiceSyncMinimumInterval: TimeInterval
     /// Per-deck sync notes surfaced beside deck-choice rows when the app falls back
     /// to the locally saved deck, or when a fresh sync succeeds.
-    var deckChoiceSyncNotes: [DeckID: String] = [:]
+    var deckChoiceSyncNotes: [DeckID: DeckChoiceSyncNote] = [:]
+    /// Latest synced deck bodies available to saved-deck choice surfaces in this process.
+    var deckChoiceSyncedDecks: [DeckID: Deck] = [:]
+    /// Decks currently running an automatic sync before a saved-deck choice is sent.
+    var deckChoiceSyncingIDs: Set<DeckID> = []
     /// The injectable live-game WebSocket connection factory. See
     /// `AppModel+LiveGameSession.swift`.
     @ObservationIgnored let liveGameSocketFactory: any GameSocketFactory

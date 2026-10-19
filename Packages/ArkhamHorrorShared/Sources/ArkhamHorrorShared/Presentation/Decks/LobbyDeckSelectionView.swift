@@ -74,11 +74,12 @@ struct LobbyDeckSelectionView: View {
 
     @ViewBuilder
     private func deckButton(_ deck: Deck) -> some View {
-        let state = viewModel.validationState(for: deck)
-        let investigatorID = viewModel.claimedInvestigatorID(for: deck, in: investigators)
+        let resolvedDeck = model.deckForChoice(deck)
+        let state = viewModel.validationState(for: resolvedDeck)
+        let investigatorID = viewModel.claimedInvestigatorID(for: resolvedDeck, in: investigators)
         Button {
             if let investigatorID {
-                model.chooseDeck(deck, investigatorId: investigatorID, in: gameID)
+                model.chooseDeck(resolvedDeck, investigatorId: investigatorID, in: gameID)
             }
         } label: {
             HStack(spacing: 12) {
@@ -86,20 +87,31 @@ struct LobbyDeckSelectionView: View {
                     .foregroundStyle(ArkhamTheme.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Use \(deck.name)")
+                    Text("Use \(resolvedDeck.name)")
                         .font(.headline)
-                    Text(deck.investigatorName)
+                    Text(resolvedDeck.investigatorName)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    validationText(for: state, deck: deck)
-                    if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+                    validationText(for: state, deck: resolvedDeck)
+                    if model.deckChoiceIsSyncing(resolvedDeck.id) {
+                        Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccountAccessibilityID.lobbyDeckSyncingText(
+                                    for: gameID.rawValue,
+                                    deckID: resolvedDeck.id.rawValue
+                                )
+                            )
+                    }
+                    if let syncNote = model.deckChoiceSyncNote(for: resolvedDeck.id) {
                         Text(syncNote)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier(
                                 AccountAccessibilityID.lobbyDeckSyncNoteText(
                                     for: gameID.rawValue,
-                                    deckID: deck.id.rawValue
+                                    deckID: resolvedDeck.id.rawValue
                                 )
                             )
                     }
@@ -113,7 +125,7 @@ struct LobbyDeckSelectionView: View {
         .buttonStyle(.borderless)
         .disabled(action != nil || state != .valid || investigatorID == nil)
         .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
-            for: gameID.rawValue, deckID: deck.id.rawValue
+            for: gameID.rawValue, deckID: resolvedDeck.id.rawValue
         ))
     }
 

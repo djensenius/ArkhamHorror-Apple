@@ -18,6 +18,20 @@ struct AppModelLiveChooseDeckTests {
         return try ContractJSON.decode(DeckFixture.self, from: Data(contentsOf: url)).deck
     }
 
+    private func modifiedDeck(_ source: Deck, name: String) -> Deck {
+        Deck(
+            id: source.id,
+            userId: source.userId,
+            url: source.url,
+            name: name,
+            investigatorName: source.investigatorName,
+            list: source.list,
+            lastUsedAt: source.lastUsedAt,
+            overlay: source.overlay,
+            playList: source.playList
+        )
+    }
+
     private func dreamEatersPartAChooseDeckQuestion() throws -> JSONValue {
         let url = try #require(
             Bundle.module.url(
@@ -40,8 +54,16 @@ struct AppModelLiveChooseDeckTests {
         return try ContractJSON.decode(QuestionPresentation.self, from: Data(contentsOf: url))
     }
 
-    private func makeSignedInModel(service: ScriptedGameLifecycleService) async -> AppModel {
-        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+    private func makeSignedInModel(
+        service: ScriptedGameLifecycleService,
+        deckService: any DeckServicing = GameLifecycleDeckService(),
+        deckSyncTracker: any DeckSyncTracking = GameLifecycleDeckSyncTracker()
+    ) async -> AppModel {
+        let model = await GameLifecycleTestModel.makeSignedIn(
+            gameService: service,
+            deckService: deckService,
+            deckSyncTracker: deckSyncTracker
+        )
         model.sessionState = .signedIn(
             profile: .hosted,
             compatibility: .modern(capabilities: []),
@@ -159,6 +181,98 @@ struct AppModelLiveChooseDeckTests {
             "deckId": .string(deck.id.rawValue.uuidString.lowercased()),
             "playerId": .string(ownerID.rawValue.uuidString.lowercased()),
         ]))
+    }
+
+    @Test("Live ChooseDeck syncs saved deck before sending")
+    func liveChooseDeckSyncsBeforeSending() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService()
+        let model = await makeSignedInModel(service: service, deckService: deckService)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        let syncedDeck = modifiedDeck(deck, name: "Synced live deck")
+        await deckService.enqueueSync(.success(syncedDeck))
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: connection
+        )
+
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+
+        #expect(await deckService.syncedIDs == [deck.id])
+        #expect(model.deckForChoice(deck) == syncedDeck)
+        let sent = try #require(await connection.sentData.first)
+        #expect(try ContractJSON.decode(DeckAnswer.self, from: sent) == DeckAnswer(
+            deckId: syncedDeck.id,
+            playerId: ownerID
+        ))
+    }
+
+    @Test("Live ChooseDeck prompt changes during sync stop the send")
+    func liveChooseDeckPromptChangeDuringSyncStopsSend() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService(syncDelay: .milliseconds(50))
+        let model = await makeSignedInModel(service: service, deckService: deckService)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        await deckService.enqueueSync(.success(deck))
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: connection
+        )
+
+        let chooseTask = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        try await Task.sleep(for: .milliseconds(10))
+        model.liveGameStates[gameID] = .live(chooseDeckProjection(
+            ownerID: ownerID,
+            rawQuestion: .object(["tag": .string("ChooseJoinDeck")])
+        ))
+
+        #expect(await chooseTask.value == false)
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Live ChooseDeck sync failure sends saved deck and leaves fallback note")
+    func liveChooseDeckSyncFailureLeavesNote() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService()
+        let model = await makeSignedInModel(service: service, deckService: deckService)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        await deckService.enqueueSync(.failure(DeckServiceError.transportFailure("offline")))
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: connection
+        )
+
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
+
+        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
+        #expect(await connection.sentData.count == 1)
     }
 
     @Test("DeckAnswer is sent for a QuestionLabel-wrapped live ChooseDeck prompt")

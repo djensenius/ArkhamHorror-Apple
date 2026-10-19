@@ -12,6 +12,13 @@ private actor ScriptedDeckService: DeckServicing {
     private var importQueue: [Result<Deck, any Error>] = []
     private var deleteQueue: [Result<Void, any Error>] = []
     private var syncQueue: [Result<Deck, any Error>] = []
+    private var syncResultsByID: [DeckID: Result<Deck, any Error>] = [:]
+    private var isSyncGated = false
+    private var syncContinuations: [(
+        id: DeckID,
+        continuation: CheckedContinuation<Deck, any Error>
+    )] = []
+    private var syncWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var validateQueue: [Result<DeckValidationSuccess, any Error>] = []
 
     func enqueueList(_ result: Result<DeckListResponse, any Error>) {
@@ -30,8 +37,38 @@ private actor ScriptedDeckService: DeckServicing {
         syncQueue.append(result)
     }
 
+    func enqueueSync(_ result: Result<Deck, any Error>, for id: DeckID) {
+        syncResultsByID[id] = result
+    }
+
     func enqueueValidate(_ result: Result<DeckValidationSuccess, any Error>) {
         validateQueue.append(result)
+    }
+
+    func setSyncGated(_ gated: Bool) {
+        isSyncGated = gated
+    }
+
+    func waitUntilSyncPending(_ count: Int) async {
+        if syncContinuations.count >= count { return }
+        await withCheckedContinuation { syncWaiters.append((count, $0)) }
+    }
+
+    func resumeSync(for id: DeckID, with result: Result<Deck, any Error>) {
+        guard let index = syncContinuations.firstIndex(where: { $0.id == id }) else { return }
+        let continuation = syncContinuations.remove(at: index).continuation
+        switch result {
+        case let .success(deck): continuation.resume(returning: deck)
+        case let .failure(error): continuation.resume(throwing: error)
+        }
+    }
+
+    private func notifySyncWaiters() {
+        syncWaiters.removeAll { threshold, continuation in
+            guard syncContinuations.count >= threshold else { return false }
+            continuation.resume()
+            return true
+        }
     }
 
     private func consume<T>(_ queue: inout [Result<T, any Error>]) throws -> T {
@@ -76,6 +113,15 @@ private actor ScriptedDeckService: DeckServicing {
     ) async throws -> Deck {
         callOrder.append("syncDeck")
         syncedIDs.append(id)
+        if isSyncGated {
+            return try await withCheckedThrowingContinuation { continuation in
+                syncContinuations.append((id, continuation))
+                notifySyncWaiters()
+            }
+        }
+        if let result = syncResultsByID.removeValue(forKey: id) {
+            return try result.get()
+        }
         return try consume(&syncQueue)
     }
 
@@ -89,13 +135,24 @@ private actor ScriptedDeckService: DeckServicing {
 
 private actor RecordingDeckSyncTracker: DeckSyncTracking {
     private(set) var records: [(DeckID, Date)] = []
+    private var decks: [DeckID: Deck] = [:]
 
-    func lastSyncedAt(for _: DeckID) -> Date? {
+    func lastSyncedAt(for _: DeckID, on _: ServerProfile) -> Date? {
         nil
     }
 
-    func recordSync(for deckID: DeckID, at date: Date) {
-        records.append((deckID, date))
+    func lastSyncedDeck(for deckID: DeckID, on _: ServerProfile) -> Deck? {
+        decks[deckID]
+    }
+
+    func recordSync(_ deck: Deck, on _: ServerProfile, at date: Date) {
+        records.append((deck.id, date))
+        decks[deck.id] = deck
+    }
+
+    func clear() {
+        records = []
+        decks = [:]
     }
 }
 
@@ -347,12 +404,15 @@ struct DecksViewModelTests {
         let service = ScriptedDeckService()
         let model = makeModel(service: service)
         await service.enqueueList(.success([third, second, first]))
-        await service.enqueueSync(.success(syncedFirst))
-        await service.enqueueSync(.failure(DeckServiceError.unexpectedStatus(500)))
+        await service.enqueueSync(.success(syncedFirst), for: first.id)
+        await service.enqueueSync(
+            .failure(DeckServiceError.unexpectedStatus(500)),
+            for: third.id
+        )
 
         await model.refreshAndSync()
 
-        #expect(await service.syncedIDs == [first.id, third.id])
+        #expect(Set(await service.syncedIDs) == Set([first.id, third.id]))
         #expect(model.decks.map(\.name) == ["A synced", "B", "C"])
         #expect(model.syncState(for: syncedFirst) == .succeeded(deckSyncSuccessMessage()))
         #expect(
@@ -361,5 +421,70 @@ struct DecksViewModelTests {
         )
         #expect(model.syncState(for: second) == nil)
         #expect(model.syncAllSummary == "Synced 1 of 2 ArkhamDB decks. 1 failed.")
+    }
+
+    @Test("refresh and sync handles session expiry and cancellation without counting cancels as failures")
+    func refreshAndSyncSessionExpiryAndCancellation() async throws {
+        let fixture = try loadFixture()
+        let sessionExpiredDeck = deck(fixture.deck, url: fixture.deck.url, name: "Expired")
+        let cancelledDeck = deck(fixture.deck, url: fixture.deck.url, name: "Cancelled")
+        let service = ScriptedDeckService()
+        var expirations = 0
+        let model = makeModel(
+            service: service,
+            sessionExpiredHandler: { _ in expirations += 1 }
+        )
+        await service.enqueueList(.success([sessionExpiredDeck, cancelledDeck]))
+        await service.enqueueSync(.failure(DeckServiceError.sessionExpired), for: sessionExpiredDeck.id)
+        await service.enqueueSync(.failure(CancellationError()), for: cancelledDeck.id)
+
+        await model.refreshAndSync()
+
+        #expect(expirations == 1)
+        #expect(
+            model.syncState(for: sessionExpiredDeck)
+                == .failed(DeckServiceError.sessionExpired.message)
+        )
+        #expect(model.syncState(for: cancelledDeck) == nil)
+        #expect(model.syncAllSummary == "Synced 0 of 2 ArkhamDB decks. 1 failed.")
+    }
+
+    @Test("refresh and sync ignores re-entry while syncs are active")
+    func refreshAndSyncIgnoresReentry() async throws {
+        let fixture = try loadFixture()
+        let service = ScriptedDeckService()
+        await service.setSyncGated(true)
+        let model = makeModel(service: service)
+        await service.enqueueList(.success([fixture.deck]))
+        let firstRun = Task { await model.refreshAndSync() }
+        await service.waitUntilSyncPending(1)
+
+        await model.refreshAndSync()
+
+        #expect(await service.callOrder.filter { $0 == "listDecks" }.count == 1)
+        #expect(await service.syncedIDs == [fixture.deck.id])
+        await service.resumeSync(for: fixture.deck.id, with: .success(fixture.deck))
+        await firstRun.value
+        #expect(model.syncAllSummary == "Synced 1 of 1 ArkhamDB decks. 0 failed.")
+    }
+
+    @Test("deleting a deck while sync is active prevents a stale sync from resurrecting it")
+    func deleteDuringSyncPreventsResurrection() async throws {
+        let fixture = try loadFixture()
+        let service = ScriptedDeckService()
+        await service.setSyncGated(true)
+        let model = makeModel(service: service)
+        await service.enqueueList(.success([fixture.deck]))
+        await model.load()
+        let syncTask = Task { await model.sync(fixture.deck) }
+        await service.waitUntilSyncPending(1)
+        await service.enqueueDelete(.success(()))
+
+        await model.delete(fixture.deck)
+        await service.resumeSync(for: fixture.deck.id, with: .success(fixture.deck))
+        await syncTask.value
+
+        #expect(model.decks.isEmpty)
+        #expect(model.syncState(for: fixture.deck) == nil)
     }
 }

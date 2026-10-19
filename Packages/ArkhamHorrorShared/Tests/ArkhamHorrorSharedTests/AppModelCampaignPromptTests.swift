@@ -167,7 +167,8 @@ struct AppModelCampaignPromptTests {
             ),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: gameService,
-            deckService: deckService
+            deckService: deckService,
+            deckSyncTracker: GameLifecycleDeckSyncTracker()
         )
         await model.flowTask?.value
         model.sessionState = .signedIn(

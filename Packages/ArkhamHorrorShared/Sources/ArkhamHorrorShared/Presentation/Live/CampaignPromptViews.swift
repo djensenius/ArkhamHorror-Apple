@@ -828,29 +828,47 @@ private struct CampaignSavedDeckSelectionSection: View {
 
     @ViewBuilder
     private func deckButton(_ deck: Deck) -> some View {
-        let state = viewModel.validationState(for: deck)
+        let resolvedDeck = model.deckForChoice(deck)
+        let state = viewModel.validationState(for: resolvedDeck)
         Button {
-            submit(deck)
+            submit(resolvedDeck)
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "rectangle.stack.fill")
                     .foregroundStyle(ArkhamTheme.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(deck.name)
+                    Text(resolvedDeck.name)
                         .font(.headline)
-                    Text(deck.investigatorName)
+                    Text(resolvedDeck.investigatorName)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    validationText(for: state, deck: deck)
-                    if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+                    validationText(for: state, deck: resolvedDeck)
+                    if model.deckChoiceIsSyncing(resolvedDeck.id) {
+                        Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccountAccessibilityID.campaignUpgradeSavedDeckSyncingText(
+                                    for: gameID.rawValue,
+                                    deckID: resolvedDeck.id.rawValue
+                                )
+                            )
+                    }
+                    if let syncNote = model.deckChoiceSyncNote(for: resolvedDeck.id) {
                         Text(syncNote)
                             .font(.caption)
                             .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccountAccessibilityID.campaignUpgradeSavedDeckSyncNoteText(
+                                    for: gameID.rawValue,
+                                    deckID: resolvedDeck.id.rawValue
+                                )
+                            )
                     }
                 }
                 Spacer()
-                if submittingDeckID == deck.id {
+                if submittingDeckID == resolvedDeck.id {
                     ProgressView().controlSize(.small)
                 }
             }
@@ -859,7 +877,7 @@ private struct CampaignSavedDeckSelectionSection: View {
         .disabled(isSubmitting || isAwaitingSnapshot || state != .valid)
         .accessibilityIdentifier(AccountAccessibilityID.campaignUpgradeSavedDeckButton(
             for: gameID.rawValue,
-            deckID: deck.id.rawValue
+            deckID: resolvedDeck.id.rawValue
         ))
     }
 
