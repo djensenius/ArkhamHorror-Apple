@@ -103,7 +103,7 @@ actor CampaignPromptDeckService: DeckServicing {
     func validateDeckList(
         _: DeckListInput, on _: ServerProfile, token _: String
     ) async throws -> DeckValidationSuccess {
-        throw TestFailure()
+        DeckValidationSuccess()
     }
 }
 

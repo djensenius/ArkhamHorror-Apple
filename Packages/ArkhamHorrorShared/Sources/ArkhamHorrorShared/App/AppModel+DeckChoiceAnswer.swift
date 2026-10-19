@@ -191,23 +191,21 @@ extension AppModel {
     }
 
     private func syncDeckForLivePromptIfNeeded(_ deck: Deck) async -> Deck? {
-        guard case let .signedIn(profile, _, _) = sessionState else { return deck }
+        guard case let .signedIn(profile, _, _) = sessionState else { return nil }
         let context: DeckRequestContext
         do {
             context = try await currentDeckRequestContext(for: profile)
         } catch is CancellationError {
-            return deckForChoice(deck, on: profile)
+            return nil
         } catch GameLifecycleTokenAccessError.stale {
-            return deckForChoice(deck, on: profile)
+            return nil
         } catch {
-            if deck.hasSyncURL {
-                let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
-                deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
-                    message: deckSyncStaleFallbackMessage(),
-                    expiresAt: nil
-                )
-            }
-            return deckForChoice(deck, on: profile)
+            let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
+            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
+                message: DecksViewModel.message(for: error),
+                expiresAt: nil
+            )
+            return nil
         }
         do {
             let syncResult = try await syncDeckBeforeChoiceIfNeeded(

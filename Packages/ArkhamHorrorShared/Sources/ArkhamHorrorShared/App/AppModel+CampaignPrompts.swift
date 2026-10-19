@@ -354,6 +354,8 @@ extension AppModel {
                 "campaign.error.sessionExpiredDecks",
                 "Your session expired. Sign in again to manage decks."
             ))
+        } catch let failure as DeckChoiceValidationFailure {
+            return .failed(failure.message)
         } catch {
             return campaignDeckSubmissionCancelledFailure()
         }

@@ -2,6 +2,10 @@ import Foundation
 
 private struct DeckChoiceSyncTimeoutError: Error {}
 
+struct DeckChoiceValidationFailure: Error {
+    let message: String
+}
+
 struct DeckChoiceSyncKey: Sendable, Hashable {
     private let serverBaseURL: String
     private let deckID: DeckID
@@ -90,6 +94,52 @@ extension AppModel {
     }
 
     func syncDeckBeforeChoiceIfNeeded(
+        _ deck: Deck,
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) async throws -> DeckChoiceSyncResult {
+        let result = try await resolveDeckChoiceSync(deck, profile: profile, context: context)
+        // Picker validation is keyed by ID, not list contents. Even a cache hit may
+        // contain a different list from the one the picker originally validated.
+        if deck.hasSyncURL {
+            try await validateResolvedDeckForChoice(result.deck, profile: profile, context: context)
+            if result.note == nil {
+                deckChoiceSyncNotes[DeckChoiceSyncKey(deckID: deck.id, on: profile)] = nil
+            }
+        }
+        return result
+    }
+
+    private func validateResolvedDeckForChoice(
+        _ deck: Deck,
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) async throws {
+        let service = deckService
+        do {
+            _ = try await withDeckChoiceSyncTimeout(seconds: deckChoiceSyncTimeout) {
+                try await service.validateDeckList(
+                    DeckListInput(deck.playableList), on: profile, token: context.token
+                )
+            }
+        } catch DeckServiceError.sessionExpired {
+            throw DeckServiceError.sessionExpired
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try ensureCurrentDeckChoiceContext(context, on: profile)
+            // Match the picker: transport failures block selection, using the
+            // service's message or its generic validation-failure message.
+            let message = (error as? DeckServiceError)?.message
+                ?? "Deck validation failed. Try again."
+            deckChoiceSyncNotes[DeckChoiceSyncKey(deckID: deck.id, on: profile)] =
+                DeckChoiceSyncNote(message: message, expiresAt: nil)
+            throw DeckChoiceValidationFailure(message: message)
+        }
+        try ensureCurrentDeckChoiceContext(context, on: profile)
+    }
+
+    private func resolveDeckChoiceSync(
         _ deck: Deck,
         profile: ServerProfile,
         context: DeckRequestContext

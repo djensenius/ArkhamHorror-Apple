@@ -19,10 +19,11 @@ func deckSyncChoiceModifiedDeck(
     _ source: Deck,
     url: String?,
     name: String,
-    listName: String? = nil
+    listName: String? = nil,
+    slots: CardQuantityMap? = nil
 ) -> Deck {
     let updatedList = DeckList(
-        slots: source.list.slots,
+        slots: slots ?? source.list.slots,
         sideSlots: source.list.sideSlots,
         investigatorCode: source.list.investigatorCode,
         investigatorName: source.list.investigatorName,
