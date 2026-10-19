@@ -139,12 +139,19 @@ extension AppModel {
     func chooseDeckForLivePrompt(_ deck: Deck, in gameID: GameID) async -> Bool {
         guard liveChooseDeckRestrictionValidationMessage(for: deck, in: gameID) == nil,
               case .canAnswer = canAnswerLiveChooseDeck(for: gameID),
+              let initialPrompt = basicChoicePresentation(for: gameID)
+        else { return false }
+
+        let syncedDeck = await syncDeckForLivePromptIfNeeded(deck)
+        guard liveChooseDeckRestrictionValidationMessage(for: syncedDeck, in: gameID) == nil,
+              case .canAnswer = canAnswerLiveChooseDeck(for: gameID),
               let prompt = basicChoicePresentation(for: gameID),
+              prompt.identity.promptKey == initialPrompt.identity.promptKey,
               let connection = liveGameConnections[gameID]
         else { return false }
         guard let actionAttemptID = prepareLiveChooseDeckSend(
             prompt: prompt.identity,
-            deckID: deck.id,
+            deckID: syncedDeck.id,
             connection: connection
         ) else { return false }
 
@@ -152,7 +159,7 @@ extension AppModel {
         do {
             try Task.checkCancellation()
             let bytes = try ContractJSON.encode(DeckAnswer(
-                deckId: deck.id,
+                deckId: syncedDeck.id,
                 playerId: prompt.ownerID
             ))
             didStartSend = true
@@ -177,10 +184,31 @@ extension AppModel {
         return finishLiveChooseDeckSend(
             gameID: gameID,
             prompt: prompt.identity,
-            deckID: deck.id,
+            deckID: syncedDeck.id,
             actionAttemptID: actionAttemptID,
             connectionID: connection.connectionID
         )
+    }
+
+    private func syncDeckForLivePromptIfNeeded(_ deck: Deck) async -> Deck {
+        guard case let .signedIn(profile, _, _) = sessionState else { return deck }
+        let context: DeckRequestContext
+        do {
+            context = try await currentDeckRequestContext(for: profile)
+        } catch {
+            if deck.hasSyncURL {
+                deckChoiceSyncNotes[deck.id] = await deckSyncStaleFallbackMessage(
+                    savedAt: deckSyncTracker.lastSyncedAt(for: deck.id)
+                )
+            }
+            return deck
+        }
+        let syncResult = await syncDeckBeforeChoiceIfNeeded(
+            deck,
+            profile: profile,
+            token: context.token
+        )
+        return syncResult.deck
     }
 
     func loadLiveChooseDeckRestriction(

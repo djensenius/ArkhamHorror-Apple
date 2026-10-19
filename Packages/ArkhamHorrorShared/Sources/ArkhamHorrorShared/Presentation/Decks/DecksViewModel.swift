@@ -11,6 +11,7 @@ struct DeckRequestContext: Sendable, Equatable {
 /// Load/import/delete state for the signed-in deck-management screen.
 @MainActor
 @Observable
+// swiftlint:disable:next type_body_length
 final class DecksViewModel {
     enum LoadState: Equatable {
         case idle
@@ -25,11 +26,23 @@ final class DecksViewModel {
         case failed(String)
     }
 
+    enum SyncState: Equatable {
+        case syncing
+        case succeeded(String)
+        case failed(String)
+    }
+
+    private enum SyncOutcome: Sendable {
+        case succeeded(Deck)
+        case failed(DeckID, String)
+    }
+
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
+    private let deckSyncTracker: (any DeckSyncTracking)?
     private let tokenProvider: TokenProvider
     private let sessionExpiredHandler: SessionExpiredHandler
 
@@ -38,16 +51,21 @@ final class DecksViewModel {
     var importURL = ""
     var pendingDeletion: Deck?
     var deletingDeckIDs: Set<DeckID> = []
+    var syncingDeckIDs: Set<DeckID> = []
+    var deckSyncStates: [DeckID: SyncState] = [:]
+    var syncAllSummary: String?
     var deletionFailure: String?
 
     init(
         profile: ServerProfile,
         deckService: any DeckServicing,
+        deckSyncTracker: (any DeckSyncTracking)? = nil,
         tokenProvider: @escaping TokenProvider,
         sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in }
     ) {
         self.profile = profile
         self.deckService = deckService
+        self.deckSyncTracker = deckSyncTracker
         self.tokenProvider = tokenProvider
         self.sessionExpiredHandler = sessionExpiredHandler
     }
@@ -125,6 +143,74 @@ final class DecksViewModel {
         }
     }
 
+    func refreshAndSync() async {
+        loadState = .loading
+        syncAllSummary = nil
+        deckSyncStates = [:]
+        syncingDeckIDs = []
+        var requestContext: DeckRequestContext?
+        do {
+            let context = try await tokenProvider()
+            requestContext = context
+            let loaded = try await deckService.listDecks(on: profile, token: context.token)
+                .sortedForPresentation()
+            loadState = .loaded(loaded)
+            await syncDecksWithURL(loaded, context: context)
+        } catch is CancellationError {
+            loadState = .idle
+        } catch GameLifecycleTokenAccessError.stale {
+            loadState = .idle
+        } catch DeckServiceError.sessionExpired {
+            loadState = .failed(DeckServiceError.sessionExpired.message)
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
+        } catch {
+            loadState = .failed(Self.message(for: error))
+        }
+    }
+
+    func sync(_ deck: Deck) async {
+        guard deck.hasSyncURL else { return }
+        syncingDeckIDs.insert(deck.id)
+        deckSyncStates[deck.id] = .syncing
+        syncAllSummary = nil
+        var requestContext: DeckRequestContext?
+        do {
+            let context = try await tokenProvider()
+            requestContext = context
+            let syncedDeck = try await deckService.syncDeck(
+                deck.id,
+                on: profile,
+                token: context.token,
+                timeout: 10
+            )
+            upsert(syncedDeck)
+            syncingDeckIDs.remove(deck.id)
+            deckSyncStates[deck.id] = .succeeded(deckSyncSuccessMessage())
+            await deckSyncTracker?.recordSync(for: deck.id, at: Date())
+        } catch is CancellationError {
+            syncingDeckIDs.remove(deck.id)
+            deckSyncStates[deck.id] = nil
+        } catch GameLifecycleTokenAccessError.stale {
+            syncingDeckIDs.remove(deck.id)
+            deckSyncStates[deck.id] = nil
+        } catch DeckServiceError.sessionExpired {
+            syncingDeckIDs.remove(deck.id)
+            deckSyncStates[deck.id] = .failed(DeckServiceError.sessionExpired.message)
+            if let requestContext {
+                await sessionExpiredHandler(requestContext)
+            }
+        } catch {
+            syncingDeckIDs.remove(deck.id)
+            deckSyncStates[deck.id] = .failed(Self.message(for: error))
+        }
+    }
+
+    func syncState(for deck: Deck) -> SyncState? {
+        deckSyncStates[deck.id]
+    }
+
     func requestDelete(_ deck: Deck) {
         pendingDeletion = deck
     }
@@ -166,6 +252,75 @@ final class DecksViewModel {
         await delete(deck)
     }
 
+    // swiftlint:disable:next function_body_length
+    private func syncDecksWithURL(_ loadedDecks: [Deck], context: DeckRequestContext) async {
+        let syncableDecks = loadedDecks.filter(\.hasSyncURL)
+        guard !syncableDecks.isEmpty else {
+            syncAllSummary = deckLocalized(
+                "deck.syncAll.none",
+                "No ArkhamDB decks to sync."
+            )
+            return
+        }
+        for deck in syncableDecks {
+            syncingDeckIDs.insert(deck.id)
+            deckSyncStates[deck.id] = .syncing
+        }
+
+        var nextIndex = 0
+        var succeeded = 0
+        var failed = 0
+        let maxConcurrentSyncs = min(3, syncableDecks.count)
+        let service = deckService
+        let profile = profile
+        await withTaskGroup(of: SyncOutcome.self) { group in
+            func enqueueNext() {
+                guard nextIndex < syncableDecks.count else { return }
+                let deck = syncableDecks[nextIndex]
+                nextIndex += 1
+                group.addTask {
+                    do {
+                        let syncedDeck = try await service.syncDeck(
+                            deck.id,
+                            on: profile,
+                            token: context.token,
+                            timeout: 10
+                        )
+                        return .succeeded(syncedDeck)
+                    } catch {
+                        return .failed(deck.id, Self.message(for: error))
+                    }
+                }
+            }
+
+            for _ in 0 ..< maxConcurrentSyncs {
+                enqueueNext()
+            }
+            while let outcome = await group.next() {
+                switch outcome {
+                case let .succeeded(deck):
+                    succeeded += 1
+                    upsert(deck)
+                    syncingDeckIDs.remove(deck.id)
+                    deckSyncStates[deck.id] = .succeeded(deckSyncSuccessMessage())
+                    await deckSyncTracker?.recordSync(for: deck.id, at: Date())
+                case let .failed(deckID, message):
+                    failed += 1
+                    syncingDeckIDs.remove(deckID)
+                    deckSyncStates[deckID] = .failed(message)
+                }
+                enqueueNext()
+            }
+        }
+        syncAllSummary = deckLocalizedFormat(
+            "deck.syncAll.summary",
+            "Synced %1$lld of %2$lld ArkhamDB decks. %3$lld failed.",
+            succeeded,
+            syncableDecks.count,
+            failed
+        )
+    }
+
     private func upsert(_ deck: Deck) {
         var current = decks.filter { $0.id != deck.id }
         current.append(deck)
@@ -182,7 +337,7 @@ final class DecksViewModel {
         deletingDeckIDs.remove(deck.id)
     }
 
-    static func message(for error: any Error) -> String {
+    nonisolated static func message(for error: any Error) -> String {
         if let deckError = error as? DeckServiceError {
             return deckError.message
         }

@@ -391,3 +391,13 @@
 "create.name.hint" = "Optional. Leave blank to use %@.";
 "create.name.footer" = "Leave blank to use %@.";
 "create.name.requiresCustom" = "Enter a custom name because localized catalog names are unavailable.";
+
+"deck.refreshAndSync" = "Refresh & Sync";
+"deck.sync.action" = "Sync";
+"deck.sync.accessibility" = "Sync %@ with ArkhamDB";
+"deck.sync.status.syncing" = "Syncing with ArkhamDB…";
+"deck.sync.success" = "Synced with ArkhamDB just now.";
+"deck.sync.staleFallback" = "Couldn't reach ArkhamDB; using the saved version from %@.";
+"deck.sync.staleFallback.unknownDate" = "Couldn't reach ArkhamDB; using the saved version from an unknown date.";
+"deck.syncAll.none" = "No ArkhamDB decks to sync.";
+"deck.syncAll.summary" = "Synced %1$lld of %2$lld ArkhamDB decks. %3$lld failed.";

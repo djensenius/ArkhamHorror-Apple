@@ -345,10 +345,26 @@ extension AppModel {
             )
             return
         }
+        let resolvedSource: DeckChoiceSource?
+        switch source {
+        case let .saved(deck):
+            let syncResult = await syncDeckBeforeChoiceIfNeeded(
+                deck,
+                profile: attempt.profile,
+                token: token
+            )
+            resolvedSource = .saved(syncResult.deck)
+        case nil:
+            resolvedSource = nil
+        }
+        guard !Task.isCancelled else {
+            clearGameActionMarkerIfCurrent(id, attempt)
+            return
+        }
         let request = ChooseDeckRequest(
             investigatorId: investigatorId,
-            deckUrl: source?.deckURL,
-            deckList: source?.deckList
+            deckUrl: resolvedSource?.deckURL,
+            deckList: resolvedSource?.deckList
         )
         await performGameAction(id, kind: .choosingDeck, attempt: attempt) {
             try await self.gameLifecycleService.chooseDeck(

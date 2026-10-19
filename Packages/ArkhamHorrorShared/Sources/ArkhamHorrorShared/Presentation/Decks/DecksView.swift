@@ -10,6 +10,7 @@ struct DecksView: View {
             initialValue: DecksViewModel(
                 profile: profile,
                 deckService: model.deckService,
+                deckSyncTracker: model.deckSyncTracker,
                 tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
                 sessionExpiredHandler: { context in
                     await model.handleDeckSessionExpired(profile: profile, context: context)
@@ -47,6 +48,12 @@ struct DecksView: View {
 
             Section("Decks") {
                 decksContent
+                if let syncAllSummary = viewModel.syncAllSummary {
+                    Text(syncAllSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier(AccountAccessibilityID.deckSyncAllSummaryText)
+                }
                 if let deletionFailure = viewModel.deletionFailure {
                     ArkhamFailureText(message: deletionFailure)
                 }
@@ -61,13 +68,19 @@ struct DecksView: View {
 
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    Task { await viewModel.load() }
+                    Task { await viewModel.refreshAndSync() }
                 } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
+                    Label(
+                        deckLocalized("deck.refreshAndSync", "Refresh & Sync"),
+                        systemImage: "arrow.triangle.2.circlepath"
+                    )
                 }
                 .disabled(isLoading)
                 .accessibilityIdentifier(AccountAccessibilityID.decksRefreshButton)
             }
+        }
+        .refreshable {
+            await viewModel.refreshAndSync()
         }
         .task {
             if case .idle = viewModel.loadState {
@@ -144,9 +157,13 @@ struct DecksView: View {
                 )
             } else {
                 ForEach(decks, id: \.id) { deck in
-                    DeckRow(deck: deck, isDeleting: viewModel.deletingDeckIDs.contains(deck.id)) {
-                        viewModel.requestDelete(deck)
-                    }
+                    DeckRow(
+                        deck: deck,
+                        isDeleting: viewModel.deletingDeckIDs.contains(deck.id),
+                        syncState: viewModel.syncState(for: deck),
+                        onSync: { Task { await viewModel.sync(deck) } },
+                        onDelete: { viewModel.requestDelete(deck) }
+                    )
                 }
             }
         }
@@ -156,6 +173,8 @@ struct DecksView: View {
 private struct DeckRow: View {
     let deck: Deck
     let isDeleting: Bool
+    let syncState: DecksViewModel.SyncState?
+    let onSync: () -> Void
     let onDelete: () -> Void
 
     var body: some View {
@@ -171,11 +190,64 @@ private struct DeckRow: View {
                 Text(deck.investigatorName)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+                syncStatusText
             }
             Spacer()
-            if isDeleting {
-                ProgressView().controlSize(.small)
-            } else {
+            rowActions
+        }
+    }
+
+    @ViewBuilder
+    private var syncStatusText: some View {
+        switch syncState {
+        case .syncing:
+            Text(deckLocalized("deck.sync.status.syncing", "Syncing with ArkhamDB…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        case let .succeeded(message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.green)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.deckSyncStatusText(for: deck.id.rawValue)
+                )
+        case let .failed(message):
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.deckSyncStatusText(for: deck.id.rawValue)
+                )
+        case nil:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var rowActions: some View {
+        if isDeleting {
+            ProgressView().controlSize(.small)
+        } else {
+            HStack(spacing: 8) {
+                if deck.hasSyncURL {
+                    Button(action: onSync) {
+                        Label(
+                            deckLocalized("deck.sync.action", "Sync"),
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                        .labelStyle(.iconOnly)
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(syncState == .syncing)
+                    .accessibilityLabel(deckLocalizedFormat(
+                        "deck.sync.accessibility",
+                        "Sync %@ with ArkhamDB",
+                        deck.name
+                    ))
+                    .accessibilityIdentifier(
+                        AccountAccessibilityID.deckSyncButton(for: deck.id.rawValue)
+                    )
+                }
                 Button(role: .destructive, action: onDelete) {
                     Label("Delete \(deck.name)", systemImage: "trash")
                         .labelStyle(.iconOnly)

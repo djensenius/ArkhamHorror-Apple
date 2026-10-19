@@ -179,6 +179,11 @@ struct LiveChooseDeckSelectionView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     validationText(for: state, restrictionError: restrictionError)
+                    if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+                        Text(syncNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if submissionState.isSending(deckID: deck.id) || state == .pending {

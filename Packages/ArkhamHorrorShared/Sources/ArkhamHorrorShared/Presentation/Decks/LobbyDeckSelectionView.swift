@@ -92,6 +92,17 @@ struct LobbyDeckSelectionView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     validationText(for: state, deck: deck)
+                    if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+                        Text(syncNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier(
+                                AccountAccessibilityID.lobbyDeckSyncNoteText(
+                                    for: gameID.rawValue,
+                                    deckID: deck.id.rawValue
+                                )
+                            )
+                    }
                 }
                 Spacer()
                 if action == .choosingDeck || state == .pending {

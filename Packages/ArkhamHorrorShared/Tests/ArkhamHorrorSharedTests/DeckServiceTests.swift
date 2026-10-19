@@ -200,6 +200,49 @@ struct DeckServiceTests {
         }
     }
 
+    @Test("syncDeck posts to /arkham/decks/:id/sync and maps 400 operation errors")
+    func syncDeckRequestShapeAndFailure() async throws {
+        let fixture = try loadFixture()
+        let url = profile.endpointURL(
+            path: "/arkham/decks/\(fixture.deck.id.rawValue.uuidString)/sync"
+        )
+        let successTransport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(fixture.deck),
+            response: httpResponse(200, url: url)
+        )
+        let service = DeckService(transport: successTransport)
+        let deck = try await service.syncDeck(
+            fixture.deck.id,
+            on: profile,
+            token: token,
+            timeout: 5
+        )
+        let request = await successTransport.capturedRequest
+        #expect(request?.httpMethod == "POST")
+        #expect(request?.url?.absoluteString.hasSuffix(
+            "/arkham/decks/00000000-0000-0000-0000-000000000017/sync"
+        ) == true)
+        #expect(request?.value(forHTTPHeaderField: "Authorization") == "Token \(token)")
+        #expect(request?.value(forHTTPHeaderField: "Accept") == "application/json")
+        #expect(request?.httpBody == nil)
+        #expect(request?.timeoutInterval == 5)
+        #expect(deck == fixture.deck)
+
+        let failureTransport = try GameLifecycleRecordingTransport(
+            data: ContractJSON.encode(fixture.operationError),
+            response: httpResponse(400, url: url)
+        )
+        let failingService = DeckService(transport: failureTransport)
+        await #expect(throws: DeckServiceError.operationFailed(fixture.operationError)) {
+            _ = try await failingService.syncDeck(
+                fixture.deck.id,
+                on: profile,
+                token: token,
+                timeout: 5
+            )
+        }
+    }
+
     @Test("deleteDeck issues DELETE /arkham/decks/:id and accepts empty success bodies")
     func deleteDeckRequestShape() async throws {
         let fixture = try loadFixture()

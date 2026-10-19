@@ -82,6 +82,22 @@ struct DeckService: Sendable {
         try await performNoContent(request)
     }
 
+    func syncDeck(
+        _ id: DeckID,
+        on profile: ServerProfile,
+        token: String,
+        timeout: TimeInterval = 10
+    ) async throws -> Deck {
+        let url = try deckURL(id, on: profile, appending: "sync")
+        var request = makeRequest(url: url, method: "POST", token: token)
+        request.timeoutInterval = timeout
+        return try await perform(
+            request,
+            decoding: Deck.self,
+            badRequest: .operation
+        )
+    }
+
     func validateDeckList(
         _ deckList: DeckListInput, on profile: ServerProfile, token: String
     ) async throws -> DeckValidationSuccess {
@@ -106,7 +122,10 @@ struct DeckService: Sendable {
     }
 
     static func deckURL(
-        _ id: DeckID, on profile: ServerProfile, pin: ContractPin
+        _ id: DeckID,
+        on profile: ServerProfile,
+        pin: ContractPin,
+        appending childSegment: String? = nil
     ) throws -> URL {
         let base = profile.endpointURL(path: "/arkham/decks", pin: pin)
         guard var components = URLComponents(url: base, resolvingAgainstBaseURL: false) else {
@@ -116,14 +135,22 @@ struct DeckService: Sendable {
             throw DeckServiceError.invalidPathSegment
         }
         components.percentEncodedPath += "/\(segment)"
+        if let childSegment {
+            guard let child = percentEncodedDeckIDSegment(childSegment) else {
+                throw DeckServiceError.invalidPathSegment
+            }
+            components.percentEncodedPath += "/\(child)"
+        }
         guard let url = components.url else {
             throw DeckServiceError.invalidPathSegment
         }
         return url
     }
 
-    private func deckURL(_ id: DeckID, on profile: ServerProfile) throws -> URL {
-        try Self.deckURL(id, on: profile, pin: pin)
+    private func deckURL(
+        _ id: DeckID, on profile: ServerProfile, appending childSegment: String? = nil
+    ) throws -> URL {
+        try Self.deckURL(id, on: profile, pin: pin, appending: childSegment)
     }
 
     // MARK: - Request construction

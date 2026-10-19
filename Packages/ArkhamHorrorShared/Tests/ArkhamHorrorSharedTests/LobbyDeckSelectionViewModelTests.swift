@@ -44,6 +44,15 @@ private actor ScriptedLobbyDeckService: DeckServicing {
         throw TestFailure()
     }
 
+    func syncDeck(
+        _: DeckID,
+        on _: ServerProfile,
+        token _: String,
+        timeout _: TimeInterval
+    ) async throws -> Deck {
+        throw TestFailure()
+    }
+
     func validateDeckList(
         _ deckList: DeckListInput, on _: ServerProfile, token _: String
     ) async throws -> DeckValidationSuccess {

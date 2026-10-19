@@ -843,6 +843,11 @@ private struct CampaignSavedDeckSelectionSection: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     validationText(for: state, deck: deck)
+                    if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+                        Text(syncNote)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if submittingDeckID == deck.id {
