@@ -9,6 +9,9 @@ actor ScriptedDeckService: DeckServicing {
     private(set) var syncedIDs: [DeckID] = []
 
     private var listQueue: [Result<DeckListResponse, any Error>] = []
+    private var isNextListGated = false
+    private var listContinuation: CheckedContinuation<DeckListResponse, any Error>?
+    private var listPendingWaiters: [CheckedContinuation<Void, Never>] = []
     private var importQueue: [Result<Deck, any Error>] = []
     private var deleteQueue: [Result<Void, any Error>] = []
     private var syncQueue: [Result<Deck, any Error>] = []
@@ -21,6 +24,20 @@ actor ScriptedDeckService: DeckServicing {
     )] = []
     private var syncWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
     private var validateQueue: [Result<DeckValidationSuccess, any Error>] = []
+
+    func gateNextList() {
+        isNextListGated = true
+    }
+
+    func waitUntilListPending() async {
+        guard listContinuation == nil else { return }
+        await withCheckedContinuation { listPendingWaiters.append($0) }
+    }
+
+    func resumeList(with result: Result<DeckListResponse, any Error>) {
+        listContinuation?.resume(with: result)
+        listContinuation = nil
+    }
 
     func enqueueList(_ result: Result<DeckListResponse, any Error>) {
         listQueue.append(result)
@@ -85,6 +102,14 @@ actor ScriptedDeckService: DeckServicing {
 
     func listDecks(on _: ServerProfile, token _: String) async throws -> DeckListResponse {
         callOrder.append("listDecks")
+        if isNextListGated {
+            isNextListGated = false
+            return try await withCheckedThrowingContinuation { continuation in
+                listContinuation = continuation
+                listPendingWaiters.forEach { $0.resume() }
+                listPendingWaiters = []
+            }
+        }
         return try consume(&listQueue)
     }
 

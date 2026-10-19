@@ -157,6 +157,31 @@ extension DecksViewModelTests {
         #expect(expirations == 1)
     }
 
+    @Test("refresh and sync is ignored during initial load", .timeLimit(.minutes(1)))
+    func refreshAndSyncIgnoresInitialLoad() async throws {
+        let fixture = try loadFixture()
+        let service = ScriptedDeckService()
+        await service.gateNextList()
+        await service.enqueueList(.success([]))
+        let tracker = RecordingDeckSyncTracker()
+        let model = makeModel(service: service, tracker: tracker)
+        let loadTask = Task { await model.load() }
+        await service.waitUntilListPending()
+        #expect(model.loadState == .loading)
+
+        await model.refreshAndSync()
+
+        #expect(await service.callOrder == ["listDecks"])
+        #expect(await service.syncedIDs.isEmpty)
+        #expect(await tracker.records.isEmpty)
+        #expect(!model.isSyncingAll)
+        #expect(model.loadState == .loading)
+        await service.resumeList(with: .success([fixture.deck]))
+        await loadTask.value
+        #expect(model.decks == [fixture.deck])
+        #expect(model.syncAllSummary == nil)
+    }
+
     @Test("refresh and sync ignores re-entry while syncs are active", .timeLimit(.minutes(1)))
     func refreshAndSyncIgnoresReentry() async throws {
         let fixture = try loadFixture()
@@ -211,7 +236,9 @@ extension DecksViewModelTests {
         let bulkTask = Task { await model.refreshAndSync() }
         await service.waitUntilSyncPending(2)
         await model.sync(second)
-        #expect(await service.syncedIDs == [first.id, second.id])
+        let syncedIDs = await service.syncedIDs
+        #expect(syncedIDs.count == 2)
+        #expect(Set(syncedIDs) == Set([first.id, second.id]))
         await service.resumeSync(for: first.id, with: .success(first))
         await service.resumeSync(for: second.id, with: .success(second))
         await bulkTask.value

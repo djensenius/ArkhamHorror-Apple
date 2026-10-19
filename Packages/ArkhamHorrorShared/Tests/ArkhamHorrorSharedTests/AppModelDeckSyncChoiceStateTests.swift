@@ -169,9 +169,7 @@ struct AppModelDeckSyncChoiceStateTests {
 
         await tracker.blockClears()
         model.selectProfile(sampleCustomProfile)
-        for _ in 0 ..< 5 {
-            await Task.yield()
-        }
+        await tracker.waitUntilClearPending()
 
         #expect(await tracker.clearCallCount == 1)
         #expect(await probe.callCount == 1)
@@ -186,11 +184,17 @@ actor GatedChoiceSyncTracker: DeckSyncTracking {
     private(set) var clearCallCount = 0
     private var blockClear = false
     private var clearContinuation: CheckedContinuation<Void, Never>?
+    private var clearPendingWaiters: [CheckedContinuation<Void, Never>] = []
     private var timestamps: [DeckID: Date] = [:]
     private var decks: [DeckID: Deck] = [:]
 
     func blockClears() {
         blockClear = true
+    }
+
+    func waitUntilClearPending() async {
+        guard clearContinuation == nil else { return }
+        await withCheckedContinuation { clearPendingWaiters.append($0) }
     }
 
     func resumeClear() {
@@ -222,6 +226,8 @@ actor GatedChoiceSyncTracker: DeckSyncTracking {
         if blockClear {
             await withCheckedContinuation { continuation in
                 clearContinuation = continuation
+                clearPendingWaiters.forEach { $0.resume() }
+                clearPendingWaiters = []
             }
         }
         timestamps = [:]

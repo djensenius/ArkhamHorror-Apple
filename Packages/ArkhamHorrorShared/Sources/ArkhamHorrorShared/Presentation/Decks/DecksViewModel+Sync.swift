@@ -18,7 +18,7 @@ extension DecksViewModel {
     }
 
     func refreshAndSync() async {
-        guard !isSyncingAll, syncingDeckIDs.isEmpty else { return }
+        guard loadState != .loading, !isSyncingAll, syncingDeckIDs.isEmpty else { return }
         isSyncingAll = true
         defer {
             for deckID in syncingDeckIDs {
