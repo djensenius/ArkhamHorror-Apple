@@ -108,6 +108,8 @@ extension AppModel {
         guard runStorageVoid(generation: generation, {
             try profileStore.saveSelectedProfileID(ServerProfile.hosted.id)
         }) else { return }
+        resetGameLifecycleState()
+        await clearDeckChoiceSyncTracker()
         guard isCurrent(generation) else { return }
 
         profiles = resetProfiles

@@ -136,7 +136,10 @@ extension AppModel {
         invalidateWebIconFonts()
         sessionState = .checkingCompatibility(profile: profile)
         flowTask = Task { [weak self] in
-            await self?.probeAndRestore(profile: profile, generation: generation)
+            guard let self else { return }
+            await clearDeckChoiceSyncTracker()
+            guard isCurrent(generation) else { return }
+            await probeAndRestore(profile: profile, generation: generation)
         }
     }
 }

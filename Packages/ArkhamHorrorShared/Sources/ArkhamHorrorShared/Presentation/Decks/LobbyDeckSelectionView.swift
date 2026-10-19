@@ -30,6 +30,9 @@ struct LobbyDeckSelectionView: View {
                 tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
                 sessionExpiredHandler: { context in
                     await model.handleDeckSessionExpired(profile: profile, context: context)
+                },
+                loadedDecksRecorder: { decks in
+                    await model.recordLoadedDecksForChoice(decks, on: profile)
                 }
             )
         )
@@ -74,25 +77,19 @@ struct LobbyDeckSelectionView: View {
 
     @ViewBuilder
     private func deckButton(_ deck: Deck) -> some View {
-        let state = viewModel.validationState(for: deck)
-        let investigatorID = viewModel.claimedInvestigatorID(for: deck, in: investigators)
+        let resolvedDeck = model.deckForChoice(deck, on: profile)
+        let state = viewModel.validationState(for: resolvedDeck)
+        let investigatorID = viewModel.claimedInvestigatorID(for: resolvedDeck, in: investigators)
         Button {
             if let investigatorID {
-                model.chooseDeck(deck, investigatorId: investigatorID, in: gameID)
+                model.chooseDeck(resolvedDeck, investigatorId: investigatorID, in: gameID)
             }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "rectangle.stack.fill")
                     .foregroundStyle(ArkhamTheme.accent)
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Use \(deck.name)")
-                        .font(.headline)
-                    Text(deck.investigatorName)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    validationText(for: state, deck: deck)
-                }
+                deckButtonDetails(for: resolvedDeck, state: state)
                 Spacer()
                 if action == .choosingDeck || state == .pending {
                     ProgressView().controlSize(.small)
@@ -102,8 +99,49 @@ struct LobbyDeckSelectionView: View {
         .buttonStyle(.borderless)
         .disabled(action != nil || state != .valid || investigatorID == nil)
         .accessibilityIdentifier(AccountAccessibilityID.lobbyDeckButton(
-            for: gameID.rawValue, deckID: deck.id.rawValue
+            for: gameID.rawValue, deckID: resolvedDeck.id.rawValue
         ))
+    }
+
+    private func deckButtonDetails(
+        for deck: Deck,
+        state: LobbyDeckSelectionViewModel.ValidationState
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Use \(deck.name)")
+                .font(.headline)
+            Text(deck.investigatorName)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            validationText(for: state, deck: deck)
+            deckSyncStatus(for: deck)
+        }
+    }
+
+    @ViewBuilder
+    private func deckSyncStatus(for deck: Deck) -> some View {
+        if model.deckChoiceIsSyncing(deck.id, on: profile) {
+            Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.lobbyDeckSyncingText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
+        }
+        if let syncNote = model.deckChoiceSyncNote(for: deck.id, on: profile) {
+            Text(syncNote)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier(
+                    AccountAccessibilityID.lobbyDeckSyncNoteText(
+                        for: gameID.rawValue,
+                        deckID: deck.id.rawValue
+                    )
+                )
+        }
     }
 
     @ViewBuilder

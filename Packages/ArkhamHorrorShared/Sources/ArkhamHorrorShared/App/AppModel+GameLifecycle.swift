@@ -166,8 +166,7 @@ extension AppModel {
     /// Called at every point a signed-in session ends or is superseded (sign-out,
     /// profile switch/retry/in-place profile edit restart, and 401 session expiry),
     /// so stale game content for a previous profile/session is never left active.
-    /// Idempotent; safe to call when already empty (for example from a flow that was
-    /// never signed in).
+    /// Idempotent; safe when already empty.
     func resetGameLifecycleState() {
         gameListTask?.cancel()
         for task in gameLifecycleActionTasks.values {
@@ -190,6 +189,7 @@ extension AppModel {
         gameLobbyDetailTasks = [:]
         gameLobbyDetailTaskIDs = [:]
         gameListGeneration += 1
+        resetDeckChoiceSyncState()
         resetLiveGameState()
     }
 

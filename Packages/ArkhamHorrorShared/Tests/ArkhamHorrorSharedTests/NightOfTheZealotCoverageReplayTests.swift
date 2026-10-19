@@ -1171,6 +1171,8 @@ private struct CoverageReplaySession {
             ),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: service,
+            deckService: GameLifecycleDeckService(),
+            deckSyncTracker: GameLifecycleDeckSyncTracker(),
             liveGameSocketFactory: socketFactory,
             liveGameClock: FakeLiveGameClock(),
             liveGameRandomSource: FakeLiveGameRandomSource(values: [0]),

@@ -2,75 +2,7 @@
 import Foundation
 import Testing
 
-private actor ScriptedDeckService: DeckServicing {
-    private(set) var callOrder: [String] = []
-    private(set) var lastImportedURL: String?
-    private(set) var lastDeletedID: DeckID?
-
-    private var listQueue: [Result<DeckListResponse, any Error>] = []
-    private var importQueue: [Result<Deck, any Error>] = []
-    private var deleteQueue: [Result<Void, any Error>] = []
-    private var validateQueue: [Result<DeckValidationSuccess, any Error>] = []
-
-    func enqueueList(_ result: Result<DeckListResponse, any Error>) {
-        listQueue.append(result)
-    }
-
-    func enqueueImport(_ result: Result<Deck, any Error>) {
-        importQueue.append(result)
-    }
-
-    func enqueueDelete(_ result: Result<Void, any Error>) {
-        deleteQueue.append(result)
-    }
-
-    func enqueueValidate(_ result: Result<DeckValidationSuccess, any Error>) {
-        validateQueue.append(result)
-    }
-
-    private func consume<T>(_ queue: inout [Result<T, any Error>]) throws -> T {
-        guard !queue.isEmpty else { throw TestFailure() }
-        return try queue.removeFirst().get()
-    }
-
-    func listDecks(on _: ServerProfile, token _: String) async throws -> DeckListResponse {
-        callOrder.append("listDecks")
-        return try consume(&listQueue)
-    }
-
-    func fetchDeckList(
-        _: FetchDeckRequest, on _: ServerProfile, token _: String
-    ) async throws -> DeckList {
-        throw TestFailure()
-    }
-
-    func createDeck(
-        _: CreateDeckRequest, on _: ServerProfile, token _: String
-    ) async throws -> Deck {
-        throw TestFailure()
-    }
-
-    func importDeck(from url: String, on _: ServerProfile, token _: String) async throws -> Deck {
-        callOrder.append("importDeck")
-        lastImportedURL = url
-        return try consume(&importQueue)
-    }
-
-    func deleteDeck(_ id: DeckID, on _: ServerProfile, token _: String) async throws {
-        callOrder.append("deleteDeck")
-        lastDeletedID = id
-        try consume(&deleteQueue)
-    }
-
-    func validateDeckList(
-        _: DeckListInput, on _: ServerProfile, token _: String
-    ) async throws -> DeckValidationSuccess {
-        callOrder.append("validateDeckList")
-        return try consume(&validateQueue)
-    }
-}
-
-private struct DecksViewModelFixture: Decodable {
+struct DecksViewModelFixture: Decodable {
     let deck: Deck
     let operationError: DeckOperationError
     let validationErrors: DeckValidationErrors
@@ -79,7 +11,7 @@ private struct DecksViewModelFixture: Decodable {
 @MainActor
 @Suite("DecksViewModel")
 struct DecksViewModelTests {
-    private func loadFixture() throws -> DecksViewModelFixture {
+    func loadFixture() throws -> DecksViewModelFixture {
         let url = try #require(
             Bundle.module.url(
                 forResource: "decks",
@@ -90,20 +22,45 @@ struct DecksViewModelTests {
         return try ContractJSON.decode(DecksViewModelFixture.self, from: Data(contentsOf: url))
     }
 
-    private func makeModel(
+    func makeModel(
         service: ScriptedDeckService,
+        tracker: (any DeckSyncTracking)? = nil,
         tokenProvider: @escaping DecksViewModel.TokenProvider = {
             DeckRequestContext(
                 token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0
             )
         },
-        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in },
+        syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in },
+        contextValidator: @escaping DecksViewModel.ContextValidator = { _ in true }
     ) -> DecksViewModel {
         DecksViewModel(
             profile: .hosted,
             deckService: service,
+            deckSyncTracker: tracker,
             tokenProvider: tokenProvider,
-            sessionExpiredHandler: sessionExpiredHandler
+            sessionExpiredHandler: sessionExpiredHandler,
+            syncedDeckRecorder: syncedDeckRecorder,
+            contextValidator: contextValidator
+        )
+    }
+
+    func deck(
+        _ source: Deck,
+        id: UUID = UUID(),
+        url: String?,
+        name: String
+    ) -> Deck {
+        Deck(
+            id: DeckID(id),
+            userId: source.userId,
+            url: url,
+            name: name,
+            investigatorName: source.investigatorName,
+            list: source.list,
+            lastUsedAt: source.lastUsedAt,
+            overlay: source.overlay,
+            playList: source.playList
         )
     }
 
@@ -227,5 +184,48 @@ struct DecksViewModelTests {
         #expect(model.decks == [fixture.deck])
         #expect(model.loadState == .loaded([fixture.deck]))
         #expect(model.deletionFailure == DeckServiceError.unexpectedStatus(500).message)
+    }
+
+    @Test("per-deck sync upserts successes and surfaces 400 failures")
+    func syncDeckStates() async throws {
+        let fixture = try loadFixture()
+        let service = ScriptedDeckService()
+        let tracker = RecordingDeckSyncTracker()
+        let model = makeModel(service: service, tracker: tracker)
+        await service.enqueueList(.success([fixture.deck]))
+        await model.load()
+
+        let syncedDeck = deck(
+            fixture.deck,
+            id: fixture.deck.id.rawValue,
+            url: fixture.deck.url,
+            name: "Synced deck"
+        )
+        await service.enqueueSync(.success(syncedDeck))
+        await model.sync(fixture.deck)
+
+        #expect(model.decks == [syncedDeck])
+        #expect(model.syncState(for: syncedDeck) == .succeeded(deckSyncSuccessMessage()))
+        #expect(await service.syncedIDs == [fixture.deck.id])
+        #expect(await tracker.records.map(\.0) == [fixture.deck.id])
+
+        await service.enqueueSync(.failure(
+            DeckServiceError.operationFailed(fixture.operationError)
+        ))
+        await model.sync(syncedDeck)
+        #expect(model.syncState(for: syncedDeck) == .failed("Could not sync deck"))
+    }
+
+    @Test("deck without an ArkhamDB URL does not offer a sync call")
+    func syncSkipsDeckWithoutURL() async throws {
+        let fixture = try loadFixture()
+        let localDeck = deck(fixture.deck, url: nil, name: "Local deck")
+        let service = ScriptedDeckService()
+        let model = makeModel(service: service)
+
+        await model.sync(localDeck)
+
+        #expect(await service.syncedIDs.isEmpty)
+        #expect(model.syncState(for: localDeck) == nil)
     }
 }

@@ -4,7 +4,7 @@ import Foundation
 /// threaded through a per-game action's async body. A small named type (rather than
 /// a 3-element tuple) keeps every call site within this project's tuple-arity
 /// convention.
-private struct GameActionAttempt: Sendable {
+struct GameActionAttempt: Sendable {
     let profile: ServerProfile
     let attemptID: UUID
     let sessionGeneration: Int
@@ -24,7 +24,7 @@ private struct GameActionAttempt: Sendable {
 /// ``AppModel/gameOpenSeats`` after that newer action has already started, and
 /// actions on independent games never interfere with each other.
 extension AppModel {
-    private func isCurrentGameAction(_ id: GameID, _ attempt: GameActionAttempt) -> Bool {
+    func isCurrentGameAction(_ id: GameID, _ attempt: GameActionAttempt) -> Bool {
         isCurrent(attempt.sessionGeneration) && gameLifecycleActionAttempts[id] == attempt.attemptID
     }
 
@@ -35,7 +35,7 @@ extension AppModel {
     /// superseded or invalidated this read, not that the action itself failed). A
     /// superseded action's own stale completion is left completely untouched here,
     /// exactly like every other stale-completion guard in this file.
-    private func clearGameActionMarkerIfCurrent(_ id: GameID, _ attempt: GameActionAttempt) {
+    func clearGameActionMarkerIfCurrent(_ id: GameID, _ attempt: GameActionAttempt) {
         guard isCurrentGameAction(id, attempt) else { return }
         gameLifecycleActions[id] = nil
     }
@@ -44,7 +44,7 @@ extension AppModel {
     /// action already running for `id`, clears its prior failure, and returns the new
     /// attempt's identity together with the currently signed-in profile -- or `nil`
     /// if not currently signed in.
-    private func beginGameAction(_ id: GameID, kind: GameLifecycleAction) -> GameActionAttempt? {
+    func beginGameAction(_ id: GameID, kind: GameLifecycleAction) -> GameActionAttempt? {
         guard case let .signedIn(profile, _, _) = sessionState else { return nil }
         gameLifecycleActionTasks[id]?.cancel()
         let attemptID = UUID()
@@ -60,7 +60,7 @@ extension AppModel {
         )
     }
 
-    private func recordGameActionFailure(
+    func recordGameActionFailure(
         _ id: GameID,
         attempt: GameActionAttempt,
         kind: GameLifecycleAction,
@@ -87,7 +87,7 @@ extension AppModel {
     /// through this file's session-expiry handling exactly like an explicit 401
     /// (guarded by the same currency check), so the app never stays on the
     /// signed-in route with a token it can no longer actually use.
-    private func resolveGameActionToken(
+    func resolveGameActionToken(
         _ id: GameID, kind: GameLifecycleAction, attempt: GameActionAttempt
     ) async -> String? {
         do {
@@ -142,7 +142,7 @@ extension AppModel {
     /// with no failure shown and no way to retry. When a *newer* action already
     /// superseded this one, its own marker is left completely untouched, exactly
     /// like every other stale-completion guard here.
-    private func performGameAction(
+    func performGameAction(
         _ id: GameID,
         kind: GameLifecycleAction,
         attempt: GameActionAttempt,
@@ -283,79 +283,6 @@ extension AppModel {
             self.gameOpenSeats[id] = nil
             self.refreshGames()
             self.reloadLobbyViewerSeatStatus(for: id)
-        }
-    }
-
-    // MARK: - Choose deck
-
-    /// Continues without upgrading a claimed seat's deck (``ChooseDeckRequest`` with
-    /// no deck source) for `rawInvestigatorId` (an already-claimed seat's
-    /// investigator, as reported by the game's own `investigators` summary) in `id`,
-    /// and refreshes the games list on success.
-    func continueWithoutUpgrading(investigatorId rawInvestigatorId: String, in id: GameID) {
-        chooseDeck(nil, investigatorId: rawInvestigatorId, in: id)
-    }
-
-    /// Chooses a saved deck for a claimed investigator using the existing pre-game REST
-    /// route (`PUT /arkham/games/{gameId}/decks`) and the same body semantics as the web
-    /// lobby route: investigator id plus deck URL/list, never a saved-deck id.
-    func chooseDeck(_ deck: Deck, investigatorId rawInvestigatorId: String, in id: GameID) {
-        chooseDeck(.saved(deck), investigatorId: rawInvestigatorId, in: id)
-    }
-
-    private enum DeckChoiceSource: Sendable {
-        case saved(Deck)
-
-        var deckURL: String? {
-            switch self {
-            case let .saved(deck):
-                deck.url ?? deck.list.url
-            }
-        }
-
-        var deckList: DeckListInput {
-            switch self {
-            case let .saved(deck):
-                DeckListInput(deck.playableList)
-            }
-        }
-    }
-
-    private func chooseDeck(_ source: DeckChoiceSource?, investigatorId: String, in id: GameID) {
-        guard let attempt = beginGameAction(id, kind: .choosingDeck) else { return }
-        gameLifecycleActionTasks[id] = Task { [weak self] in
-            await self?.performChooseDeck(
-                source,
-                investigatorId: investigatorId,
-                in: id,
-                attempt: attempt
-            )
-        }
-    }
-
-    private func performChooseDeck(
-        _ source: DeckChoiceSource?, investigatorId rawInvestigatorId: String, in id: GameID,
-        attempt: GameActionAttempt
-    ) async {
-        guard let token = await resolveGameActionToken(id, kind: .choosingDeck, attempt: attempt)
-        else { return }
-        guard let investigatorId = try? InvestigatorCode(rawInvestigatorId) else {
-            recordGameActionFailure(
-                id, attempt: attempt, kind: .choosingDeck, error: .malformedPayload
-            )
-            return
-        }
-        let request = ChooseDeckRequest(
-            investigatorId: investigatorId,
-            deckUrl: source?.deckURL,
-            deckList: source?.deckList
-        )
-        await performGameAction(id, kind: .choosingDeck, attempt: attempt) {
-            try await self.gameLifecycleService.chooseDeck(
-                request, in: id, on: attempt.profile, token: token
-            )
-        } onSuccess: {
-            self.refreshGames()
         }
     }
 }

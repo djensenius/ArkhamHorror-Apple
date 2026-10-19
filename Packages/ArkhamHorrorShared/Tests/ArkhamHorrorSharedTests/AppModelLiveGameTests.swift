@@ -82,6 +82,8 @@ struct AppModelLiveGameTests {
             authenticationSession: auth,
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: service,
+            deckService: GameLifecycleDeckService(),
+            deckSyncTracker: GameLifecycleDeckSyncTracker(),
             liveGameSocketFactory: socketFactory,
             liveGameClock: clock,
             liveGameRandomSource: random

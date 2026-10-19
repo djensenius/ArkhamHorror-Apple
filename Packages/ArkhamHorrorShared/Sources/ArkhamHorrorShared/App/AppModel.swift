@@ -127,6 +127,18 @@ final class AppModel {
     /// The injectable authenticated saved-deck client used by deck management and
     /// lobby deck choice.
     @ObservationIgnored let deckService: any DeckServicing
+    /// Tracks recent source syncs for saved decks so automatic deck-choice syncs
+    /// stay bounded and avoid refetching a deck repeatedly across nearby prompts.
+    @ObservationIgnored let deckSyncTracker: any DeckSyncTracking
+    @ObservationIgnored let deckChoiceSyncTimeout: TimeInterval
+    @ObservationIgnored let deckChoiceSyncMinimumInterval: TimeInterval
+    /// Per-server/deck sync notes surfaced beside deck-choice rows when the app falls back
+    /// to the locally saved deck, or when a fresh sync succeeds.
+    var deckChoiceSyncNotes: [DeckChoiceSyncKey: DeckChoiceSyncNote] = [:]
+    /// Latest synced deck bodies available to saved-deck choice surfaces in this process.
+    var deckChoiceSyncedDecks: [DeckChoiceSyncKey: Deck] = [:]
+    /// Decks currently running an automatic sync before a saved-deck choice is sent.
+    var deckChoiceSyncingIDs: Set<DeckChoiceSyncKey> = []
     /// The injectable live-game WebSocket connection factory. See
     /// `AppModel+LiveGameSession.swift`.
     @ObservationIgnored let liveGameSocketFactory: any GameSocketFactory
@@ -382,6 +394,9 @@ final class AppModel {
         cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore(),
         gameLifecycleService: any GameLifecycleServicing = GameLifecycleService(),
         deckService: any DeckServicing = DeckService(),
+        deckSyncTracker: any DeckSyncTracking = DeckSyncTracker(),
+        deckChoiceSyncTimeout: TimeInterval = 5,
+        deckChoiceSyncMinimumInterval: TimeInterval = 5 * 60,
         liveGameSocketFactory: any GameSocketFactory = URLSessionGameSocketFactory(),
         liveGameClock: any LiveGameClock = SystemLiveGameClock(),
         liveGameRandomSource: any LiveGameRandomSource = SystemLiveGameRandomSource(),
@@ -401,6 +416,9 @@ final class AppModel {
         self.cleanupPendingStore = cleanupPendingStore
         self.gameLifecycleService = gameLifecycleService
         self.deckService = deckService
+        self.deckSyncTracker = deckSyncTracker
+        self.deckChoiceSyncTimeout = deckChoiceSyncTimeout
+        self.deckChoiceSyncMinimumInterval = deckChoiceSyncMinimumInterval
         self.liveGameSocketFactory = liveGameSocketFactory
         self.liveGameClock = liveGameClock
         self.liveGameRandomSource = liveGameRandomSource

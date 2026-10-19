@@ -536,6 +536,155 @@ actor ScriptedGameLifecycleService: GameLifecycleServicing {
     }
 }
 
+actor GameLifecycleDeckService: DeckServicing {
+    private(set) var syncedIDs: [DeckID] = []
+    private var syncQueue: [Result<Deck, any Error>] = []
+    private let syncDelay: Duration?
+    private var isSyncGated = false
+    private var syncContinuations: [CheckedContinuation<Void, Never>] = []
+    private var syncPendingWaiters: [(
+        threshold: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
+
+    init(
+        syncQueue: [Result<Deck, any Error>] = [],
+        syncDelay: Duration? = nil,
+        syncGated: Bool = false
+    ) {
+        self.syncQueue = syncQueue
+        self.syncDelay = syncDelay
+        isSyncGated = syncGated
+    }
+
+    func enqueueSync(_ result: Result<Deck, any Error>) {
+        syncQueue.append(result)
+    }
+
+    func setSyncGated(_ gated: Bool) {
+        isSyncGated = gated
+    }
+
+    func waitUntilSyncPending(_ count: Int) async {
+        if syncContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { syncPendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldestSync() {
+        guard !syncContinuations.isEmpty else {
+            return
+        }
+        syncContinuations.removeFirst().resume()
+    }
+
+    private func awaitSyncGate() async {
+        await withCheckedContinuation { continuation in
+            syncContinuations.append(continuation)
+            notifySyncWaiters()
+        }
+    }
+
+    private func notifySyncWaiters() {
+        syncPendingWaiters.removeAll { entry in
+            guard syncContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
+    }
+
+    private func consume<T>(_ queue: inout [Result<T, any Error>]) throws -> T {
+        guard !queue.isEmpty else { throw DeckServiceError.transportFailure("offline") }
+        return try queue.removeFirst().get()
+    }
+
+    func listDecks(on _: ServerProfile, token _: String) async throws -> DeckListResponse {
+        throw TestFailure()
+    }
+
+    func fetchDeckList(
+        _: FetchDeckRequest, on _: ServerProfile, token _: String
+    ) async throws -> DeckList {
+        throw TestFailure()
+    }
+
+    func createDeck(
+        _: CreateDeckRequest, on _: ServerProfile, token _: String
+    ) async throws -> Deck {
+        throw TestFailure()
+    }
+
+    func importDeck(from _: String, on _: ServerProfile, token _: String) async throws -> Deck {
+        throw TestFailure()
+    }
+
+    func deleteDeck(_: DeckID, on _: ServerProfile, token _: String) async throws {
+        throw TestFailure()
+    }
+
+    func syncDeck(
+        _ id: DeckID,
+        on _: ServerProfile,
+        token _: String,
+        timeout _: TimeInterval
+    ) async throws -> Deck {
+        syncedIDs.append(id)
+        if isSyncGated {
+            await awaitSyncGate()
+        }
+        if let syncDelay {
+            try await Task.sleep(for: syncDelay)
+        }
+        return try consume(&syncQueue)
+    }
+
+    func validateDeckList(
+        _: DeckListInput, on _: ServerProfile, token _: String
+    ) async throws -> DeckValidationSuccess {
+        DeckValidationSuccess()
+    }
+}
+
+actor GameLifecycleDeckSyncTracker: DeckSyncTracking {
+    private(set) var records: [(DeckID, Date)] = []
+    var lastSyncedAtByID: [DeckID: Date] = [:]
+    var lastSyncedDeckByID: [DeckID: Deck] = [:]
+
+    func lastSyncedAt(for deckID: DeckID, on _: ServerProfile) -> Date? {
+        lastSyncedAtByID[deckID]
+    }
+
+    func lastSyncedDeck(for deckID: DeckID, on _: ServerProfile) -> Deck? {
+        lastSyncedDeckByID[deckID]
+    }
+
+    func recordSync(_ deck: Deck, on _: ServerProfile, at date: Date) {
+        records.append((deck.id, date))
+        lastSyncedAtByID[deck.id] = date
+        lastSyncedDeckByID[deck.id] = deck
+    }
+
+    func removeSync(for deckID: DeckID, on _: ServerProfile) {
+        records.removeAll { $0.0 == deckID }
+        lastSyncedAtByID[deckID] = nil
+        lastSyncedDeckByID[deckID] = nil
+    }
+
+    func clear() {
+        records = []
+        lastSyncedAtByID = [:]
+        lastSyncedDeckByID = [:]
+    }
+
+    func seed(_ date: Date, for deckID: DeckID, deck: Deck? = nil) {
+        lastSyncedAtByID[deckID] = date
+        if let deck {
+            lastSyncedDeckByID[deckID] = deck
+        }
+    }
+}
+
 /// Test-only helpers for reaching a signed-in ``AppModel`` deterministically, shared
 /// by every game-lifecycle test file.
 enum GameLifecycleTestModel {
@@ -545,6 +694,9 @@ enum GameLifecycleTestModel {
     static func makeSignedIn(
         gameService: ScriptedGameLifecycleService,
         token: String = "session-token",
+        deckService: any DeckServicing = GameLifecycleDeckService(),
+        deckSyncTracker: any DeckSyncTracking = GameLifecycleDeckSyncTracker(),
+        deckChoiceSyncTimeout: TimeInterval = 0.05,
         campaignCatalogService: any CampaignCatalogServicing = CampaignCatalogService()
     ) async -> AppModel {
         let tokenStore = FakeTokenStore(tokens: [ServerProfile.hosted.id: token])
@@ -556,6 +708,9 @@ enum GameLifecycleTestModel {
             authenticationSession: auth,
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: gameService,
+            deckService: deckService,
+            deckSyncTracker: deckSyncTracker,
+            deckChoiceSyncTimeout: deckChoiceSyncTimeout,
             campaignCatalogService: campaignCatalogService
         )
         await model.flowTask?.value

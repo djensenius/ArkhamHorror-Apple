@@ -391,3 +391,12 @@
 "create.name.hint" = "Optional. Leave blank to use %@.";
 "create.name.footer" = "Leave blank to use %@.";
 "create.name.requiresCustom" = "Enter a custom name because localized catalog names are unavailable.";
+
+"deck.refreshAndSync" = "Refresh & Sync";
+"deck.sync.action" = "Sync";
+"deck.sync.accessibility" = "Sync %@ with the deck source";
+"deck.sync.status.syncing" = "Syncing…";
+"deck.sync.success" = "Synced with the deck source just now.";
+"deck.sync.staleFallback" = "Couldn't sync this deck; using the saved version.";
+"deck.syncAll.none" = "No decks with a deck source to sync.";
+"deck.syncAll.summary" = "Synced %1$lld of %2$lld decks with a deck source. %3$lld failed.";
