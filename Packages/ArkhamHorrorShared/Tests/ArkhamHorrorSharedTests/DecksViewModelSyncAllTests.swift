@@ -253,7 +253,9 @@ extension DecksViewModelTests {
         await service.waitUntilSyncPending(2)
 
         await service.resumeSync(for: expired.id, with: .failure(DeckServiceError.sessionExpired))
-        while expirations == 0 { await Task.yield() }
+        while expirations == 0 {
+            await Task.yield()
+        }
         await service.resumeSync(for: successful.id, with: .success(syncedSuccess))
         await bulkTask.value
 

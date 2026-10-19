@@ -243,7 +243,6 @@ extension AppModel {
         )
     }
 
-    // swiftlint:disable:next function_body_length
     private func submitCampaignSavedDeck(
         _ deck: Deck,
         rawInvestigatorId: String,
@@ -277,50 +276,13 @@ extension AppModel {
             return failure
         }
 
-        let task = Task<CampaignDeckUpgradeSubmissionResult, Never> { @MainActor in
-            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
-            let context: DeckRequestContext
-            do {
-                context = try await self.currentDeckRequestContext(for: profile)
-            } catch is CancellationError {
-                return campaignDeckSubmissionCancelledFailure()
-            } catch {
-                return .failed(campaignPromptLocalized(
-                    "campaign.error.sessionExpiredDecks",
-                    "Your session expired. Sign in again to manage decks."
-                ))
-            }
-            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
-            let syncResult: DeckChoiceSyncResult
-            do {
-                syncResult = try await self.syncDeckBeforeChoiceIfNeeded(
-                    deck,
-                    profile: profile,
-                    context: context
-                )
-            } catch DeckServiceError.sessionExpired {
-                await self.handleDeckSessionExpired(profile: profile, context: context)
-                return .failed(campaignPromptLocalized(
-                    "campaign.error.sessionExpiredDecks",
-                    "Your session expired. Sign in again to manage decks."
-                ))
-            } catch {
-                return campaignDeckSubmissionCancelledFailure()
-            }
-            guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
-            let deckURL = syncResult.deck.url
-            return await self.submitCampaignDeck(
-                deckURL: deckURL,
-                deckList: DeckListInput(syncResult.deck.playableList, urlOverride: deckURL),
-                investigatorId: investigatorId,
-                gameID: gameID,
-                context: CampaignDeckSubmissionContext(
-                    profile: profile,
-                    deckContext: context,
-                    promptIdentity: promptIdentity
-                )
-            )
-        }
+        let task = campaignSavedDeckTask(
+            deck,
+            investigatorId: investigatorId,
+            gameID: gameID,
+            profile: profile,
+            promptIdentity: promptIdentity
+        )
         campaignDeckSubmissions[gameID] = CampaignDeckSubmissionAttempt(
             attemptID: attemptID,
             promptIdentity: promptIdentity,
@@ -339,6 +301,75 @@ extension AppModel {
             result: result
         )
         return result
+    }
+
+    private func campaignSavedDeckTask(
+        _ deck: Deck,
+        investigatorId: InvestigatorCode,
+        gameID: GameID,
+        profile: ServerProfile,
+        promptIdentity: BasicChoicePromptIdentity
+    ) -> Task<CampaignDeckUpgradeSubmissionResult, Never> {
+        Task { @MainActor in
+            await self.performCampaignSavedDeck(
+                deck,
+                investigatorId: investigatorId,
+                gameID: gameID,
+                profile: profile,
+                promptIdentity: promptIdentity
+            )
+        }
+    }
+
+    private func performCampaignSavedDeck(
+        _ deck: Deck,
+        investigatorId: InvestigatorCode,
+        gameID: GameID,
+        profile: ServerProfile,
+        promptIdentity: BasicChoicePromptIdentity
+    ) async -> CampaignDeckUpgradeSubmissionResult {
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+        let context: DeckRequestContext
+        do {
+            context = try await currentDeckRequestContext(for: profile)
+        } catch is CancellationError {
+            return campaignDeckSubmissionCancelledFailure()
+        } catch {
+            return .failed(campaignPromptLocalized(
+                "campaign.error.sessionExpiredDecks",
+                "Your session expired. Sign in again to manage decks."
+            ))
+        }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+        let syncResult: DeckChoiceSyncResult
+        do {
+            syncResult = try await syncDeckBeforeChoiceIfNeeded(
+                deck,
+                profile: profile,
+                context: context
+            )
+        } catch DeckServiceError.sessionExpired {
+            await handleDeckSessionExpired(profile: profile, context: context)
+            return .failed(campaignPromptLocalized(
+                "campaign.error.sessionExpiredDecks",
+                "Your session expired. Sign in again to manage decks."
+            ))
+        } catch {
+            return campaignDeckSubmissionCancelledFailure()
+        }
+        guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
+        let deckURL = syncResult.deck.url
+        return await submitCampaignDeck(
+            deckURL: deckURL,
+            deckList: DeckListInput(syncResult.deck.playableList, urlOverride: deckURL),
+            investigatorId: investigatorId,
+            gameID: gameID,
+            context: CampaignDeckSubmissionContext(
+                profile: profile,
+                deckContext: context,
+                promptIdentity: promptIdentity
+            )
+        )
     }
 
     private func performCampaignDeckSkip(

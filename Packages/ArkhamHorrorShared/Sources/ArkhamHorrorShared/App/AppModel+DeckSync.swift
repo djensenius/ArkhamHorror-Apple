@@ -57,9 +57,7 @@ extension AppModel {
                 deckChoiceSyncNotes[key] = nil
                 shouldForgetTracker = true
             }
-            if let trackedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile),
-               trackedDeck != deck
-            {
+            if await trackerHasDifferentDeckBody(deck, on: profile) {
                 shouldForgetTracker = true
             }
             if shouldForgetTracker {
@@ -99,8 +97,7 @@ extension AppModel {
         try ensureCurrentDeckChoiceContext(context, on: profile)
         let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
         guard deck.hasSyncURL else {
-            deckChoiceSyncNotes[key] = nil
-            deckChoiceSyncingIDs.remove(key)
+            clearDeckChoiceSync(for: key)
             return DeckChoiceSyncResult(deck: deck, note: nil, didAttemptSync: false)
         }
 
@@ -114,28 +111,14 @@ extension AppModel {
 
         deckChoiceSyncingIDs.insert(key)
         defer { deckChoiceSyncingIDs.remove(key) }
-        let service = deckService
-        let timeout = deckChoiceSyncTimeout
         do {
-            let syncedDeck = try await withDeckChoiceSyncTimeout(seconds: timeout) {
-                try await service.syncDeck(
-                    deck.id,
-                    on: profile,
-                    token: context.token,
-                    timeout: timeout
-                )
-            }
-            try ensureCurrentDeckChoiceContext(context, on: profile)
-            let syncedAt = Date()
-            await deckSyncTracker.recordSync(syncedDeck, on: profile, at: syncedAt)
-            try ensureCurrentDeckChoiceContext(context, on: profile)
-            recordSyncedDeckForChoice(syncedDeck, on: profile)
-            let note = deckSyncSuccessMessage()
-            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
-                message: note,
-                expiresAt: syncedAt.addingTimeInterval(deckChoiceSyncMinimumInterval)
+            let syncedDeck = try await syncChoiceDeck(deck, profile: profile, context: context)
+            return try await recordSuccessfulDeckChoiceSync(
+                syncedDeck,
+                key: key,
+                profile: profile,
+                context: context
             )
-            return DeckChoiceSyncResult(deck: syncedDeck, note: note, didAttemptSync: true)
         } catch DeckServiceError.sessionExpired {
             throw DeckServiceError.sessionExpired
         } catch is CancellationError {
@@ -143,12 +126,78 @@ extension AppModel {
         } catch GameLifecycleTokenAccessError.stale {
             throw GameLifecycleTokenAccessError.stale
         } catch {
-            try ensureCurrentDeckChoiceContext(context, on: profile)
-            let fallbackDeck = deckForChoice(deck, on: profile)
-            let note = deckSyncStaleFallbackMessage()
-            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(message: note, expiresAt: nil)
-            return DeckChoiceSyncResult(deck: fallbackDeck, note: note, didAttemptSync: true)
+            return try fallbackDeckChoiceSyncResult(
+                for: deck,
+                key: key,
+                profile: profile,
+                context: context
+            )
         }
+    }
+
+    private func trackerHasDifferentDeckBody(
+        _ deck: Deck,
+        on profile: ServerProfile
+    ) async -> Bool {
+        guard let trackedDeck = await deckSyncTracker.lastSyncedDeck(
+            for: deck.id,
+            on: profile
+        ) else { return false }
+        return trackedDeck != deck
+    }
+
+    private func clearDeckChoiceSync(for key: DeckChoiceSyncKey) {
+        deckChoiceSyncNotes[key] = nil
+        deckChoiceSyncingIDs.remove(key)
+    }
+
+    private func syncChoiceDeck(
+        _ deck: Deck,
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) async throws -> Deck {
+        let service = deckService
+        let timeout = deckChoiceSyncTimeout
+        return try await withDeckChoiceSyncTimeout(seconds: timeout) {
+            try await service.syncDeck(
+                deck.id,
+                on: profile,
+                token: context.token,
+                timeout: timeout
+            )
+        }
+    }
+
+    private func recordSuccessfulDeckChoiceSync(
+        _ syncedDeck: Deck,
+        key: DeckChoiceSyncKey,
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) async throws -> DeckChoiceSyncResult {
+        try ensureCurrentDeckChoiceContext(context, on: profile)
+        let syncedAt = Date()
+        await deckSyncTracker.recordSync(syncedDeck, on: profile, at: syncedAt)
+        try ensureCurrentDeckChoiceContext(context, on: profile)
+        recordSyncedDeckForChoice(syncedDeck, on: profile)
+        let note = deckSyncSuccessMessage()
+        deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
+            message: note,
+            expiresAt: syncedAt.addingTimeInterval(deckChoiceSyncMinimumInterval)
+        )
+        return DeckChoiceSyncResult(deck: syncedDeck, note: note, didAttemptSync: true)
+    }
+
+    private func fallbackDeckChoiceSyncResult(
+        for deck: Deck,
+        key: DeckChoiceSyncKey,
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) throws -> DeckChoiceSyncResult {
+        try ensureCurrentDeckChoiceContext(context, on: profile)
+        let fallbackDeck = deckForChoice(deck, on: profile)
+        let note = deckSyncStaleFallbackMessage()
+        deckChoiceSyncNotes[key] = DeckChoiceSyncNote(message: note, expiresAt: nil)
+        return DeckChoiceSyncResult(deck: fallbackDeck, note: note, didAttemptSync: true)
     }
 
     private func recentlySyncedChoiceDeck(
