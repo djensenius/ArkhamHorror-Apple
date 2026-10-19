@@ -4,6 +4,32 @@ import Testing
 
 @MainActor
 extension DecksViewModelTests {
+    @Test("cancelled refresh and sync clears all busy rows and permits another refresh", .timeLimit(.minutes(1)))
+    func cancelledRefreshAndSyncClearsBusyStateAndPermitsRefresh() async throws {
+        let fixture = try loadFixture()
+        let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
+        let second = deck(fixture.deck, url: fixture.deck.url, name: "B second")
+        let service = ScriptedDeckService()
+        await service.setSyncGated(true)
+        await service.enqueueList(.success([first, second]))
+        let model = makeModel(service: service)
+        let task = Task { await model.refreshAndSync() }
+        await service.waitUntilSyncPending(2)
+        #expect(model.syncingDeckIDs == Set([first.id, second.id]))
+
+        task.cancel()
+        await service.resumeSync(for: first.id, with: .success(first))
+        await service.resumeSync(for: second.id, with: .failure(CancellationError()))
+        await task.value
+
+        #expect(model.syncingDeckIDs.isEmpty)
+        #expect(!model.deckSyncStates.values.contains(.syncing))
+        #expect(!model.isSyncingAll)
+        await service.enqueueList(.success([]))
+        await model.refreshAndSync()
+        #expect(await service.callOrder.filter { $0 == "listDecks" }.count == 2)
+    }
+
     @Test("refresh and sync aggregates per-deck results")
     func refreshAndSyncAggregatesResults() async throws {
         let fixture = try loadFixture()
