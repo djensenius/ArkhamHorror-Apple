@@ -2,6 +2,16 @@ import Foundation
 
 private struct DeckChoiceSyncTimeoutError: Error {}
 
+struct DeckChoiceSyncKey: Sendable, Hashable {
+    private let serverBaseURL: String
+    private let deckID: DeckID
+
+    init(deckID: DeckID, on profile: ServerProfile) {
+        serverBaseURL = profile.baseURL.absoluteString.lowercased()
+        self.deckID = deckID
+    }
+}
+
 struct DeckChoiceSyncNote: Sendable, Equatable {
     let message: String
     let expiresAt: Date?
@@ -19,31 +29,42 @@ struct DeckChoiceSyncResult: Sendable, Equatable {
 }
 
 extension AppModel {
-    func deckChoiceSyncNote(for deckID: DeckID) -> String? {
-        guard let note = deckChoiceSyncNotes[deckID] else { return nil }
-        if note.isExpired {
-            deckChoiceSyncNotes[deckID] = nil
-            return nil
-        }
+    func deckChoiceSyncNote(for deckID: DeckID, on profile: ServerProfile) -> String? {
+        guard let note = deckChoiceSyncNotes[DeckChoiceSyncKey(deckID: deckID, on: profile)],
+              !note.isExpired
+        else { return nil }
         return note.message
     }
 
-    func deckChoiceIsSyncing(_ deckID: DeckID) -> Bool {
-        deckChoiceSyncingIDs.contains(deckID)
+    func deckChoiceIsSyncing(_ deckID: DeckID, on profile: ServerProfile) -> Bool {
+        deckChoiceSyncingIDs.contains(DeckChoiceSyncKey(deckID: deckID, on: profile))
     }
 
-    func deckForChoice(_ deck: Deck) -> Deck {
-        deckChoiceSyncedDecks[deck.id] ?? deck
+    func deckForChoice(_ deck: Deck, on profile: ServerProfile) -> Deck {
+        deckChoiceSyncedDecks[DeckChoiceSyncKey(deckID: deck.id, on: profile)] ?? deck
     }
 
-    func recordSyncedDeckForChoice(_ deck: Deck) {
-        deckChoiceSyncedDecks[deck.id] = deck
+    func recordSyncedDeckForChoice(_ deck: Deck, on profile: ServerProfile) {
+        deckChoiceSyncedDecks[DeckChoiceSyncKey(deckID: deck.id, on: profile)] = deck
     }
 
-    func resetDeckChoiceSyncState() async {
+    func recordLoadedDecksForChoice(_ decks: [Deck], on profile: ServerProfile) {
+        for deck in decks {
+            let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
+            if let cachedDeck = deckChoiceSyncedDecks[key], cachedDeck != deck {
+                deckChoiceSyncedDecks[key] = nil
+                deckChoiceSyncNotes[key] = nil
+            }
+        }
+    }
+
+    func resetDeckChoiceSyncState() {
         deckChoiceSyncNotes = [:]
         deckChoiceSyncedDecks = [:]
         deckChoiceSyncingIDs = []
+    }
+
+    func clearDeckChoiceSyncTracker() async {
         await deckSyncTracker.clear()
     }
 
@@ -52,9 +73,10 @@ extension AppModel {
         profile: ServerProfile,
         token: String
     ) async -> DeckChoiceSyncResult {
+        let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
         guard deck.hasSyncURL else {
-            deckChoiceSyncNotes[deck.id] = nil
-            deckChoiceSyncingIDs.remove(deck.id)
+            deckChoiceSyncNotes[key] = nil
+            deckChoiceSyncingIDs.remove(key)
             return DeckChoiceSyncResult(deck: deck, note: nil, didAttemptSync: false)
         }
 
@@ -62,7 +84,8 @@ extension AppModel {
             return DeckChoiceSyncResult(deck: cachedDeck, note: nil, didAttemptSync: false)
         }
 
-        deckChoiceSyncingIDs.insert(deck.id)
+        deckChoiceSyncingIDs.insert(key)
+        defer { deckChoiceSyncingIDs.remove(key) }
         let service = deckService
         let timeout = deckChoiceSyncTimeout
         do {
@@ -76,25 +99,29 @@ extension AppModel {
             }
             let syncedAt = Date()
             await deckSyncTracker.recordSync(syncedDeck, on: profile, at: syncedAt)
-            recordSyncedDeckForChoice(syncedDeck)
+            recordSyncedDeckForChoice(syncedDeck, on: profile)
             let note = deckSyncSuccessMessage()
-            deckChoiceSyncNotes[deck.id] = DeckChoiceSyncNote(
+            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
                 message: note,
                 expiresAt: syncedAt.addingTimeInterval(deckChoiceSyncMinimumInterval)
             )
-            deckChoiceSyncingIDs.remove(deck.id)
             return DeckChoiceSyncResult(deck: syncedDeck, note: note, didAttemptSync: true)
         } catch is CancellationError {
-            deckChoiceSyncingIDs.remove(deck.id)
-            return DeckChoiceSyncResult(deck: deckForChoice(deck), note: nil, didAttemptSync: true)
+            return DeckChoiceSyncResult(
+                deck: deckForChoice(deck, on: profile),
+                note: nil,
+                didAttemptSync: true
+            )
         } catch GameLifecycleTokenAccessError.stale {
-            deckChoiceSyncingIDs.remove(deck.id)
-            return DeckChoiceSyncResult(deck: deckForChoice(deck), note: nil, didAttemptSync: true)
+            return DeckChoiceSyncResult(
+                deck: deckForChoice(deck, on: profile),
+                note: nil,
+                didAttemptSync: true
+            )
         } catch {
-            let fallbackDeck = deckForChoice(deck)
+            let fallbackDeck = deckForChoice(deck, on: profile)
             let note = deckSyncStaleFallbackMessage()
-            deckChoiceSyncNotes[deck.id] = DeckChoiceSyncNote(message: note, expiresAt: nil)
-            deckChoiceSyncingIDs.remove(deck.id)
+            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(message: note, expiresAt: nil)
             return DeckChoiceSyncResult(deck: fallbackDeck, note: note, didAttemptSync: true)
         }
     }
@@ -107,10 +134,10 @@ extension AppModel {
               Date().timeIntervalSince(lastSyncedAt) < deckChoiceSyncMinimumInterval
         else { return nil }
         if let cachedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile) {
-            recordSyncedDeckForChoice(cachedDeck)
+            recordSyncedDeckForChoice(cachedDeck, on: profile)
             return cachedDeck
         }
-        return deckForChoice(deck)
+        return deckForChoice(deck, on: profile)
     }
 
     private func withDeckChoiceSyncTimeout<T: Sendable>(
@@ -143,7 +170,7 @@ extension Deck {
 }
 
 func deckSyncSuccessMessage() -> String {
-    deckLocalized("deck.sync.success", "Synced with ArkhamDB just now.")
+    deckLocalized("deck.sync.success", "Synced with the deck source just now.")
 }
 
 func deckSyncStaleFallbackMessage() -> String {

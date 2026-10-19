@@ -41,12 +41,14 @@ final class DecksViewModel {
 
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
+    typealias LoadedDecksRecorder = @MainActor ([Deck]) -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
     private let deckSyncTracker: (any DeckSyncTracking)?
     private let tokenProvider: TokenProvider
     private let sessionExpiredHandler: SessionExpiredHandler
+    private let loadedDecksRecorder: LoadedDecksRecorder
     private let syncedDeckRecorder: @MainActor (Deck) -> Void
 
     var loadState: LoadState = .idle
@@ -67,6 +69,7 @@ final class DecksViewModel {
         deckSyncTracker: (any DeckSyncTracking)? = nil,
         tokenProvider: @escaping TokenProvider,
         sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in },
+        loadedDecksRecorder: @escaping LoadedDecksRecorder = { _ in },
         syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in }
     ) {
         self.profile = profile
@@ -74,6 +77,7 @@ final class DecksViewModel {
         self.deckSyncTracker = deckSyncTracker
         self.tokenProvider = tokenProvider
         self.sessionExpiredHandler = sessionExpiredHandler
+        self.loadedDecksRecorder = loadedDecksRecorder
         self.syncedDeckRecorder = syncedDeckRecorder
     }
 
@@ -99,7 +103,9 @@ final class DecksViewModel {
             let context = try await tokenProvider()
             requestContext = context
             let decks = try await deckService.listDecks(on: profile, token: context.token)
-            loadState = .loaded(decks.sortedForPresentation())
+            let loadedDecks = decks.sortedForPresentation()
+            loadState = .loaded(loadedDecks)
+            loadedDecksRecorder(loadedDecks)
         } catch is CancellationError {
             loadState = .idle
         } catch GameLifecycleTokenAccessError.stale {
@@ -165,6 +171,7 @@ final class DecksViewModel {
             let loaded = try await deckService.listDecks(on: profile, token: context.token)
                 .sortedForPresentation()
             loadState = .loaded(loaded)
+            loadedDecksRecorder(loaded)
             await syncDecksWithURL(loaded, context: context)
         } catch is CancellationError {
             loadState = .idle
@@ -274,26 +281,24 @@ final class DecksViewModel {
         guard !syncableDecks.isEmpty else {
             syncAllSummary = deckLocalized(
                 "deck.syncAll.none",
-                "No ArkhamDB decks to sync."
+                "No decks with a deck source to sync."
             )
             return
         }
-        for deck in syncableDecks {
-            syncingDeckIDs.insert(deck.id)
-            deckSyncStates[deck.id] = .syncing
-        }
-
         var nextIndex = 0
         var succeeded = 0
         var failed = 0
+        var didExpireSession = false
         let maxConcurrentSyncs = min(3, syncableDecks.count)
         let service = deckService
         let profile = profile
         await withTaskGroup(of: SyncOutcome.self) { group in
-            func enqueueNext() {
-                guard nextIndex < syncableDecks.count else { return }
+            @MainActor func enqueueNext() {
+                guard !didExpireSession, nextIndex < syncableDecks.count else { return }
                 let deck = syncableDecks[nextIndex]
                 nextIndex += 1
+                syncingDeckIDs.insert(deck.id)
+                deckSyncStates[deck.id] = .syncing
                 group.addTask {
                     do {
                         let syncedDeck = try await service.syncDeck(
@@ -341,7 +346,11 @@ final class DecksViewModel {
                     failed += 1
                     syncingDeckIDs.remove(deckID)
                     deckSyncStates[deckID] = .failed(DeckServiceError.sessionExpired.message)
-                    await sessionExpiredHandler(context)
+                    if !didExpireSession {
+                        didExpireSession = true
+                        group.cancelAll()
+                        await sessionExpiredHandler(context)
+                    }
                 case let .cancelled(deckID):
                     syncingDeckIDs.remove(deckID)
                     deckSyncStates[deckID] = nil
@@ -351,7 +360,7 @@ final class DecksViewModel {
         }
         syncAllSummary = deckLocalizedFormat(
             "deck.syncAll.summary",
-            "Synced %1$lld of %2$lld ArkhamDB decks. %3$lld failed.",
+            "Synced %1$lld of %2$lld decks with a deck source. %3$lld failed.",
             succeeded,
             syncableDecks.count,
             failed

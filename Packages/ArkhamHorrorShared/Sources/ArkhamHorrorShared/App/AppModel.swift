@@ -127,18 +127,18 @@ final class AppModel {
     /// The injectable authenticated saved-deck client used by deck management and
     /// lobby deck choice.
     @ObservationIgnored let deckService: any DeckServicing
-    /// Tracks recent ArkhamDB syncs for saved decks so automatic deck-choice syncs
+    /// Tracks recent source syncs for saved decks so automatic deck-choice syncs
     /// stay bounded and avoid refetching a deck repeatedly across nearby prompts.
     @ObservationIgnored let deckSyncTracker: any DeckSyncTracking
     @ObservationIgnored let deckChoiceSyncTimeout: TimeInterval
     @ObservationIgnored let deckChoiceSyncMinimumInterval: TimeInterval
-    /// Per-deck sync notes surfaced beside deck-choice rows when the app falls back
+    /// Per-server/deck sync notes surfaced beside deck-choice rows when the app falls back
     /// to the locally saved deck, or when a fresh sync succeeds.
-    var deckChoiceSyncNotes: [DeckID: DeckChoiceSyncNote] = [:]
+    var deckChoiceSyncNotes: [DeckChoiceSyncKey: DeckChoiceSyncNote] = [:]
     /// Latest synced deck bodies available to saved-deck choice surfaces in this process.
-    var deckChoiceSyncedDecks: [DeckID: Deck] = [:]
+    var deckChoiceSyncedDecks: [DeckChoiceSyncKey: Deck] = [:]
     /// Decks currently running an automatic sync before a saved-deck choice is sent.
-    var deckChoiceSyncingIDs: Set<DeckID> = []
+    var deckChoiceSyncingIDs: Set<DeckChoiceSyncKey> = []
     /// The injectable live-game WebSocket connection factory. See
     /// `AppModel+LiveGameSession.swift`.
     @ObservationIgnored let liveGameSocketFactory: any GameSocketFactory

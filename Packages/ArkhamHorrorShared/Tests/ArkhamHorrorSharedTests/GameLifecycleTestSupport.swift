@@ -540,14 +540,58 @@ actor GameLifecycleDeckService: DeckServicing {
     private(set) var syncedIDs: [DeckID] = []
     private var syncQueue: [Result<Deck, any Error>] = []
     private let syncDelay: Duration?
+    private var isSyncGated = false
+    private var syncContinuations: [CheckedContinuation<Void, Never>] = []
+    private var syncPendingWaiters: [(
+        threshold: Int,
+        continuation: CheckedContinuation<Void, Never>
+    )] = []
 
-    init(syncQueue: [Result<Deck, any Error>] = [], syncDelay: Duration? = nil) {
+    init(
+        syncQueue: [Result<Deck, any Error>] = [],
+        syncDelay: Duration? = nil,
+        syncGated: Bool = false
+    ) {
         self.syncQueue = syncQueue
         self.syncDelay = syncDelay
+        isSyncGated = syncGated
     }
 
     func enqueueSync(_ result: Result<Deck, any Error>) {
         syncQueue.append(result)
+    }
+
+    func setSyncGated(_ gated: Bool) {
+        isSyncGated = gated
+    }
+
+    func waitUntilSyncPending(_ count: Int) async {
+        if syncContinuations.count >= count {
+            return
+        }
+        await withCheckedContinuation { syncPendingWaiters.append((count, $0)) }
+    }
+
+    func resumeOldestSync() {
+        guard !syncContinuations.isEmpty else {
+            return
+        }
+        syncContinuations.removeFirst().resume()
+    }
+
+    private func awaitSyncGate() async {
+        await withCheckedContinuation { continuation in
+            syncContinuations.append(continuation)
+            notifySyncWaiters()
+        }
+    }
+
+    private func notifySyncWaiters() {
+        syncPendingWaiters.removeAll { entry in
+            guard syncContinuations.count >= entry.threshold else { return false }
+            entry.continuation.resume()
+            return true
+        }
     }
 
     private func consume<T>(_ queue: inout [Result<T, any Error>]) throws -> T {
@@ -586,6 +630,9 @@ actor GameLifecycleDeckService: DeckServicing {
         timeout _: TimeInterval
     ) async throws -> Deck {
         syncedIDs.append(id)
+        if isSyncGated {
+            await awaitSyncGate()
+        }
         if let syncDelay {
             try await Task.sleep(for: syncDelay)
         }

@@ -394,9 +394,9 @@
 
 "deck.refreshAndSync" = "Refresh & Sync";
 "deck.sync.action" = "Sync";
-"deck.sync.accessibility" = "Sync %@ with ArkhamDB";
+"deck.sync.accessibility" = "Sync %@ with the deck source";
 "deck.sync.status.syncing" = "Syncing…";
-"deck.sync.success" = "Synced with ArkhamDB just now.";
+"deck.sync.success" = "Synced with the deck source just now.";
 "deck.sync.staleFallback" = "Couldn't sync this deck; using the saved version.";
-"deck.syncAll.none" = "No ArkhamDB decks to sync.";
-"deck.syncAll.summary" = "Synced %1$lld of %2$lld ArkhamDB decks. %3$lld failed.";
+"deck.syncAll.none" = "No decks with a deck source to sync.";
+"deck.syncAll.summary" = "Synced %1$lld of %2$lld decks with a deck source. %3$lld failed.";

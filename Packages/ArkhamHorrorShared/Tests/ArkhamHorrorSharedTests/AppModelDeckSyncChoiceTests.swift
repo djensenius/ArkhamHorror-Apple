@@ -79,7 +79,7 @@ struct AppModelDeckSyncChoiceTests {
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckUrl == syncedDeck.url)
         #expect(sentRequest.deckList == DeckListInput(syncedDeck.playableList))
-        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncSuccessMessage())
+        #expect(model.deckChoiceSyncNote(for: deck.id, on: .hosted) == deckSyncSuccessMessage())
     }
 
     @Test("sync timeout falls back to the saved deck and leaves a visible note")
@@ -103,7 +103,9 @@ struct AppModelDeckSyncChoiceTests {
         #expect(await deckService.syncedIDs == [deck.id])
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckList == DeckListInput(deck.playableList))
-        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
+        #expect(
+            model.deckChoiceSyncNote(for: deck.id, on: .hosted) == deckSyncStaleFallbackMessage()
+        )
     }
 
     @Test("sync failure falls back to the saved deck and leaves a visible note")
@@ -128,7 +130,9 @@ struct AppModelDeckSyncChoiceTests {
 
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckList == DeckListInput(deck.playableList))
-        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
+        #expect(
+            model.deckChoiceSyncNote(for: deck.id, on: .hosted) == deckSyncStaleFallbackMessage()
+        )
         #expect(model.gameLifecycleActionFailures[gameID] == nil)
     }
 
@@ -170,6 +174,65 @@ struct AppModelDeckSyncChoiceTests {
         #expect(await localDeckService.syncedIDs.isEmpty)
     }
 
+    @Test("session-expired sign-out clears cached deck-choice sync state")
+    func sessionExpiredSignOutClearsCachedDeckChoiceSyncState() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deck = try sampleDeck()
+        let syncedDeck = modifiedDeck(
+            deck,
+            url: "https://arkhamdb.com/deck/view/stale-session-cache",
+            name: "Stale synced deck",
+            listName: "Stale synced list"
+        )
+        let model = await GameLifecycleTestModel.makeSignedIn(gameService: service)
+        model.recordSyncedDeckForChoice(syncedDeck, on: .hosted)
+        model.deckChoiceSyncNotes[DeckChoiceSyncKey(deckID: deck.id, on: .hosted)] =
+            DeckChoiceSyncNote(message: deckSyncSuccessMessage(), expiresAt: nil)
+        let context = DeckRequestContext(
+            token: "session-token",
+            sessionGeneration: model.generation,
+            credentialEpoch: model.currentCredentialEpoch(for: ServerProfile.hosted.id),
+            globalEpoch: model.currentGlobalCredentialEpoch()
+        )
+
+        await model.handleDeckSessionExpired(profile: .hosted, context: context)
+
+        #expect(model.deckForChoice(deck, on: .hosted) == deck)
+        #expect(model.deckChoiceSyncNote(for: deck.id, on: .hosted) == nil)
+    }
+
+    @Test("loaded deck lists drop differing cached synced deck bodies")
+    func loadedDeckListDropsDifferingCachedSyncedDeck() throws {
+        let model = AppModel(
+            profileStore: FakeServerProfileStore(),
+            tokenStore: FakeTokenStore(),
+            capabilityProbe: ScriptedCapabilityProbe(.outcome(.legacyFallback)),
+            authenticationSession: ScriptedAuthenticating(currentUserResult: .success(.sample)),
+            cleanupPendingStore: FakeTokenCleanupPendingStore(),
+            gameLifecycleService: ScriptedGameLifecycleService(),
+            deckService: GameLifecycleDeckService(),
+            deckSyncTracker: GameLifecycleDeckSyncTracker()
+        )
+        let deck = try sampleDeck()
+        let syncedDeck = modifiedDeck(
+            deck,
+            url: "https://arkhamdb.com/deck/view/older-synced-cache",
+            name: "Older synced deck",
+            listName: "Older synced list"
+        )
+        let loadedDeck = modifiedDeck(
+            deck,
+            url: deck.url,
+            name: "Freshly loaded deck",
+            listName: "Freshly loaded list"
+        )
+
+        model.recordSyncedDeckForChoice(syncedDeck, on: .hosted)
+        model.recordLoadedDecksForChoice([loadedDeck], on: .hosted)
+
+        #expect(model.deckForChoice(loadedDeck, on: .hosted) == loadedDeck)
+    }
+
     @Test("recent sync skip sends the cached synced deck body")
     func chooseSavedDeckSkipUsesCachedSyncedDeck() async throws {
         let service = ScriptedGameLifecycleService()
@@ -200,6 +263,6 @@ struct AppModelDeckSyncChoiceTests {
         let sentRequest = try #require(await service.lastChooseDeckRequest)
         #expect(sentRequest.deckUrl == syncedDeck.url)
         #expect(sentRequest.deckList == DeckListInput(syncedDeck.playableList))
-        #expect(model.deckForChoice(deck) == syncedDeck)
+        #expect(model.deckForChoice(deck, on: .hosted) == syncedDeck)
     }
 }

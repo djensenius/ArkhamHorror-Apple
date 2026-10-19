@@ -394,9 +394,9 @@
 
 "deck.refreshAndSync" = "Aktualisieren & synchronisieren";
 "deck.sync.action" = "Synchronisieren";
-"deck.sync.accessibility" = "%@ mit ArkhamDB synchronisieren";
+"deck.sync.accessibility" = "%@ mit der Deckquelle synchronisieren";
 "deck.sync.status.syncing" = "Synchronisierung läuft …";
-"deck.sync.success" = "Gerade mit ArkhamDB synchronisiert.";
+"deck.sync.success" = "Gerade mit der Deckquelle synchronisiert.";
 "deck.sync.staleFallback" = "Dieses Deck konnte nicht synchronisiert werden; die gespeicherte Version wird verwendet.";
-"deck.syncAll.none" = "Keine ArkhamDB-Decks zum Synchronisieren.";
-"deck.syncAll.summary" = "%1$lld von %2$lld ArkhamDB-Decks synchronisiert. %3$lld fehlgeschlagen.";
+"deck.syncAll.none" = "Keine Decks mit Deckquelle zum Synchronisieren.";
+"deck.syncAll.summary" = "%1$lld von %2$lld Decks mit Deckquelle synchronisiert. %3$lld fehlgeschlagen.";

@@ -627,7 +627,8 @@ struct AppModelCampaignPromptTests {
         ))
         #expect(request.deckList?.investigatorCode.rawValue == "c01002")
         #expect(await deckService.callOrder.contains("syncDeck"))
-        #expect(model.deckChoiceSyncNote(for: replacementDeck.id) == deckSyncSuccessMessage())
+        let syncNote = model.deckChoiceSyncNote(for: replacementDeck.id, on: .hosted)
+        #expect(syncNote == deckSyncSuccessMessage())
     }
 
     @Test("Saved replacement deck surfaces server-authored rejection messages")

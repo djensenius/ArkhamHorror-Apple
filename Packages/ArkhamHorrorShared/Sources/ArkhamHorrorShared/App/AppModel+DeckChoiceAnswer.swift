@@ -196,17 +196,18 @@ extension AppModel {
         do {
             context = try await currentDeckRequestContext(for: profile)
         } catch is CancellationError {
-            return deckForChoice(deck)
+            return deckForChoice(deck, on: profile)
         } catch GameLifecycleTokenAccessError.stale {
-            return deckForChoice(deck)
+            return deckForChoice(deck, on: profile)
         } catch {
             if deck.hasSyncURL {
-                deckChoiceSyncNotes[deck.id] = DeckChoiceSyncNote(
+                let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
+                deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
                     message: deckSyncStaleFallbackMessage(),
                     expiresAt: nil
                 )
             }
-            return deckForChoice(deck)
+            return deckForChoice(deck, on: profile)
         }
         let syncResult = await syncDeckBeforeChoiceIfNeeded(
             deck,

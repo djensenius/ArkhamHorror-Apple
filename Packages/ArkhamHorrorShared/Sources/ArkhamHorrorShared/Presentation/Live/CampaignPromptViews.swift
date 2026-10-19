@@ -788,6 +788,9 @@ private struct CampaignSavedDeckSelectionSection: View {
                 tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
                 sessionExpiredHandler: { context in
                     await model.handleDeckSessionExpired(profile: profile, context: context)
+                },
+                loadedDecksRecorder: { decks in
+                    model.recordLoadedDecksForChoice(decks, on: profile)
                 }
             )
         )
@@ -828,7 +831,7 @@ private struct CampaignSavedDeckSelectionSection: View {
 
     @ViewBuilder
     private func deckButton(_ deck: Deck) -> some View {
-        let resolvedDeck = model.deckForChoice(deck)
+        let resolvedDeck = model.deckForChoice(deck, on: profile)
         let state = viewModel.validationState(for: resolvedDeck)
         Button {
             submit(resolvedDeck)
@@ -869,7 +872,7 @@ private struct CampaignSavedDeckSelectionSection: View {
 
     @ViewBuilder
     private func deckSyncStatus(for deck: Deck) -> some View {
-        if model.deckChoiceIsSyncing(deck.id) {
+        if model.deckChoiceIsSyncing(deck.id, on: profile) {
             Text(deckLocalized("deck.sync.status.syncing", "Syncing…"))
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -880,7 +883,7 @@ private struct CampaignSavedDeckSelectionSection: View {
                     )
                 )
         }
-        if let syncNote = model.deckChoiceSyncNote(for: deck.id) {
+        if let syncNote = model.deckChoiceSyncNote(for: deck.id, on: profile) {
             Text(syncNote)
                 .font(.caption)
                 .foregroundStyle(.secondary)

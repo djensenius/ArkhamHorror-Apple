@@ -45,7 +45,7 @@ extension DecksViewModelTests {
                 == .failed(DeckServiceError.unexpectedStatus(500).message)
         )
         #expect(model.syncState(for: second) == nil)
-        #expect(model.syncAllSummary == "Synced 1 of 2 ArkhamDB decks. 1 failed.")
+        #expect(model.syncAllSummary == "Synced 1 of 2 decks with a deck source. 1 failed.")
     }
 
     @Test("refresh and sync handles expiry and cancellation separately")
@@ -74,7 +74,38 @@ extension DecksViewModelTests {
                 == .failed(DeckServiceError.sessionExpired.message)
         )
         #expect(model.syncState(for: cancelledDeck) == nil)
-        #expect(model.syncAllSummary == "Synced 0 of 2 ArkhamDB decks. 1 failed.")
+        #expect(model.syncAllSummary == "Synced 0 of 2 decks with a deck source. 1 failed.")
+    }
+
+    @Test("sync-all stops queueing after the first 401")
+    func syncAllStopsQueueingAfterFirstSessionExpired() async throws {
+        let fixture = try loadFixture()
+        let first = deck(fixture.deck, url: fixture.deck.url, name: "A first")
+        let second = deck(fixture.deck, url: fixture.deck.url, name: "B second")
+        let third = deck(fixture.deck, url: fixture.deck.url, name: "C third")
+        let fourth = deck(fixture.deck, url: fixture.deck.url, name: "D fourth")
+        let service = ScriptedDeckService()
+        await service.enqueueList(.success([first, second, third, fourth]))
+        await service.enqueueSync(.failure(DeckServiceError.sessionExpired), for: first.id)
+        await service.enqueueSync(.success(second), for: second.id)
+        await service.enqueueSync(.success(third), for: third.id)
+        await service.enqueueSync(.success(fourth), for: fourth.id)
+        await service.setSyncDelay(.milliseconds(100), for: second.id)
+        await service.setSyncDelay(.milliseconds(100), for: third.id)
+        var expirations = 0
+        let model = makeModel(
+            service: service,
+            sessionExpiredHandler: { _ in expirations += 1 }
+        )
+
+        await model.refreshAndSync()
+
+        let syncedIDs = await service.syncedIDs
+        #expect(syncedIDs.contains(first.id))
+        #expect(syncedIDs.contains(second.id))
+        #expect(syncedIDs.contains(third.id))
+        #expect(!syncedIDs.contains(fourth.id))
+        #expect(expirations == 1)
     }
 
     @Test("refresh and sync ignores re-entry while syncs are active")
@@ -93,7 +124,7 @@ extension DecksViewModelTests {
         #expect(await service.syncedIDs == [fixture.deck.id])
         await service.resumeSync(for: fixture.deck.id, with: .success(fixture.deck))
         await firstRun.value
-        #expect(model.syncAllSummary == "Synced 1 of 1 ArkhamDB decks. 0 failed.")
+        #expect(model.syncAllSummary == "Synced 1 of 1 decks with a deck source. 0 failed.")
     }
 
     @Test("deleting a deck while sync is active prevents a stale sync from resurrecting it")

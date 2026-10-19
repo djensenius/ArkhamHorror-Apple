@@ -4,6 +4,7 @@ import Testing
 
 @MainActor
 @Suite("AppModel — live ChooseDeck answers")
+// swiftlint:disable:next type_body_length
 struct AppModelLiveChooseDeckTests {
     struct LiveChooseDeckFixture: Decodable {
         let deck: Deck
@@ -208,7 +209,7 @@ struct AppModelLiveChooseDeckTests {
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
 
         #expect(await deckService.syncedIDs == [deck.id])
-        #expect(model.deckForChoice(deck) == syncedDeck)
+        #expect(model.deckForChoice(deck, on: .hosted) == syncedDeck)
         let sent = try #require(await connection.sentData.first)
         #expect(try ContractJSON.decode(DeckAnswer.self, from: sent) == DeckAnswer(
             deckId: syncedDeck.id,
@@ -219,7 +220,7 @@ struct AppModelLiveChooseDeckTests {
     @Test("Live ChooseDeck prompt changes during sync stop the send")
     func liveChooseDeckPromptChangeDuringSyncStopsSend() async throws {
         let service = ScriptedGameLifecycleService()
-        let deckService = GameLifecycleDeckService(syncDelay: .milliseconds(50))
+        let deckService = GameLifecycleDeckService(syncGated: true)
         let model = await makeSignedInModel(service: service, deckService: deckService)
         let connection = FakeGameSocketConnection()
         let gameID = GameID(UUID())
@@ -238,11 +239,12 @@ struct AppModelLiveChooseDeckTests {
         )
 
         let chooseTask = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
-        try await Task.sleep(for: .milliseconds(10))
+        await deckService.waitUntilSyncPending(1)
         model.liveGameStates[gameID] = .live(chooseDeckProjection(
             ownerID: ownerID,
             rawQuestion: .object(["tag": .string("ChooseJoinDeck")])
         ))
+        await deckService.resumeOldestSync()
 
         #expect(await chooseTask.value == false)
         #expect(await connection.sentData.isEmpty)
@@ -271,7 +273,9 @@ struct AppModelLiveChooseDeckTests {
 
         #expect(await model.chooseDeckForLivePrompt(deck, in: gameID))
 
-        #expect(model.deckChoiceSyncNote(for: deck.id) == deckSyncStaleFallbackMessage())
+        #expect(
+            model.deckChoiceSyncNote(for: deck.id, on: .hosted) == deckSyncStaleFallbackMessage()
+        )
         #expect(await connection.sentData.count == 1)
     }
 }

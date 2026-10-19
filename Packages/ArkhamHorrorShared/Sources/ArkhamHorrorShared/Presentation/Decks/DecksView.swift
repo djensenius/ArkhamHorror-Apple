@@ -15,8 +15,11 @@ struct DecksView: View {
                 sessionExpiredHandler: { context in
                     await model.handleDeckSessionExpired(profile: profile, context: context)
                 },
+                loadedDecksRecorder: { decks in
+                    model.recordLoadedDecksForChoice(decks, on: profile)
+                },
                 syncedDeckRecorder: { deck in
-                    model.recordSyncedDeckForChoice(deck)
+                    model.recordSyncedDeckForChoice(deck, on: profile)
                 }
             )
         )
@@ -247,7 +250,7 @@ private struct DeckRow: View {
                     .disabled(syncState == .syncing)
                     .accessibilityLabel(deckLocalizedFormat(
                         "deck.sync.accessibility",
-                        "Sync %@ with ArkhamDB",
+                        "Sync %@ with the deck source",
                         deck.name
                     ))
                     .accessibilityIdentifier(

@@ -56,31 +56,3 @@ actor DeckSyncTracker: DeckSyncTracking {
         "\(profile.baseURL.absoluteString.lowercased())|\(deckID.rawValue.uuidString.lowercased())"
     }
 }
-
-actor InMemoryDeckSyncTracker: DeckSyncTracking {
-    private var timestamps: [String: Date] = [:]
-    private var decks: [String: Deck] = [:]
-
-    func lastSyncedAt(for deckID: DeckID, on profile: ServerProfile) -> Date? {
-        timestamps[key(for: deckID, on: profile)]
-    }
-
-    func lastSyncedDeck(for deckID: DeckID, on profile: ServerProfile) -> Deck? {
-        decks[key(for: deckID, on: profile)]
-    }
-
-    func recordSync(_ deck: Deck, on profile: ServerProfile, at date: Date) {
-        let storageKey = key(for: deck.id, on: profile)
-        timestamps[storageKey] = date
-        decks[storageKey] = deck
-    }
-
-    func clear() {
-        timestamps = [:]
-        decks = [:]
-    }
-
-    private func key(for deckID: DeckID, on profile: ServerProfile) -> String {
-        "\(profile.baseURL.absoluteString.lowercased())|\(deckID.rawValue.uuidString.lowercased())"
-    }
-}

@@ -13,6 +13,7 @@ actor ScriptedDeckService: DeckServicing {
     private var deleteQueue: [Result<Void, any Error>] = []
     private var syncQueue: [Result<Deck, any Error>] = []
     private var syncResultsByID: [DeckID: Result<Deck, any Error>] = [:]
+    private var syncDelaysByID: [DeckID: Duration] = [:]
     private var isSyncGated = false
     private var syncContinuations: [(
         id: DeckID,
@@ -39,6 +40,10 @@ actor ScriptedDeckService: DeckServicing {
 
     func enqueueSync(_ result: Result<Deck, any Error>, for id: DeckID) {
         syncResultsByID[id] = result
+    }
+
+    func setSyncDelay(_ delay: Duration, for id: DeckID) {
+        syncDelaysByID[id] = delay
     }
 
     func enqueueValidate(_ result: Result<DeckValidationSuccess, any Error>) {
@@ -120,6 +125,9 @@ actor ScriptedDeckService: DeckServicing {
                 syncContinuations.append((id, continuation))
                 notifySyncWaiters()
             }
+        }
+        if let delay = syncDelaysByID.removeValue(forKey: id) {
+            try await Task.sleep(for: delay)
         }
         if let result = syncResultsByID.removeValue(forKey: id) {
             return try result.get()
