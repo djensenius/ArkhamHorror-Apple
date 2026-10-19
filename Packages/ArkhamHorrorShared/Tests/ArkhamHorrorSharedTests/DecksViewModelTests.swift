@@ -160,6 +160,11 @@ actor RecordingDeckSyncTracker: DeckSyncTracking {
         decks[deck.id] = deck
     }
 
+    func removeSync(for deckID: DeckID, on _: ServerProfile) {
+        records.removeAll { $0.0 == deckID }
+        decks[deckID] = nil
+    }
+
     func clear() {
         records = []
         decks = [:]
@@ -194,14 +199,16 @@ struct DecksViewModelTests {
                 token: "token", sessionGeneration: 0, credentialEpoch: 0, globalEpoch: 0
             )
         },
-        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in },
+        contextValidator: @escaping DecksViewModel.ContextValidator = { _ in true }
     ) -> DecksViewModel {
         DecksViewModel(
             profile: .hosted,
             deckService: service,
             deckSyncTracker: tracker,
             tokenProvider: tokenProvider,
-            sessionExpiredHandler: sessionExpiredHandler
+            sessionExpiredHandler: sessionExpiredHandler,
+            contextValidator: contextValidator
         )
     }
 

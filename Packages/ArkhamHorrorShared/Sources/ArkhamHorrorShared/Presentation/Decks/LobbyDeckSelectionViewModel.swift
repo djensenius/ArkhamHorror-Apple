@@ -21,7 +21,7 @@ final class LobbyDeckSelectionViewModel {
 
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
-    typealias LoadedDecksRecorder = @MainActor ([Deck]) -> Void
+    typealias LoadedDecksRecorder = @MainActor ([Deck]) async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
@@ -74,7 +74,7 @@ final class LobbyDeckSelectionViewModel {
                 }
                 .sortedForPresentation()
             loadState = .loaded(matching)
-            loadedDecksRecorder(matching)
+            await loadedDecksRecorder(matching)
             do {
                 try await validate(matching, context: context)
             } catch is CancellationError {

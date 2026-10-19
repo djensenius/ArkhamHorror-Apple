@@ -142,7 +142,7 @@ extension AppModel {
               let initialPrompt = basicChoicePresentation(for: gameID)
         else { return false }
 
-        let syncedDeck = await syncDeckForLivePromptIfNeeded(deck)
+        guard let syncedDeck = await syncDeckForLivePromptIfNeeded(deck) else { return false }
         guard liveChooseDeckRestrictionValidationMessage(for: syncedDeck, in: gameID) == nil,
               case .canAnswer = canAnswerLiveChooseDeck(for: gameID),
               let prompt = basicChoicePresentation(for: gameID),
@@ -190,7 +190,7 @@ extension AppModel {
         )
     }
 
-    private func syncDeckForLivePromptIfNeeded(_ deck: Deck) async -> Deck {
+    private func syncDeckForLivePromptIfNeeded(_ deck: Deck) async -> Deck? {
         guard case let .signedIn(profile, _, _) = sessionState else { return deck }
         let context: DeckRequestContext
         do {
@@ -209,12 +209,19 @@ extension AppModel {
             }
             return deckForChoice(deck, on: profile)
         }
-        let syncResult = await syncDeckBeforeChoiceIfNeeded(
-            deck,
-            profile: profile,
-            token: context.token
-        )
-        return syncResult.deck
+        do {
+            let syncResult = try await syncDeckBeforeChoiceIfNeeded(
+                deck,
+                profile: profile,
+                context: context
+            )
+            return syncResult.deck
+        } catch DeckServiceError.sessionExpired {
+            await handleDeckSessionExpired(profile: profile, context: context)
+            return nil
+        } catch {
+            return nil
+        }
     }
 
     func loadLiveChooseDeckRestriction(

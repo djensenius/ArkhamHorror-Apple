@@ -790,7 +790,7 @@ private struct CampaignSavedDeckSelectionSection: View {
                     await model.handleDeckSessionExpired(profile: profile, context: context)
                 },
                 loadedDecksRecorder: { decks in
-                    model.recordLoadedDecksForChoice(decks, on: profile)
+                    await model.recordLoadedDecksForChoice(decks, on: profile)
                 }
             )
         )

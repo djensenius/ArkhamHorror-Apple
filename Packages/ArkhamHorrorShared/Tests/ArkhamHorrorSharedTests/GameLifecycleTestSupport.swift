@@ -665,6 +665,12 @@ actor GameLifecycleDeckSyncTracker: DeckSyncTracking {
         lastSyncedDeckByID[deck.id] = deck
     }
 
+    func removeSync(for deckID: DeckID, on _: ServerProfile) {
+        records.removeAll { $0.0 == deckID }
+        lastSyncedAtByID[deckID] = nil
+        lastSyncedDeckByID[deckID] = nil
+    }
+
     func clear() {
         records = []
         lastSyncedAtByID = [:]

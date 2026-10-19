@@ -345,19 +345,41 @@ extension AppModel {
             )
             return
         }
+        let context = DeckRequestContext(
+            token: token,
+            sessionGeneration: attempt.sessionGeneration,
+            credentialEpoch: attempt.credentialEpoch,
+            globalEpoch: attempt.globalEpoch
+        )
         let resolvedSource: DeckChoiceSource?
         switch source {
         case let .saved(deck):
-            let syncResult = await syncDeckBeforeChoiceIfNeeded(
-                deck,
-                profile: attempt.profile,
-                token: token
-            )
-            resolvedSource = .saved(syncResult.deck)
+            do {
+                let syncResult = try await syncDeckBeforeChoiceIfNeeded(
+                    deck,
+                    profile: attempt.profile,
+                    context: context
+                )
+                resolvedSource = .saved(syncResult.deck)
+            } catch DeckServiceError.sessionExpired {
+                recordGameActionFailure(
+                    id,
+                    attempt: attempt,
+                    kind: .choosingDeck,
+                    error: .sessionExpired
+                )
+                if isCurrentGameAction(id, attempt) {
+                    await handleDeckSessionExpired(profile: attempt.profile, context: context)
+                }
+                return
+            } catch {
+                clearGameActionMarkerIfCurrent(id, attempt)
+                return
+            }
         case nil:
             resolvedSource = nil
         }
-        guard !Task.isCancelled else {
+        guard !Task.isCancelled, isCurrentGameAction(id, attempt) else {
             clearGameActionMarkerIfCurrent(id, attempt)
             return
         }

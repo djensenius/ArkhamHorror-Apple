@@ -291,11 +291,22 @@ extension AppModel {
                 ))
             }
             guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
-            let syncResult = await self.syncDeckBeforeChoiceIfNeeded(
-                deck,
-                profile: profile,
-                token: context.token
-            )
+            let syncResult: DeckChoiceSyncResult
+            do {
+                syncResult = try await self.syncDeckBeforeChoiceIfNeeded(
+                    deck,
+                    profile: profile,
+                    context: context
+                )
+            } catch DeckServiceError.sessionExpired {
+                await self.handleDeckSessionExpired(profile: profile, context: context)
+                return .failed(campaignPromptLocalized(
+                    "campaign.error.sessionExpiredDecks",
+                    "Your session expired. Sign in again to manage decks."
+                ))
+            } catch {
+                return campaignDeckSubmissionCancelledFailure()
+            }
             guard !Task.isCancelled else { return campaignDeckSubmissionCancelledFailure() }
             let deckURL = syncResult.deck.url
             return await self.submitCampaignDeck(

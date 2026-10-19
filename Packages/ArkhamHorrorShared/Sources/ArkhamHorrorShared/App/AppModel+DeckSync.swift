@@ -48,12 +48,22 @@ extension AppModel {
         deckChoiceSyncedDecks[DeckChoiceSyncKey(deckID: deck.id, on: profile)] = deck
     }
 
-    func recordLoadedDecksForChoice(_ decks: [Deck], on profile: ServerProfile) {
+    func recordLoadedDecksForChoice(_ decks: [Deck], on profile: ServerProfile) async {
         for deck in decks {
             let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
+            var shouldForgetTracker = false
             if let cachedDeck = deckChoiceSyncedDecks[key], cachedDeck != deck {
                 deckChoiceSyncedDecks[key] = nil
                 deckChoiceSyncNotes[key] = nil
+                shouldForgetTracker = true
+            }
+            if let trackedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile),
+               trackedDeck != deck
+            {
+                shouldForgetTracker = true
+            }
+            if shouldForgetTracker {
+                await deckSyncTracker.removeSync(for: deck.id, on: profile)
             }
         }
     }
@@ -68,11 +78,25 @@ extension AppModel {
         await deckSyncTracker.clear()
     }
 
+    func isCurrentDeckRequestContext(
+        _ context: DeckRequestContext,
+        for profile: ServerProfile
+    ) -> Bool {
+        guard isCurrent(context.sessionGeneration),
+              currentCredentialEpoch(for: profile.id) == context.credentialEpoch,
+              currentGlobalCredentialEpoch() == context.globalEpoch,
+              case let .signedIn(currentProfile, _, _) = sessionState,
+              currentProfile == profile
+        else { return false }
+        return true
+    }
+
     func syncDeckBeforeChoiceIfNeeded(
         _ deck: Deck,
         profile: ServerProfile,
-        token: String
-    ) async -> DeckChoiceSyncResult {
+        context: DeckRequestContext
+    ) async throws -> DeckChoiceSyncResult {
+        try ensureCurrentDeckChoiceContext(context, on: profile)
         let key = DeckChoiceSyncKey(deckID: deck.id, on: profile)
         guard deck.hasSyncURL else {
             deckChoiceSyncNotes[key] = nil
@@ -80,7 +104,11 @@ extension AppModel {
             return DeckChoiceSyncResult(deck: deck, note: nil, didAttemptSync: false)
         }
 
-        if let cachedDeck = await recentlySyncedChoiceDeck(deck, profile: profile) {
+        if let cachedDeck = try await recentlySyncedChoiceDeck(
+            deck,
+            profile: profile,
+            context: context
+        ) {
             return DeckChoiceSyncResult(deck: cachedDeck, note: nil, didAttemptSync: false)
         }
 
@@ -93,12 +121,14 @@ extension AppModel {
                 try await service.syncDeck(
                     deck.id,
                     on: profile,
-                    token: token,
+                    token: context.token,
                     timeout: timeout
                 )
             }
+            try ensureCurrentDeckChoiceContext(context, on: profile)
             let syncedAt = Date()
             await deckSyncTracker.recordSync(syncedDeck, on: profile, at: syncedAt)
+            try ensureCurrentDeckChoiceContext(context, on: profile)
             recordSyncedDeckForChoice(syncedDeck, on: profile)
             let note = deckSyncSuccessMessage()
             deckChoiceSyncNotes[key] = DeckChoiceSyncNote(
@@ -106,19 +136,14 @@ extension AppModel {
                 expiresAt: syncedAt.addingTimeInterval(deckChoiceSyncMinimumInterval)
             )
             return DeckChoiceSyncResult(deck: syncedDeck, note: note, didAttemptSync: true)
+        } catch DeckServiceError.sessionExpired {
+            throw DeckServiceError.sessionExpired
         } catch is CancellationError {
-            return DeckChoiceSyncResult(
-                deck: deckForChoice(deck, on: profile),
-                note: nil,
-                didAttemptSync: true
-            )
+            throw CancellationError()
         } catch GameLifecycleTokenAccessError.stale {
-            return DeckChoiceSyncResult(
-                deck: deckForChoice(deck, on: profile),
-                note: nil,
-                didAttemptSync: true
-            )
+            throw GameLifecycleTokenAccessError.stale
         } catch {
+            try ensureCurrentDeckChoiceContext(context, on: profile)
             let fallbackDeck = deckForChoice(deck, on: profile)
             let note = deckSyncStaleFallbackMessage()
             deckChoiceSyncNotes[key] = DeckChoiceSyncNote(message: note, expiresAt: nil)
@@ -128,16 +153,30 @@ extension AppModel {
 
     private func recentlySyncedChoiceDeck(
         _ deck: Deck,
-        profile: ServerProfile
-    ) async -> Deck? {
-        guard let lastSyncedAt = await deckSyncTracker.lastSyncedAt(for: deck.id, on: profile),
+        profile: ServerProfile,
+        context: DeckRequestContext
+    ) async throws -> Deck? {
+        let lastSyncedAt = await deckSyncTracker.lastSyncedAt(for: deck.id, on: profile)
+        try ensureCurrentDeckChoiceContext(context, on: profile)
+        guard let lastSyncedAt,
               Date().timeIntervalSince(lastSyncedAt) < deckChoiceSyncMinimumInterval
         else { return nil }
         if let cachedDeck = await deckSyncTracker.lastSyncedDeck(for: deck.id, on: profile) {
+            try ensureCurrentDeckChoiceContext(context, on: profile)
             recordSyncedDeckForChoice(cachedDeck, on: profile)
             return cachedDeck
         }
+        try ensureCurrentDeckChoiceContext(context, on: profile)
         return deckForChoice(deck, on: profile)
+    }
+
+    private func ensureCurrentDeckChoiceContext(
+        _ context: DeckRequestContext,
+        on profile: ServerProfile
+    ) throws {
+        guard !Task.isCancelled,
+              isCurrentDeckRequestContext(context, for: profile)
+        else { throw GameLifecycleTokenAccessError.stale }
     }
 
     private func withDeckChoiceSyncTimeout<T: Sendable>(

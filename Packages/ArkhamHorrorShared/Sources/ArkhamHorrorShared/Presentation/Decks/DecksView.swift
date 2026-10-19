@@ -16,10 +16,13 @@ struct DecksView: View {
                     await model.handleDeckSessionExpired(profile: profile, context: context)
                 },
                 loadedDecksRecorder: { decks in
-                    model.recordLoadedDecksForChoice(decks, on: profile)
+                    await model.recordLoadedDecksForChoice(decks, on: profile)
                 },
                 syncedDeckRecorder: { deck in
                     model.recordSyncedDeckForChoice(deck, on: profile)
+                },
+                contextValidator: { context in
+                    model.isCurrentDeckRequestContext(context, for: profile)
                 }
             )
         )
@@ -134,7 +137,7 @@ struct DecksView: View {
         if case .loading = viewModel.loadState {
             return true
         }
-        return viewModel.isSyncingAll
+        return viewModel.isSyncingAll || !viewModel.syncingDeckIDs.isEmpty
     }
 
     @ViewBuilder
@@ -166,6 +169,7 @@ struct DecksView: View {
                     DeckRow(
                         deck: deck,
                         isDeleting: viewModel.deletingDeckIDs.contains(deck.id),
+                        isSyncingAll: viewModel.isSyncingAll,
                         syncState: viewModel.syncState(for: deck),
                         onSync: { Task { await viewModel.sync(deck) } },
                         onDelete: { viewModel.requestDelete(deck) }
@@ -179,6 +183,7 @@ struct DecksView: View {
 private struct DeckRow: View {
     let deck: Deck
     let isDeleting: Bool
+    let isSyncingAll: Bool
     let syncState: DecksViewModel.SyncState?
     let onSync: () -> Void
     let onDelete: () -> Void
@@ -247,7 +252,7 @@ private struct DeckRow: View {
                         .labelStyle(.iconOnly)
                     }
                     .buttonStyle(.borderless)
-                    .disabled(syncState == .syncing)
+                    .disabled(isSyncingAll || syncState == .syncing)
                     .accessibilityLabel(deckLocalizedFormat(
                         "deck.sync.accessibility",
                         "Sync %@ with the deck source",

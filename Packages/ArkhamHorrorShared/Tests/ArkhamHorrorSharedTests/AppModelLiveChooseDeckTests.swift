@@ -250,6 +250,79 @@ struct AppModelLiveChooseDeckTests {
         #expect(await connection.sentData.isEmpty)
     }
 
+    @Test("Live ChooseDeck sign-out during sync rejects stale writes")
+    func liveChooseDeckSignOutDuringSyncRejectsStaleWrites() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService(syncGated: true)
+        let tracker = GameLifecycleDeckSyncTracker()
+        let model = await makeSignedInModel(
+            service: service,
+            deckService: deckService,
+            deckSyncTracker: tracker
+        )
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        let syncedDeck = modifiedDeck(deck, name: "Stale post-sign-out sync")
+        await deckService.enqueueSync(.success(syncedDeck))
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: connection
+        )
+
+        let chooseTask = Task { await model.chooseDeckForLivePrompt(deck, in: gameID) }
+        await deckService.waitUntilSyncPending(1)
+        model.signOut()
+        await model.operationTask?.value
+        await deckService.resumeOldestSync()
+
+        #expect(await chooseTask.value == false)
+        #expect(model.deckForChoice(deck, on: .hosted) == deck)
+        #expect(model.deckChoiceSyncNote(for: deck.id, on: .hosted) == nil)
+        #expect(await tracker.records.isEmpty)
+        #expect(await connection.sentData.isEmpty)
+    }
+
+    @Test("Live ChooseDeck session expiry during sync signs out and aborts")
+    func liveChooseDeckSessionExpiryDuringSyncAborts() async throws {
+        let service = ScriptedGameLifecycleService()
+        let deckService = GameLifecycleDeckService()
+        let model = await makeSignedInModel(service: service, deckService: deckService)
+        let connection = FakeGameSocketConnection()
+        let gameID = GameID(UUID())
+        let ownerID = try PlayerID(#require(
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")
+        ))
+        let deck = try sampleDeck()
+        await deckService.enqueueSync(.failure(DeckServiceError.sessionExpired))
+        await connection.enqueueSendResult(.success(()))
+        installLivePrompt(
+            on: model,
+            gameID: gameID,
+            ownerID: ownerID,
+            participant: .participant(ownerID),
+            connection: connection
+        )
+
+        #expect(await model.chooseDeckForLivePrompt(deck, in: gameID) == false)
+
+        #expect(await connection.sentData.isEmpty)
+        guard case let .signedOut(profile, compatibility) = model.sessionState,
+              profile == .hosted,
+              case .modern = compatibility
+        else {
+            Issue.record("Expected hosted modern signed-out session after sync 401")
+            return
+        }
+    }
+
     @Test("Live ChooseDeck sync failure sends saved deck and leaves fallback note")
     func liveChooseDeckSyncFailureLeavesNote() async throws {
         let service = ScriptedGameLifecycleService()

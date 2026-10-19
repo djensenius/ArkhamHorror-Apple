@@ -41,7 +41,8 @@ final class DecksViewModel {
 
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
-    typealias LoadedDecksRecorder = @MainActor ([Deck]) -> Void
+    typealias LoadedDecksRecorder = @MainActor ([Deck]) async -> Void
+    typealias ContextValidator = @MainActor (DeckRequestContext) -> Bool
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
@@ -50,6 +51,7 @@ final class DecksViewModel {
     private let sessionExpiredHandler: SessionExpiredHandler
     private let loadedDecksRecorder: LoadedDecksRecorder
     private let syncedDeckRecorder: @MainActor (Deck) -> Void
+    private let contextValidator: ContextValidator
 
     var loadState: LoadState = .idle
     var importState: ImportState = .idle
@@ -70,7 +72,8 @@ final class DecksViewModel {
         tokenProvider: @escaping TokenProvider,
         sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in },
         loadedDecksRecorder: @escaping LoadedDecksRecorder = { _ in },
-        syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in }
+        syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in },
+        contextValidator: @escaping ContextValidator = { _ in true }
     ) {
         self.profile = profile
         self.deckService = deckService
@@ -79,6 +82,7 @@ final class DecksViewModel {
         self.sessionExpiredHandler = sessionExpiredHandler
         self.loadedDecksRecorder = loadedDecksRecorder
         self.syncedDeckRecorder = syncedDeckRecorder
+        self.contextValidator = contextValidator
     }
 
     var decks: [Deck] {
@@ -103,9 +107,10 @@ final class DecksViewModel {
             let context = try await tokenProvider()
             requestContext = context
             let decks = try await deckService.listDecks(on: profile, token: context.token)
+            guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
             let loadedDecks = decks.sortedForPresentation()
             loadState = .loaded(loadedDecks)
-            loadedDecksRecorder(loadedDecks)
+            await loadedDecksRecorder(loadedDecks)
         } catch is CancellationError {
             loadState = .idle
         } catch GameLifecycleTokenAccessError.stale {
@@ -157,7 +162,7 @@ final class DecksViewModel {
     }
 
     func refreshAndSync() async {
-        guard !isSyncingAll else { return }
+        guard !isSyncingAll, syncingDeckIDs.isEmpty else { return }
         isSyncingAll = true
         defer { isSyncingAll = false }
         loadState = .loading
@@ -170,9 +175,12 @@ final class DecksViewModel {
             requestContext = context
             let loaded = try await deckService.listDecks(on: profile, token: context.token)
                 .sortedForPresentation()
+            guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
             loadState = .loaded(loaded)
-            loadedDecksRecorder(loaded)
-            await syncDecksWithURL(loaded, context: context)
+            await loadedDecksRecorder(loaded)
+            guard await syncDecksWithURL(loaded, context: context) else {
+                throw GameLifecycleTokenAccessError.stale
+            }
         } catch is CancellationError {
             loadState = .idle
         } catch GameLifecycleTokenAccessError.stale {
@@ -188,7 +196,7 @@ final class DecksViewModel {
     }
 
     func sync(_ deck: Deck) async {
-        guard deck.hasSyncURL else { return }
+        guard deck.hasSyncURL, !isSyncingAll, !syncingDeckIDs.contains(deck.id) else { return }
         syncingDeckIDs.insert(deck.id)
         deckSyncStates[deck.id] = .syncing
         syncAllSummary = nil
@@ -202,6 +210,14 @@ final class DecksViewModel {
                 token: context.token,
                 timeout: 10
             )
+            guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
+            await deckSyncTracker?.recordSync(syncedDeck, on: profile, at: Date())
+            guard contextValidator(context) else {
+                await deckSyncTracker?.removeSync(for: deck.id, on: profile)
+                syncingDeckIDs.remove(deck.id)
+                deckSyncStates[deck.id] = nil
+                return
+            }
             guard !deletedDeckIDs.contains(deck.id) else {
                 syncingDeckIDs.remove(deck.id)
                 deckSyncStates[deck.id] = nil
@@ -211,7 +227,6 @@ final class DecksViewModel {
             syncingDeckIDs.remove(deck.id)
             deckSyncStates[deck.id] = .succeeded(deckSyncSuccessMessage())
             syncedDeckRecorder(syncedDeck)
-            await deckSyncTracker?.recordSync(syncedDeck, on: profile, at: Date())
         } catch is CancellationError {
             syncingDeckIDs.remove(deck.id)
             deckSyncStates[deck.id] = nil
@@ -276,27 +291,39 @@ final class DecksViewModel {
     }
 
     // swiftlint:disable:next function_body_length
-    private func syncDecksWithURL(_ loadedDecks: [Deck], context: DeckRequestContext) async {
-        let syncableDecks = loadedDecks.filter(\.hasSyncURL)
+    private func syncDecksWithURL(_ loadedDecks: [Deck], context: DeckRequestContext) async -> Bool {
+        var seenDeckIDs: Set<DeckID> = []
+        let syncableDecks = loadedDecks.filter { deck in
+            deck.hasSyncURL && seenDeckIDs.insert(deck.id).inserted
+        }
         guard !syncableDecks.isEmpty else {
             syncAllSummary = deckLocalized(
                 "deck.syncAll.none",
                 "No decks with a deck source to sync."
             )
-            return
+            return true
         }
         var nextIndex = 0
+        var started = 0
         var succeeded = 0
         var failed = 0
         var didExpireSession = false
+        var didBecomeStale = false
         let maxConcurrentSyncs = min(3, syncableDecks.count)
         let service = deckService
         let profile = profile
         await withTaskGroup(of: SyncOutcome.self) { group in
             @MainActor func enqueueNext() {
-                guard !didExpireSession, nextIndex < syncableDecks.count else { return }
+                guard !didExpireSession, !didBecomeStale, !Task.isCancelled else { return }
+                guard contextValidator(context) else {
+                    didBecomeStale = true
+                    group.cancelAll()
+                    return
+                }
+                guard nextIndex < syncableDecks.count else { return }
                 let deck = syncableDecks[nextIndex]
                 nextIndex += 1
+                started += 1
                 syncingDeckIDs.insert(deck.id)
                 deckSyncStates[deck.id] = .syncing
                 group.addTask {
@@ -324,12 +351,38 @@ final class DecksViewModel {
                 enqueueNext()
             }
             while let outcome = await group.next() {
+                guard !Task.isCancelled else {
+                    didBecomeStale = true
+                    group.cancelAll()
+                    break
+                }
+                if !contextValidator(context) {
+                    didBecomeStale = true
+                    group.cancelAll()
+                }
                 switch outcome {
                 case let .succeeded(requestedID, deck):
+                    guard !didExpireSession, !didBecomeStale else {
+                        syncingDeckIDs.remove(requestedID)
+                        deckSyncStates[requestedID] = nil
+                        continue
+                    }
                     guard !deletedDeckIDs.contains(requestedID) else {
                         syncingDeckIDs.remove(requestedID)
                         deckSyncStates[requestedID] = nil
                         enqueueNext()
+                        continue
+                    }
+                    await deckSyncTracker?.recordSync(deck, on: profile, at: Date())
+                    guard !didExpireSession,
+                          !Task.isCancelled,
+                          contextValidator(context)
+                    else {
+                        didBecomeStale = true
+                        await deckSyncTracker?.removeSync(for: requestedID, on: profile)
+                        syncingDeckIDs.remove(requestedID)
+                        deckSyncStates[requestedID] = nil
+                        group.cancelAll()
                         continue
                     }
                     succeeded += 1
@@ -337,12 +390,21 @@ final class DecksViewModel {
                     syncingDeckIDs.remove(requestedID)
                     deckSyncStates[requestedID] = .succeeded(deckSyncSuccessMessage())
                     syncedDeckRecorder(deck)
-                    await deckSyncTracker?.recordSync(deck, on: profile, at: Date())
                 case let .failed(deckID, message):
+                    guard !didExpireSession, !didBecomeStale else {
+                        syncingDeckIDs.remove(deckID)
+                        deckSyncStates[deckID] = nil
+                        continue
+                    }
                     failed += 1
                     syncingDeckIDs.remove(deckID)
                     deckSyncStates[deckID] = .failed(message)
                 case let .sessionExpired(deckID):
+                    guard !didBecomeStale else {
+                        syncingDeckIDs.remove(deckID)
+                        deckSyncStates[deckID] = nil
+                        continue
+                    }
                     failed += 1
                     syncingDeckIDs.remove(deckID)
                     deckSyncStates[deckID] = .failed(DeckServiceError.sessionExpired.message)
@@ -358,13 +420,15 @@ final class DecksViewModel {
                 enqueueNext()
             }
         }
+        guard !didBecomeStale else { return false }
         syncAllSummary = deckLocalizedFormat(
             "deck.syncAll.summary",
             "Synced %1$lld of %2$lld decks with a deck source. %3$lld failed.",
             succeeded,
-            syncableDecks.count,
+            started,
             failed
         )
+        return true
     }
 
     private func upsert(_ deck: Deck) {

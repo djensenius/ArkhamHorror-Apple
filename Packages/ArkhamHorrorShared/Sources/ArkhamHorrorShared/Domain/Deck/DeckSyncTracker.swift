@@ -4,6 +4,7 @@ protocol DeckSyncTracking: Sendable {
     func lastSyncedAt(for deckID: DeckID, on profile: ServerProfile) async -> Date?
     func lastSyncedDeck(for deckID: DeckID, on profile: ServerProfile) async -> Deck?
     func recordSync(_ deck: Deck, on profile: ServerProfile, at date: Date) async
+    func removeSync(for deckID: DeckID, on profile: ServerProfile) async
     func clear() async
 }
 
@@ -43,6 +44,13 @@ actor DeckSyncTracker: DeckSyncTracking {
         let storageKey = key(for: deck.id, on: profile)
         timestamps[storageKey] = date.timeIntervalSince1970
         decks[storageKey] = deck
+        defaultsBox.defaults.set(timestamps, forKey: self.storageKey)
+    }
+
+    func removeSync(for deckID: DeckID, on profile: ServerProfile) {
+        let storageKey = key(for: deckID, on: profile)
+        timestamps[storageKey] = nil
+        decks[storageKey] = nil
         defaultsBox.defaults.set(timestamps, forKey: self.storageKey)
     }
 
