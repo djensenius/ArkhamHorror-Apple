@@ -1,3 +1,5 @@
+import Foundation
+
 /// A narrow, injectable capability-probing interface used by the session coordinator.
 ///
 /// ``CapabilityProbe`` is the production conformance. Tests inject a deterministic fake
@@ -120,6 +122,8 @@ protocol DeckServicing: Sendable {
         async throws -> Deck
     func importDeck(from url: String, on profile: ServerProfile, token: String) async throws -> Deck
     func deleteDeck(_ id: DeckID, on profile: ServerProfile, token: String) async throws
+    func syncDeck(_ id: DeckID, on profile: ServerProfile, token: String, timeout: TimeInterval)
+        async throws -> Deck
     func validateDeckList(_ deckList: DeckListInput, on profile: ServerProfile, token: String)
         async throws -> DeckValidationSuccess
 }

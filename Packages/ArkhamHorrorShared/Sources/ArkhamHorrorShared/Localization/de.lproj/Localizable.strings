@@ -394,3 +394,12 @@
 "create.name.hint" = "Optional. Leer lassen, um %@ zu verwenden.";
 "create.name.footer" = "Leer lassen, um %@ zu verwenden.";
 "create.name.requiresCustom" = "Gib einen eigenen Namen ein, weil lokalisierte Katalognamen nicht verfügbar sind.";
+
+"deck.refreshAndSync" = "Aktualisieren & synchronisieren";
+"deck.sync.action" = "Synchronisieren";
+"deck.sync.accessibility" = "%@ mit der Deckquelle synchronisieren";
+"deck.sync.status.syncing" = "Synchronisierung läuft …";
+"deck.sync.success" = "Gerade mit der Deckquelle synchronisiert.";
+"deck.sync.staleFallback" = "Dieses Deck konnte nicht synchronisiert werden; die gespeicherte Version wird verwendet.";
+"deck.syncAll.none" = "Keine Decks mit Deckquelle zum Synchronisieren.";
+"deck.syncAll.summary" = "%1$lld von %2$lld Decks mit Deckquelle synchronisiert. %3$lld fehlgeschlagen.";

@@ -62,11 +62,14 @@ extension AppModel {
             return
         }
         guard isCurrent(generation) else { return }
+        // The signed-out session must never leave a previous profile's game-lifecycle/
+        // lobby/deck-choice sync content active, and the durable recent-sync tracker must
+        // be cleared before the final generation check so no actor hop follows it.
+        resetGameLifecycleState()
+        await clearDeckChoiceSyncTracker()
+        guard isCurrent(generation) else { return }
         operation = .idle
         operationFailure = nil
-        // The signed-out session must never leave a previous profile's game-lifecycle/
-        // lobby content active.
-        resetGameLifecycleState()
         sessionState = .signedOut(profile: profile, compatibility: compatibility)
     }
 }

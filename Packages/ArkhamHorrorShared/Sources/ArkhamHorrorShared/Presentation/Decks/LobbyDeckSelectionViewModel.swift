@@ -21,11 +21,13 @@ final class LobbyDeckSelectionViewModel {
 
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
+    typealias LoadedDecksRecorder = @MainActor ([Deck]) async -> Void
 
     private let profile: ServerProfile
     private let deckService: any DeckServicing
     private let tokenProvider: TokenProvider
     private let sessionExpiredHandler: SessionExpiredHandler
+    private let loadedDecksRecorder: LoadedDecksRecorder
 
     var loadState: LoadState = .idle
     var validations: [DeckID: ValidationState] = [:]
@@ -34,12 +36,14 @@ final class LobbyDeckSelectionViewModel {
         profile: ServerProfile,
         deckService: any DeckServicing,
         tokenProvider: @escaping TokenProvider,
-        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in },
+        loadedDecksRecorder: @escaping LoadedDecksRecorder = { _ in }
     ) {
         self.profile = profile
         self.deckService = deckService
         self.tokenProvider = tokenProvider
         self.sessionExpiredHandler = sessionExpiredHandler
+        self.loadedDecksRecorder = loadedDecksRecorder
     }
 
     var decks: [Deck] {
@@ -70,6 +74,7 @@ final class LobbyDeckSelectionViewModel {
                 }
                 .sortedForPresentation()
             loadState = .loaded(matching)
+            await loadedDecksRecorder(matching)
             do {
                 try await validate(matching, context: context)
             } catch is CancellationError {
@@ -144,13 +149,5 @@ extension Deck {
             return String(code.dropFirst())
         }
         return code
-    }
-}
-
-private extension [Deck] {
-    func sortedForPresentation() -> [Deck] {
-        sorted { lhs, rhs in
-            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
     }
 }

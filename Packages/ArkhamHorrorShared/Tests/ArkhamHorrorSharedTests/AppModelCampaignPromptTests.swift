@@ -7,6 +7,7 @@ actor CampaignPromptDeckService: DeckServicing {
     private(set) var lastFetchRequest: FetchDeckRequest?
     private(set) var callOrder: [String] = []
     private var fetchQueue: [Result<DeckList, any Error>] = []
+    private var syncQueue: [Result<Deck, any Error>] = []
     private var isFetchGated = false
     private var fetchContinuations: [CheckedContinuation<DeckList, any Error>] = []
     private var fetchPendingWaiters: [
@@ -15,6 +16,10 @@ actor CampaignPromptDeckService: DeckServicing {
 
     func enqueueFetch(_ result: Result<DeckList, any Error>) {
         fetchQueue.append(result)
+    }
+
+    func enqueueSync(_ result: Result<Deck, any Error>) {
+        syncQueue.append(result)
     }
 
     func setFetchGated(_ gated: Bool) {
@@ -84,10 +89,21 @@ actor CampaignPromptDeckService: DeckServicing {
         throw TestFailure()
     }
 
+    func syncDeck(
+        _ id: DeckID,
+        on _: ServerProfile,
+        token _: String,
+        timeout _: TimeInterval
+    ) async throws -> Deck {
+        callOrder.append("syncDeck")
+        _ = id
+        return try consume(&syncQueue)
+    }
+
     func validateDeckList(
         _: DeckListInput, on _: ServerProfile, token _: String
     ) async throws -> DeckValidationSuccess {
-        throw TestFailure()
+        DeckValidationSuccess()
     }
 }
 
@@ -151,7 +167,8 @@ struct AppModelCampaignPromptTests {
             ),
             cleanupPendingStore: FakeTokenCleanupPendingStore(),
             gameLifecycleService: gameService,
-            deckService: deckService
+            deckService: deckService,
+            deckSyncTracker: GameLifecycleDeckSyncTracker()
         )
         await model.flowTask?.value
         model.sessionState = .signedIn(
@@ -541,10 +558,12 @@ struct AppModelCampaignPromptTests {
         return try ContractJSON.decode(GetGameEnvelope.self, from: Data(contentsOf: url))
     }
 
-    @Test("Saved replacement deck PUTs old seat id with the replacement deck list")
+    @Test("Saved replacement deck syncs before PUTing old seat id and replacement deck list")
+    // swiftlint:disable:next function_body_length
     func savedReplacementDeckSubmitsOldSeatAndReplacementDeckList() async throws {
         let gameService = ScriptedGameLifecycleService()
-        let model = await makeSignedInModel(gameService: gameService)
+        let deckService = CampaignPromptDeckService()
+        let model = await makeSignedInModel(gameService: gameService, deckService: deckService)
         let gameID = GameID(UUID())
         let ownerID = try PlayerID(#require(
             UUID(uuidString: "00000000-0000-0000-0000-000000000001")
@@ -574,6 +593,21 @@ struct AppModelCampaignPromptTests {
             investigatorName: "Daisy Walker",
             list: replacementList
         )
+        let syncedList = try deckListFixture(
+            investigatorCode: "c01002",
+            investigatorName: "Daisy Walker",
+            deckURL: "https://server.example/decks/daisy-synced",
+            deckName: "Daisy replacement synced"
+        )
+        let syncedDeck = Deck(
+            id: replacementDeck.id,
+            userId: 1,
+            url: "https://server.example/decks/daisy-synced",
+            name: "Daisy replacement synced",
+            investigatorName: "Daisy Walker",
+            list: syncedList
+        )
+        await deckService.enqueueSync(.success(syncedDeck))
         await gameService.enqueueChooseDeckResult(.success(()))
 
         let result = await model.upgradeCampaignDeck(
@@ -586,12 +620,15 @@ struct AppModelCampaignPromptTests {
         #expect(result == .submitted)
         let request = try #require(await gameService.lastChooseDeckRequest)
         #expect(request.investigatorId.rawValue == "c01001")
-        #expect(request.deckUrl == "https://server.example/decks/daisy")
+        #expect(request.deckUrl == "https://server.example/decks/daisy-synced")
         #expect(request.deckList == DeckListInput(
-            replacementList,
-            urlOverride: "https://server.example/decks/daisy"
+            syncedList,
+            urlOverride: "https://server.example/decks/daisy-synced"
         ))
         #expect(request.deckList?.investigatorCode.rawValue == "c01002")
+        #expect(await deckService.callOrder.contains("syncDeck"))
+        let syncNote = model.deckChoiceSyncNote(for: replacementDeck.id, on: .hosted)
+        #expect(syncNote == deckSyncSuccessMessage())
     }
 
     @Test("Saved replacement deck surfaces server-authored rejection messages")

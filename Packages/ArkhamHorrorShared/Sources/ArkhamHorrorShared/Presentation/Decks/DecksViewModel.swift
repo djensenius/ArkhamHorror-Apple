@@ -25,31 +25,56 @@ final class DecksViewModel {
         case failed(String)
     }
 
+    enum SyncState: Equatable {
+        case syncing
+        case succeeded(String)
+        case failed(String)
+    }
+
     typealias TokenProvider = @MainActor () async throws -> DeckRequestContext
     typealias SessionExpiredHandler = @MainActor (DeckRequestContext) async -> Void
+    typealias LoadedDecksRecorder = @MainActor ([Deck]) async -> Void
+    typealias ContextValidator = @MainActor (DeckRequestContext) -> Bool
 
-    private let profile: ServerProfile
-    private let deckService: any DeckServicing
-    private let tokenProvider: TokenProvider
-    private let sessionExpiredHandler: SessionExpiredHandler
+    let profile: ServerProfile
+    let deckService: any DeckServicing
+    let deckSyncTracker: (any DeckSyncTracking)?
+    let tokenProvider: TokenProvider
+    let sessionExpiredHandler: SessionExpiredHandler
+    let loadedDecksRecorder: LoadedDecksRecorder
+    let syncedDeckRecorder: @MainActor (Deck) -> Void
+    let contextValidator: ContextValidator
 
     var loadState: LoadState = .idle
     var importState: ImportState = .idle
     var importURL = ""
     var pendingDeletion: Deck?
     var deletingDeckIDs: Set<DeckID> = []
+    var syncingDeckIDs: Set<DeckID> = []
+    var deckSyncStates: [DeckID: SyncState] = [:]
+    var syncAllSummary: String?
     var deletionFailure: String?
+    var isSyncingAll = false
+    var deletedDeckIDs: Set<DeckID> = []
 
     init(
         profile: ServerProfile,
         deckService: any DeckServicing,
+        deckSyncTracker: (any DeckSyncTracking)? = nil,
         tokenProvider: @escaping TokenProvider,
-        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping SessionExpiredHandler = { _ in },
+        loadedDecksRecorder: @escaping LoadedDecksRecorder = { _ in },
+        syncedDeckRecorder: @escaping @MainActor (Deck) -> Void = { _ in },
+        contextValidator: @escaping ContextValidator = { _ in true }
     ) {
         self.profile = profile
         self.deckService = deckService
+        self.deckSyncTracker = deckSyncTracker
         self.tokenProvider = tokenProvider
         self.sessionExpiredHandler = sessionExpiredHandler
+        self.loadedDecksRecorder = loadedDecksRecorder
+        self.syncedDeckRecorder = syncedDeckRecorder
+        self.contextValidator = contextValidator
     }
 
     var decks: [Deck] {
@@ -74,7 +99,10 @@ final class DecksViewModel {
             let context = try await tokenProvider()
             requestContext = context
             let decks = try await deckService.listDecks(on: profile, token: context.token)
-            loadState = .loaded(decks.sortedForPresentation())
+            guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
+            let loadedDecks = decks.sortedForPresentation()
+            loadState = .loaded(loadedDecks)
+            await loadedDecksRecorder(loadedDecks)
         } catch is CancellationError {
             loadState = .idle
         } catch GameLifecycleTokenAccessError.stale {
@@ -166,44 +194,23 @@ final class DecksViewModel {
         await delete(deck)
     }
 
-    private func upsert(_ deck: Deck) {
+    func upsert(_ deck: Deck) {
+        guard !deletedDeckIDs.contains(deck.id) else { return }
         var current = decks.filter { $0.id != deck.id }
         current.append(deck)
         loadState = .loaded(current.sortedForPresentation())
     }
 
     private func remove(_ deck: Deck) {
+        deletedDeckIDs.insert(deck.id)
         let current = decks.filter { $0.id != deck.id }
         loadState = .loaded(current.sortedForPresentation())
         deletingDeckIDs.remove(deck.id)
+        syncingDeckIDs.remove(deck.id)
+        deckSyncStates[deck.id] = nil
     }
 
     private func breakDeletion(_ deck: Deck) {
         deletingDeckIDs.remove(deck.id)
-    }
-
-    static func message(for error: any Error) -> String {
-        if let deckError = error as? DeckServiceError {
-            return deckError.message
-        }
-        if let gameError = error as? GameLifecycleTokenAccessError {
-            switch gameError {
-            case .stale:
-                return ""
-            case .noToken:
-                return "Your session is no longer available. Sign in again to manage decks."
-            case .tokenStore:
-                return "The saved session token could not be read. Try signing in again."
-            }
-        }
-        return "The deck operation failed. Try again."
-    }
-}
-
-private extension [Deck] {
-    func sortedForPresentation() -> [Deck] {
-        sorted { lhs, rhs in
-            lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-        }
     }
 }

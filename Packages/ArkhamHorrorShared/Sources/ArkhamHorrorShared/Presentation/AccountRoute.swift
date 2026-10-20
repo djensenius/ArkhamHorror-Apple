@@ -95,7 +95,16 @@ enum AccountAccessibilityID {
     static let deckImportURLField = "account.decks.import.url"
     static let deckImportButton = "account.decks.import.submit"
     static let deckValidationErrorText = "account.decks.validationError"
+    static let deckSyncAllSummaryText = "account.decks.syncAll.summary"
     static let deckDeleteConfirmButton = "account.decks.delete.confirm"
+
+    static func deckSyncButton(for deckID: UUID) -> String {
+        "account.decks.sync.\(deckID.uuidString)"
+    }
+
+    static func deckSyncStatusText(for deckID: UUID) -> String {
+        "account.decks.sync.status.\(deckID.uuidString)"
+    }
 
     static func deckDeleteButton(for deckID: UUID) -> String {
         "account.decks.delete.\(deckID.uuidString)"
@@ -107,6 +116,22 @@ enum AccountAccessibilityID {
 
     static func lobbyDeckValidationText(for gameID: UUID, deckID: UUID) -> String {
         "account.games.chooseDeck.validation.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func lobbyDeckSyncNoteText(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.chooseDeck.syncNote.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func lobbyDeckSyncingText(for gameID: UUID, deckID: UUID) -> String {
+        "account.games.chooseDeck.syncing.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func liveChooseDeckSyncNoteText(for gameID: UUID, deckID: UUID) -> String {
+        "account.live.chooseDeck.syncNote.\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func liveChooseDeckSyncingText(for gameID: UUID, deckID: UUID) -> String {
+        "account.live.chooseDeck.syncing.\(gameID.uuidString).\(deckID.uuidString)"
     }
 
     // MARK: - Games list/lobby
@@ -246,6 +271,22 @@ enum AccountAccessibilityID {
         deckID: UUID
     ) -> String {
         "account.games.live.campaign.upgradeDeck.savedDeck.validation."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func campaignUpgradeSavedDeckSyncNoteText(
+        for gameID: UUID,
+        deckID: UUID
+    ) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.syncNote."
+            + "\(gameID.uuidString).\(deckID.uuidString)"
+    }
+
+    static func campaignUpgradeSavedDeckSyncingText(
+        for gameID: UUID,
+        deckID: UUID
+    ) -> String {
+        "account.games.live.campaign.upgradeDeck.savedDeck.syncing."
             + "\(gameID.uuidString).\(deckID.uuidString)"
     }
 
