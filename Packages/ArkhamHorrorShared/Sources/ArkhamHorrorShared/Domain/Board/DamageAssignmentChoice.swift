@@ -85,16 +85,44 @@ extension BasicChoiceParser {
               Set(object.keys) == ["tag", "component", "messages"],
               object["tag"] == .string("ComponentLabel"),
               case let .object(component)? = object["component"],
-              Set(component.keys) == ["tag", "investigatorId", "tokenType"],
-              component["tag"] == .string("InvestigatorComponent"),
-              case let .string(rawInvestigatorID)? = component["investigatorId"],
-              let investigatorCode = strictCardCode(rawInvestigatorID),
-              component["tokenType"] == .string(spec.kind.tokenType),
               case let .array(messages)? = object["messages"],
               messages.count == 2
         else { return nil }
 
+        switch component["tag"] {
+        case .string("InvestigatorComponent"):
+            return parseInvestigatorAssignmentChoice(
+                component: component,
+                messages: messages,
+                spec: spec,
+                outerEnemyID: outerEnemyID
+            )
+        case .string("AssetComponent"):
+            return parseAssetAssignmentChoice(
+                component: component,
+                messages: messages,
+                spec: spec,
+                outerEnemyID: outerEnemyID
+            )
+        default:
+            return nil
+        }
+    }
+
+    private static func parseInvestigatorAssignmentChoice(
+        component: [String: JSONValue],
+        messages: [JSONValue],
+        spec: EnemyAttackAssignmentChoiceSpec,
+        outerEnemyID: EnemyID
+    ) -> ParsedEnemyAttackAssignmentChoice? {
+        guard Set(component.keys) == ["tag", "investigatorId", "tokenType"],
+              case let .string(rawInvestigatorID)? = component["investigatorId"],
+              let investigatorCode = strictCardCode(rawInvestigatorID),
+              component["tokenType"] == .string(spec.kind.tokenType)
+        else { return nil }
+
         let investigatorID = InvestigatorID(investigatorCode)
+        let target = EnemyAttackDamageAssignmentTarget.investigator(investigatorID)
         guard damageMessage(
             messages[0],
             investigatorID: investigatorID,
@@ -103,18 +131,73 @@ extension BasicChoiceParser {
         ),
             assignmentContinuation(
                 messages[1],
-                investigatorID: investigatorID,
+                expectedInvestigatorID: investigatorID,
+                target: target,
+                enemyID: outerEnemyID,
+                spec: spec
+            ) == investigatorID
+        else { return nil }
+
+        return parsedChoice(
+            investigatorID: investigatorID,
+            target: target,
+            messages: messages,
+            spec: spec,
+            outerEnemyID: outerEnemyID
+        )
+    }
+
+    private static func parseAssetAssignmentChoice(
+        component: [String: JSONValue],
+        messages: [JSONValue],
+        spec: EnemyAttackAssignmentChoiceSpec,
+        outerEnemyID: EnemyID
+    ) -> ParsedEnemyAttackAssignmentChoice? {
+        guard Set(component.keys) == ["tag", "assetId", "tokenType"],
+              case let .string(rawAssetID)? = component["assetId"],
+              let assetID = canonicalAssetID(rawAssetID),
+              component["tokenType"] == .string(spec.kind.tokenType)
+        else { return nil }
+
+        let target = EnemyAttackDamageAssignmentTarget.asset(assetID)
+        guard assetDamageMessage(
+            messages[0],
+            assetID: assetID,
+            enemyID: outerEnemyID,
+            amounts: spec.direct
+        ),
+            let investigatorID = assignmentContinuation(
+                messages[1],
+                expectedInvestigatorID: nil,
+                target: target,
                 enemyID: outerEnemyID,
                 spec: spec
             )
         else { return nil }
 
-        return ParsedEnemyAttackAssignmentChoice(
+        return parsedChoice(
+            investigatorID: investigatorID,
+            target: target,
+            messages: messages,
+            spec: spec,
+            outerEnemyID: outerEnemyID
+        )
+    }
+
+    private static func parsedChoice(
+        investigatorID: InvestigatorID,
+        target: EnemyAttackDamageAssignmentTarget,
+        messages: [JSONValue],
+        spec: EnemyAttackAssignmentChoiceSpec,
+        outerEnemyID: EnemyID
+    ) -> ParsedEnemyAttackAssignmentChoice {
+        ParsedEnemyAttackAssignmentChoice(
             investigatorID: investigatorID,
             content: .assignEnemyAttackDamage(EnemyAttackDamageAssignment(
                 kind: spec.kind,
                 enemyID: outerEnemyID,
                 investigatorID: investigatorID,
+                target: target,
                 messages: messages
             ))
         )
@@ -136,30 +219,61 @@ extension BasicChoiceParser {
         return true
     }
 
+    private static func assetDamageMessage(
+        _ value: JSONValue,
+        assetID: AssetID,
+        enemyID: EnemyID,
+        amounts: EnemyAttackAssignmentAmounts
+    ) -> Bool {
+        guard case let .object(message) = value,
+              Set(message.keys) == ["tag", "contents"],
+              message["tag"] == .string("AssignAssetDamageDeferred"),
+              case let .array(contents)? = message["contents"],
+              contents.count == 4,
+              contents[0] == .string(assetID.codingKey.stringValue),
+              enemyAttackSourceID(contents[1]) == enemyID,
+              canonicalInteger(contents[2], equals: amounts.damage),
+              canonicalInteger(contents[3], equals: amounts.horror)
+        else { return false }
+        return true
+    }
+
     private static func assignmentContinuation(
         _ value: JSONValue,
-        investigatorID: InvestigatorID,
+        expectedInvestigatorID: InvestigatorID?,
+        target: EnemyAttackDamageAssignmentTarget,
         enemyID: EnemyID,
         spec: EnemyAttackAssignmentChoiceSpec
-    ) -> Bool {
+    ) -> InvestigatorID? {
         guard let contents = investigatorMessageContents(
             value, tag: "InvestigatorDoAssignDamage_"
         ),
             contents.count == 8,
-            contents[0] == .string(investigatorID.rawValue.rawValue),
+            case let .string(rawInvestigatorID) = contents[0],
+            let investigatorCode = strictCardCode(rawInvestigatorID),
             enemyAttackSourceID(contents[1]) == enemyID,
             contents[2] == .object(["tag": .string("DamageAny")]),
             contents[3] == .object(["tag": .string("AnyAsset")]),
             canonicalInteger(contents[4], equals: spec.remaining.damage),
             canonicalInteger(contents[5], equals: spec.remaining.horror),
             candidateList(
-                contents[6], expected: spec.damageCandidates, investigatorID: investigatorID
+                contents[6],
+                expected: spec.damageCandidates,
+                target: target,
+                remainingAmount: spec.remaining.damage
             ),
             candidateList(
-                contents[7], expected: spec.horrorCandidates, investigatorID: investigatorID
+                contents[7],
+                expected: spec.horrorCandidates,
+                target: target,
+                remainingAmount: spec.remaining.horror
             )
-        else { return false }
-        return true
+        else { return nil }
+        let investigatorID = InvestigatorID(investigatorCode)
+        guard expectedInvestigatorID == nil || expectedInvestigatorID == investigatorID else {
+            return nil
+        }
+        return investigatorID
     }
 
     private static func investigatorMessageContents(
@@ -180,19 +294,36 @@ extension BasicChoiceParser {
     private static func candidateList(
         _ value: JSONValue,
         expected: EnemyAttackAssignmentCandidateSet,
-        investigatorID: InvestigatorID
+        target: EnemyAttackDamageAssignmentTarget,
+        remainingAmount: Int64
     ) -> Bool {
         guard case let .array(candidates) = value else { return false }
-        if case .empty = expected {
+        switch expected {
+        case .empty:
             return candidates.isEmpty
+        case .target:
+            return candidates == [candidateTarget(target)]
+        case .targetOrEmptyWhenRemainingZero:
+            if candidates == [candidateTarget(target)] {
+                return true
+            }
+            return remainingAmount == 0 && candidates.isEmpty
         }
-        guard candidates.count == 1,
-              case let .object(target) = candidates[0],
-              Set(target.keys) == ["tag", "contents"],
-              target["tag"] == .string("InvestigatorTarget"),
-              target["contents"] == .string(investigatorID.rawValue.rawValue)
-        else { return false }
-        return true
+    }
+
+    private static func candidateTarget(_ target: EnemyAttackDamageAssignmentTarget) -> JSONValue {
+        switch target {
+        case let .investigator(investigatorID):
+            .object([
+                "tag": .string("InvestigatorTarget"),
+                "contents": .string(investigatorID.rawValue.rawValue),
+            ])
+        case let .asset(assetID):
+            .object([
+                "tag": .string("AssetTarget"),
+                "contents": .string(assetID.codingKey.stringValue),
+            ])
+        }
     }
 
     private static func enemyAttackSourceID(_ value: JSONValue?) -> EnemyID? {
@@ -204,6 +335,10 @@ extension BasicChoiceParser {
         return EnemyID(codingKey: AnyCodingKey(stringValue: rawEnemyID))
     }
 
+    private static func canonicalAssetID(_ rawAssetID: String) -> AssetID? {
+        AssetID(codingKey: AnyCodingKey(stringValue: rawAssetID))
+    }
+
     private static func canonicalInteger(
         _ value: JSONValue,
         equals expected: Int64
@@ -212,89 +347,5 @@ extension BasicChoiceParser {
               case let .number(number) = value
         else { return false }
         return number.rawToken == String(expected)
-    }
-}
-
-private struct EnemyAttackAssignmentEnvelope {
-    let enemyID: EnemyID
-    let rawChoices: [JSONValue]
-    let promptSpec: EnemyAttackAssignmentPromptSpec
-}
-
-private struct EnemyAttackAssignmentPromptSpec {
-    let label: String
-    let choices: [EnemyAttackAssignmentChoiceSpec]
-
-    static let supported = [
-        EnemyAttackAssignmentPromptSpec(
-            label: "Assign 1 damage and 1 horror",
-            choices: [
-                EnemyAttackAssignmentChoiceSpec(
-                    kind: .damage,
-                    direct: EnemyAttackAssignmentAmounts(damage: 1, horror: 0),
-                    remaining: EnemyAttackAssignmentAmounts(damage: 0, horror: 1),
-                    damageCandidates: .investigator,
-                    horrorCandidates: .empty
-                ),
-                EnemyAttackAssignmentChoiceSpec(
-                    kind: .horror,
-                    direct: EnemyAttackAssignmentAmounts(damage: 0, horror: 1),
-                    remaining: EnemyAttackAssignmentAmounts(damage: 1, horror: 0),
-                    damageCandidates: .empty,
-                    horrorCandidates: .investigator
-                ),
-            ]
-        ),
-        EnemyAttackAssignmentPromptSpec(
-            label: "Assign 1 horror",
-            choices: [
-                EnemyAttackAssignmentChoiceSpec(
-                    kind: .horror,
-                    direct: EnemyAttackAssignmentAmounts(damage: 0, horror: 1),
-                    remaining: EnemyAttackAssignmentAmounts(damage: 0, horror: 0),
-                    damageCandidates: .investigator,
-                    horrorCandidates: .investigator
-                ),
-            ]
-        ),
-        EnemyAttackAssignmentPromptSpec(
-            label: "Assign 1 damage",
-            choices: [
-                EnemyAttackAssignmentChoiceSpec(
-                    kind: .damage,
-                    direct: EnemyAttackAssignmentAmounts(damage: 1, horror: 0),
-                    remaining: EnemyAttackAssignmentAmounts(damage: 0, horror: 0),
-                    damageCandidates: .investigator,
-                    horrorCandidates: .investigator
-                ),
-            ]
-        ),
-    ]
-}
-
-private struct EnemyAttackAssignmentChoiceSpec {
-    let kind: EnemyAttackAssignmentKind
-    let direct: EnemyAttackAssignmentAmounts
-    let remaining: EnemyAttackAssignmentAmounts
-    let damageCandidates: EnemyAttackAssignmentCandidateSet
-    let horrorCandidates: EnemyAttackAssignmentCandidateSet
-}
-
-private struct EnemyAttackAssignmentAmounts {
-    let damage: Int64
-    let horror: Int64
-}
-
-private enum EnemyAttackAssignmentCandidateSet {
-    case empty
-    case investigator
-}
-
-private extension EnemyAttackAssignmentKind {
-    var tokenType: String {
-        switch self {
-        case .damage: "DamageToken"
-        case .horror: "HorrorToken"
-        }
     }
 }

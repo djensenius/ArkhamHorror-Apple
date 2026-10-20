@@ -331,6 +331,7 @@ private enum DamageAssignmentAssertions {
             #expect(assignment.kind == expectedKind)
             #expect(assignment.enemyID == DamageAssignmentFixtures.enemyID)
             #expect(assignment.investigatorID == DamageAssignmentFixtures.investigatorID)
+            #expect(assignment.target == .investigator(DamageAssignmentFixtures.investigatorID))
             guard case let .object(rawChoice) = rawChoices[index],
                   case let .array(rawMessages)? = rawChoice["messages"]
             else { throw TestFailure() }
