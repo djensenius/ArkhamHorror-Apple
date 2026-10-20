@@ -57,6 +57,9 @@
 		</dict>
 		<dict>
 			<key>NSPrivacyAccessedAPIType</key>
+			<!-- C617.1: stat-style metadata for app-container cache validation only.
+			     The secure walk starts at a FileManager container/Caches anchor;
+			     it does not inspect filesystem ancestors outside that anchor. -->
 			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
