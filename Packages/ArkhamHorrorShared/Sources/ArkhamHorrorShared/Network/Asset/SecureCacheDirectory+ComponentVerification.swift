@@ -7,13 +7,13 @@ import Foundation
 /// under this package's file-length limit.
 extension SecureCacheDirectory {
     /// The owner/permission policy shared by every component of the walk
-    /// (including the filesystem root itself): a world-writable directory
+    /// (including the container/Caches trust anchor): a world-writable directory
     /// is rejected unconditionally, and ownership must be either `root`
     /// (tolerating a pre-existing, OS-managed ancestor this cache does not
     /// itself own) or `trustedOwnerUID` (this process's own real user ID)
     /// -- never a third owner, which would mean some other, untrusted
-    /// principal controls a directory somewhere between the filesystem
-    /// root and this cache's own data.
+    /// principal controls a directory between the trust anchor and this
+    /// cache's own data.
     static func requireTrustedAncestor(
         info: stat,
         name: String,
@@ -68,7 +68,8 @@ extension SecureCacheDirectory {
         createIfMissing: Bool,
         expectedDevice: dev_t? = nil,
         devicePolicy: DeviceTransitionPolicy? = nil,
-        trustedOwnerUID: uid_t? = nil
+        trustedOwnerUID: uid_t? = nil,
+        directoryStat: (Int32, inout stat) -> Int32 = { fstat($0, &$1) }
     ) throws -> (descriptor: Int32, wasFreshlyCreated: Bool) {
         let (descriptor, wasFreshlyCreated) = try openOrCreateRawComponent(
             parentFD: parentFD,
@@ -76,7 +77,7 @@ extension SecureCacheDirectory {
             createIfMissing: createIfMissing
         )
         var info = stat()
-        guard fstat(descriptor, &info) == 0 else {
+        guard directoryStat(descriptor, &info) == 0 else {
             close(descriptor)
             throw AssetError.cachePersistenceFailed("fstat failed for '\(name)'")
         }
