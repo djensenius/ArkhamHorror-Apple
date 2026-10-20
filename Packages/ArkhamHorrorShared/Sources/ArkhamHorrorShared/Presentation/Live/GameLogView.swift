@@ -12,27 +12,38 @@ struct GameLogView: View {
     @Environment(\.dismiss) private var dismiss
 
     private var items: [GameLogItem] {
-        let locations = Dictionary(uniqueKeysWithValues: projection.locations.map { location in
-            (location.id.description, LegacyGameLogParser.Location(
-                cardCode: location.cardCode.rawValue, revealed: location.revealed
-            ))
-        })
+        let locations = GameLogPresentation.legacyLocations(in: projection.locations)
         return GameLogPresentation.items(
             rows: projection.gameLog, playerID: playerID, locations: locations
         )
     }
 
     var body: some View {
+        let presentedItems = items
+        let rows = GameLogOutline.rows(items: presentedItems, overrides: expansionOverrides)
         NavigationStack {
-            List {
-                if items.isEmpty {
-                    Text(GameLogLocalization.empty)
-                        .accessibilityIdentifier("gameLog.empty")
+            ScrollViewReader { scroll in
+                List {
+                    if presentedItems.isEmpty {
+                        Text(GameLogLocalization.empty)
+                            .accessibilityIdentifier("gameLog.empty")
+                    }
+                    ForEach(rows) { row in
+                        logRow(row)
+                            .id(row.id)
+                            .padding(.leading, CGFloat(min(row.depth, 6)) * 16)
+                            .accessibilityIdentifier("gameLog.row.\(row.id)")
+                    }
                 }
-                ForEach(GameLogOutline.rows(items: items, overrides: expansionOverrides)) { row in
-                    logRow(row)
-                        .padding(.leading, CGFloat(min(row.depth, 6)) * 16)
-                        .accessibilityIdentifier("gameLog.row.\(row.id)")
+                .onAppear {
+                    if let last = rows.last {
+                        scroll.scrollTo(last.id, anchor: .bottom)
+                    }
+                }
+                .onChange(of: rows.last?.id) { _, lastID in
+                    if let lastID {
+                        scroll.scrollTo(lastID, anchor: .bottom)
+                    }
                 }
             }
             .navigationTitle(GameLogLocalization.title)
@@ -50,24 +61,33 @@ struct GameLogView: View {
     @ViewBuilder
     private func logRow(_ row: GameLogOutlineRow) -> some View {
         let nodes = GameLogPartRenderer(resolver: resolver, cardCatalog: cardCatalog)
-            .renderBody(of: row.entry)
+            .renderBody(of: row.entry, depth: row.depth)
         if row.canExpand {
             Button {
-                expansionOverrides[row.id] = !row.isExpanded
+                let expanded = !row.isExpanded
+                expansionOverrides[row.expansionID] = expanded == row.autoExpanded ? nil : expanded
             } label: {
                 HStack(alignment: .firstTextBaseline) {
                     Image(systemName: row.isExpanded ? "chevron.down" : "chevron.right")
                         .accessibilityHidden(true)
                     sentence(nodes, entry: row.entry)
+                    if row.hiddenRowCount > 0 {
+                        Text("+\(row.hiddenRowCount)").font(.caption)
+                            .accessibilityHidden(true)
+                    }
+                    if row.isPinned {
+                        Image(systemName: "pin.fill").font(.caption)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             .accessibilityLabel(nodes.map(\.plainText).joined())
-            .accessibilityValue(row.isExpanded ? GameLogLocalization.expanded : GameLogLocalization
-                .collapsed)
+            .accessibilityValue(GameLogLocalization.accessibilityValue(for: row))
         } else {
             sentence(nodes, entry: row.entry)
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel(nodes.map(\.plainText).joined())
+                .accessibilityValue(GameLogLocalization.level(row.depth + 1))
             #if os(tvOS)
                 .focusable()
             #endif

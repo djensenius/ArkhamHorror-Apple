@@ -408,3 +408,7 @@
 "gameLog.unavailable" = "Übersetzung nicht verfügbar (%@)";
 "gameLog.expanded" = "Ausgeklappt";
 "gameLog.collapsed" = "Eingeklappt";
+
+"gameLog.level" = "Ebene %d";
+"gameLog.hiddenRows" = "%d ausgeblendete Einträge";
+"gameLog.pinned" = "Angeheftet";

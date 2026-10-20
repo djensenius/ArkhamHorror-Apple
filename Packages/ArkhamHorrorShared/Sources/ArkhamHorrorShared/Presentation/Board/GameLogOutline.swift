@@ -6,10 +6,19 @@ struct GameLogOutlineRow: Identifiable, Equatable {
     let entry: GameLogEntry
     let canExpand: Bool
     let isExpanded: Bool
+    var toggleID: String?
+    var autoExpanded: Bool = false
+    var hiddenRowCount: Int = 0
+    var isPinned: Bool = false
+
+    var expansionID: String {
+        toggleID ?? id
+    }
 }
 
 /// The newest standalone spine and unfinished/latest group open automatically. Explicit
-/// choices survive arrivals. Parity: `frontend/src/arkham/components/GameLog.vue:75-137`.
+/// choices follow structured sequence identities, including through the server's sliding tail.
+/// Parity: `frontend/src/arkham/components/GameLog.vue:75-137`.
 enum GameLogOutline {
     static func rows(
         items: [GameLogItem], overrides: [String: Bool] = [:]
@@ -27,25 +36,32 @@ enum GameLogOutline {
                 $0.isGroup || $0.members.contains { $0.kind.rawValue != "Chat" }
             }
             let open = overrides[item.id] ?? autoOpen
-            let label = open ? (item.header ?? item.summary) : (item.summary ?? item.header)
-            guard let label else { return [] }
-            var rows = [GameLogOutlineRow(
-                id: item.id, depth: 0, entry: label,
-                canExpand: !item.members.isEmpty, isExpanded: open
-            )]
+            let hidden = open ? 0 : item.members.reduce(0) { $0 + size($1) }
+            func bar(_ entry: GameLogEntry, id: String) -> GameLogOutlineRow {
+                GameLogOutlineRow(
+                    id: id, depth: 0, entry: entry,
+                    canExpand: !item.members.isEmpty, isExpanded: open,
+                    toggleID: item.id, autoExpanded: autoOpen,
+                    hiddenRowCount: hidden,
+                    isPinned: overrides[item.id].map { $0 != autoOpen } ?? false
+                )
+            }
+            var rows: [GameLogOutlineRow] = []
+            if let header = item.header {
+                rows.append(bar(header, id: item.id))
+            }
             if open {
-                for (memberIndex, member) in item.members.enumerated() {
+                for member in item.members {
                     rows += entryRows(
-                        member, id: "\(item.id).\(memberIndex)", depth: 1,
+                        member, id: "\(item.id).entry:\(member.seq)", depth: 1,
                         autoOpen: autoOpen, overrides: overrides
                     )
                 }
-                if item.header != nil, let summary = item.summary {
-                    rows += entryRows(
-                        summary, id: "\(item.id).summary", depth: 0,
-                        autoOpen: autoOpen, overrides: overrides
-                    )
-                }
+            }
+            // Both bars remain visible while detail folds; a missing header never moves
+            // the result band ahead of the members. See LogGroupBlock.vue:76-137.
+            if let summary = item.summary {
+                rows.append(bar(summary, id: "\(item.id).summary"))
             }
             return rows
         }
@@ -55,17 +71,29 @@ enum GameLogOutline {
         _ entry: GameLogEntry, id: String, depth: Int,
         autoOpen: Bool, overrides: [String: Bool]
     ) -> [GameLogOutlineRow] {
-        let open = overrides[id] ?? autoOpen
+        let annotated = !entry.children.isEmpty && entry.children.allSatisfy {
+            $0.kind.rawValue == "Notice" && $0.children.isEmpty
+        }
+        let open = annotated || (overrides[id] ?? autoOpen)
         let row = GameLogOutlineRow(
             id: id, depth: depth, entry: entry,
-            canExpand: !entry.children.isEmpty, isExpanded: open
+            canExpand: !annotated && !entry.children.isEmpty, isExpanded: open,
+            autoExpanded: autoOpen,
+            hiddenRowCount: open ? 0 : entry.children.reduce(0) { $0 + size($1) },
+            isPinned: !annotated && (overrides[id].map { $0 != autoOpen } ?? false)
         )
         guard open else { return [row] }
-        return [row] + entry.children.enumerated().flatMap { index, child in
+        let children = entry.children.flatMap { child in
             entryRows(
-                child, id: "\(id).\(index)", depth: depth + 1,
+                child, id: "\(id).entry:\(child.seq)", depth: depth + 1,
                 autoOpen: autoOpen, overrides: overrides
             )
         }
+        // A standalone Test closes its detail with the result band, just like a group.
+        return entry.kind.rawValue == "Test" && depth == 0 ? children + [row] : [row] + children
+    }
+
+    private static func size(_ entry: GameLogEntry) -> Int {
+        1 + entry.children.reduce(0) { $0 + size($1) }
     }
 }

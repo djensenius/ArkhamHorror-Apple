@@ -36,13 +36,13 @@ struct GameLogOutlineTests {
         #expect(GameLogOutline.rows(items: grouped + chat).count == 9)
         let withNextEvent = GameLogPresentation.items(rows: captured, playerID: nil)
         let closed = GameLogOutline.rows(items: withNextEvent)
-        #expect(closed.map(\.entry.seq) == [350, 354])
+        #expect(closed.map(\.entry.seq) == [346, 350, 354])
         #expect(closed.first?.isExpanded == false)
         let id = try #require(grouped.first?.id)
         let pinned = GameLogOutline.rows(items: withNextEvent, overrides: [id: true])
         #expect(pinned.map(\.entry.seq) == open.map(\.entry.seq) + [354])
         #expect(GameLogOutline.rows(items: grouped, overrides: [id: false])
-            .map(\.entry.seq) == [350])
+            .map(\.entry.seq) == [346, 350])
     }
 
     @Test("Nested entries share the newest spine; explicit closed parents hide all descendants")

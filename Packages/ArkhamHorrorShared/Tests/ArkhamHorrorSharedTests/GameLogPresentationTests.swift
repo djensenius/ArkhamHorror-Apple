@@ -149,6 +149,15 @@ struct GameLogPresentationTests {
         #expect(renderer.render(.delta(.integer(0))) == [.text("+0")])
     }
 
+    @Test("Nonnumeric log counts keep their rich value without selecting a numeric plural")
+    func nonnumericCountsUseImplicitPlural() async throws {
+        let renderer = try await GameLogPartRenderer(resolver: catalogResolver())
+        let nodes = renderer.render(.i18n(key: "log.clues", variables: [
+            "count": .text("X"), "who": .i18n(key: "log.someone", variables: [:]),
+        ]))
+        #expect(nodes.map(\.plainText).joined() == "Jemand findet X Hinweis")
+    }
+
     @Test("Missing catalogs and keys are explicitly unavailable, never raw keys presented as prose")
     func missingTranslationsAreHonest() async throws {
         let resolver = try await catalogResolver()

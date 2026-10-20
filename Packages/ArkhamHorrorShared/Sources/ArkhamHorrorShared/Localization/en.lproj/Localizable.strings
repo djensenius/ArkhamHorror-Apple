@@ -408,3 +408,7 @@
 "gameLog.unavailable" = "Translation unavailable (%@)";
 "gameLog.expanded" = "Expanded";
 "gameLog.collapsed" = "Collapsed";
+
+"gameLog.level" = "Level %d";
+"gameLog.hiddenRows" = "%d hidden entries";
+"gameLog.pinned" = "Pinned";

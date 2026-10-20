@@ -8,3 +8,9 @@ and the following enemy-phase entry. No account/session credentials are included
 Synthetic cases in GameLogPresentationTests exercise legacy rows, private children,
 partial/nonadjacent groups, future icons, and missing catalog keys separately.
 This is not a governed Contract fixture.
+
+`GameLogReviewRegressionTests.capturedLegacyBraces` additionally reads the existing live
+pre-0.1.53 campaign capture `Fixtures/CampaignPrompt/campaign-replacement-choose-upgrade-deck.json`
+in place. It asserts the exact second log string (Roland Banks playing Research Librarian)
+and both parsed references, including the captured card-copy UUID. No synthetic legacy row is
+labelled as captured, and no governed fixture is changed.

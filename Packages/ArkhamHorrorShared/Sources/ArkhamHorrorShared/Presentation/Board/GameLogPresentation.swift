@@ -14,6 +14,16 @@ struct GameLogItem: Identifiable, Equatable {
 /// Normalizes legacy rows, recursively filters audiences, and groups by identity (not adjacency).
 /// Parity: `frontend/src/arkham/types/GameLog.ts:301-350`, `GameLog.vue:56-61`.
 enum GameLogPresentation {
+    static func legacyLocations(
+        in locations: [BoardLocationNode]
+    ) -> [String: LegacyGameLogParser.Location] {
+        Dictionary(locations.map { location in
+            (location.id.rawValue.uuidString.lowercased(), LegacyGameLogParser.Location(
+                cardCode: location.cardCode.rawValue, revealed: location.revealed
+            ))
+        }, uniquingKeysWith: { first, _ in first })
+    }
+
     static func items(
         rows: [GameLogRow], playerID: PlayerID?,
         locations: [String: LegacyGameLogParser.Location] = [:]
@@ -21,6 +31,7 @@ enum GameLogPresentation {
         var items: [GameLogItem] = []
         var groups: [String: Int] = [:]
         for (index, row) in rows.enumerated() {
+            let identity = identity(for: row, index: index)
             let entry: GameLogEntry = switch row {
             case let .legacy(text, step):
                 GameLogEntry(
@@ -35,7 +46,7 @@ enum GameLogPresentation {
             guard let visible = visibleEntry(entry, playerID: playerID) else { continue }
             guard let group = visible.group, !group.id.isEmpty else {
                 items.append(GameLogItem(
-                    id: "entry:\(index)", header: nil, members: [visible], summary: nil
+                    id: identity, header: nil, members: [visible], summary: nil
                 ))
                 continue
             }
@@ -57,11 +68,19 @@ enum GameLogPresentation {
         }
         // Undo can remove a group's bars. Its surviving members must remain visible.
         return items.flatMap { item in
-            item.isGroup ? [item] : item.members.enumerated().map { index, entry in
+            item.isGroup ? [item] : item.members.map { entry in
                 GameLogItem(
-                    id: "\(item.id):\(index)", header: nil, members: [entry], summary: nil
+                    id: item.id.hasPrefix("group:") ? "entry:\(entry.seq)" : item.id,
+                    header: nil, members: [entry], summary: nil
                 )
             }
+        }
+    }
+
+    private static func identity(for row: GameLogRow, index: Int) -> String {
+        switch row {
+        case .legacy: "legacy:\(index)"
+        case let .structured(entry): "entry:\(entry.seq)"
         }
     }
 
@@ -88,10 +107,11 @@ struct GameLogPartRenderer {
 
     /// The final summary part is the arithmetic stripe, not another sentence fragment.
     /// Parity: `frontend/src/arkham/components/LogGroupBlock.vue:52-59,124-126`.
-    func renderBody(of entry: GameLogEntry) -> [StoryNode] {
-        guard entry.group?.role.rawValue == "GroupSummary",
-              entry.body.count > 1,
-              let statistics = entry.body.last else { return render(entry.body) }
+    func renderBody(of entry: GameLogEntry, depth: Int = 0) -> [StoryNode] {
+        guard entry.group?.role.rawValue == "GroupSummary"
+            || (entry.kind.rawValue == "Test" && depth == 0),
+            entry.body.count > 1,
+            let statistics = entry.body.last else { return render(entry.body) }
         return render(Array(entry.body.dropLast())) + [.lineBreak] + render(statistics)
     }
 
@@ -121,11 +141,15 @@ struct GameLogPartRenderer {
 
     private func localized(_ key: String, variables: [String: GameLogPart]) -> [StoryNode] {
         let rich = variables.mapValues { render($0) }
-        let json = variables.mapValues { part -> JSONValue in
-            switch part {
-            case let .number(number): .number(number)
-            default: .string(render(part).map(\.plainText).joined())
+        let json = variables.reduce(into: [String: JSONValue]()) { result, pair in
+            let (name, part) = pair
+            if case let .number(number) = part {
+                result[name] = .number(number)
+            } else if name != "count", name != "n" {
+                result[name] = .string((rich[name] ?? []).map(\.plainText).joined())
             }
+            // A nonnumeric selector leaves plural selection unset on the web. Its rich
+            // value remains available for interpolation, with the implicit singular rule.
         }
         let resolution = resolver?.render(key: key, variables: .object(json), richVariables: rich)
         if case let .success(nodes) = resolution {
@@ -163,7 +187,8 @@ struct GameLogPartRenderer {
         if let value = Self.numericTokens[token] {
             return [.text(value)]
         }
-        let normalized = token.prefix(1).lowercased() + token.dropFirst()
+        let faceName = Self.suffixedTokenFaces[token] ?? token
+        let normalized = faceName.prefix(1).lowercased() + faceName.dropFirst()
         if let face = ChaosTokenArtFace.iconVariableValue(normalized) {
             return [.semanticIcon(.chaosToken(face))]
         }
@@ -183,8 +208,7 @@ struct GameLogPartRenderer {
     }
 
     private func runeNodes(_ text: String) -> [StoryNode] {
-        let pattern = #"\{rune([A-Z])\}|\[tdc_rune_([A-Za-z])\]"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [.text(text)] }
+        guard let regex = Self.runePattern else { return [.text(text)] }
         var result: [StoryNode] = []
         var cursor = text.startIndex
         for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
@@ -203,6 +227,14 @@ struct GameLogPartRenderer {
         }
         return result
     }
+
+    private static let runePattern = try? NSRegularExpression(
+        pattern: #"\{rune([A-Z])\}|\[tdc_rune_([A-Za-z])\]"#
+    )
+
+    private static let suffixedTokenFaces = [
+        "BlessToken": "Bless", "CurseToken": "Curse", "FrostToken": "Frost", "BloodToken": "Blood",
+    ]
 
     private static let numericTokens = [
         "PlusOne": "+1", "Zero": "0", "MinusOne": "−1", "MinusTwo": "−2",
@@ -230,6 +262,29 @@ enum GameLogLocalization {
 
     static var collapsed: String {
         text("gameLog.collapsed")
+    }
+
+    static func level(_ level: Int) -> String {
+        String(format: text("gameLog.level"), level)
+    }
+
+    static func hiddenRows(_ count: Int) -> String {
+        String(format: text("gameLog.hiddenRows"), count)
+    }
+
+    static var pinned: String {
+        text("gameLog.pinned")
+    }
+
+    static func accessibilityValue(for row: GameLogOutlineRow) -> String {
+        var values = [row.isExpanded ? expanded : collapsed, level(row.depth + 1)]
+        if row.hiddenRowCount > 0 {
+            values.append(hiddenRows(row.hiddenRowCount))
+        }
+        if row.isPinned {
+            values.append(pinned)
+        }
+        return values.joined(separator: ", ")
     }
 
     static func unavailable(_ key: String) -> String {
