@@ -77,6 +77,9 @@
 "board.enemyActions.title" = "Enemy actions";
 "board.enemyActions.accessibility" = "Enemy prompt actions at %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (enemy %2$lld)";
+"board.damageAssignment.assignOneDamage" = "Assign 1 damage to %@";
+"board.damageAssignment.assignOneHorror" = "Assign 1 horror to %@";
+"board.damageAssignment.targetUnavailable" = "unavailable target";
 "board.role.active" = "Active";
 "board.role.turn" = "Turn";
 "board.role.lead" = "Lead";
