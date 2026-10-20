@@ -396,4 +396,12 @@ struct BoardProjection: Sendable, Equatable {
     let questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
     /// Raw audience-bearing rows are filtered for the current seat at presentation time.
     var gameLog: [GameLogRow] = []
+
+    /// Log arrivals update the log sheet, not the board's focus graph or prompt UI.
+    /// Keep full equality elsewhere so live-state observers still receive new log rows.
+    var boardInteractionProjection: BoardProjection {
+        var board = self
+        board.gameLog = []
+        return board
+    }
 }

@@ -138,7 +138,7 @@ struct BoardView: View {
         .onDisappear {
             stopControllerInputIfAvailable()
         }
-        .onChange(of: projection) { _, newValue in
+        .onChange(of: projection.boardInteractionProjection) { _, newValue in
             if let controller {
                 updateControllerInputs(controller)
                 controller.applySnapshot(newValue, prompt: prompt)
