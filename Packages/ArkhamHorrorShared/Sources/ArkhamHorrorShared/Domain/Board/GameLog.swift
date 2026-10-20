@@ -6,8 +6,7 @@ import Foundation
 /// Web references for the 0.1.53 shape and audience behavior:
 /// `frontend/src/arkham/types/GameLog.ts:356-380` defines the `LogRow` union, and
 /// `frontend/src/arkham/components/GameLog.vue:56-61` filters `OnlyPlayer` rows against
-/// the viewing player. Rendering is deliberately not modelled here until a native log view
-/// can match the web renderer's localization, grouping, and legacy brace-DSL behavior.
+/// the viewing player. Native rendering lives in `GameLogPresentation`.
 enum GameLogRow: Sendable, Equatable, Hashable {
     case legacy(text: String, step: Int?)
     case structured(GameLogEntry)

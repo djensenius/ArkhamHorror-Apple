@@ -21,6 +21,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
     let snapshot: LocaleCatalogSnapshot
     let assetSource: AssetSourceNamespace?
     let assetUnavailability: StoryUnavailableReason
+    private var richVariables: [String: [StoryNode]] = [:]
 
     init(
         snapshot: LocaleCatalogSnapshot,
@@ -47,6 +48,16 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             usesImplicitSingularPlural: false,
             degradedReason: &degradedReason
         )
+    }
+
+    /// Log sentences interpolate typed parts, not strings; keep their icons and card refs
+    /// while the numeric JSON variables still drive the catalog's plural selector.
+    func render(
+        key: String, variables: JSONValue, richVariables: [String: [StoryNode]]
+    ) -> Result<[StoryNode], StoryUnavailableReason> {
+        var resolver = self
+        resolver.richVariables = richVariables
+        return resolver.renderUsingImplicitSingularPlural(key: key, variables: variables)
     }
 
     func renderUsingImplicitSingularPlural(
@@ -454,6 +465,9 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         role: LocaleCatalogVariable.Role,
         variables: JSONValue
     ) -> Result<[StoryNode], StoryUnavailableReason> {
+        if let nodes = richVariables[name] {
+            return .success(nodes)
+        }
         if role == .icon {
             return renderLiteralIconVariable(name: name, variables: variables)
         }

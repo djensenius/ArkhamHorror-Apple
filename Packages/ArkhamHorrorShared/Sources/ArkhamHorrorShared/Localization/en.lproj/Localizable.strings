@@ -400,3 +400,9 @@
 "deck.sync.staleFallback" = "Couldn't sync this deck; using the saved version.";
 "deck.syncAll.none" = "No decks with a deck source to sync.";
 "deck.syncAll.summary" = "Synced %1$lld of %2$lld decks with a deck source. %3$lld failed.";
+
+/* Live game log */
+"gameLog.title" = "Game Log";
+"gameLog.empty" = "No log entries yet.";
+"gameLog.close" = "Close";
+"gameLog.unavailable" = "Translation unavailable (%@)";

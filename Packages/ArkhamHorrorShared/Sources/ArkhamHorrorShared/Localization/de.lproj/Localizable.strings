@@ -400,3 +400,9 @@
 "deck.sync.staleFallback" = "Dieses Deck konnte nicht synchronisiert werden; die gespeicherte Version wird verwendet.";
 "deck.syncAll.none" = "Keine Decks mit Deckquelle zum Synchronisieren.";
 "deck.syncAll.summary" = "%1$lld von %2$lld Decks mit Deckquelle synchronisiert. %3$lld fehlgeschlagen.";
+
+/* Live game log */
+"gameLog.title" = "Spielverlauf";
+"gameLog.empty" = "Noch keine Einträge im Spielverlauf.";
+"gameLog.close" = "Schließen";
+"gameLog.unavailable" = "Übersetzung nicht verfügbar (%@)";

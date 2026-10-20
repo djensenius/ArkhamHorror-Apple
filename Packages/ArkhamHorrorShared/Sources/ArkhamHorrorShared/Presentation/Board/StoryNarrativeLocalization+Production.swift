@@ -21,7 +21,7 @@ struct ProductionListItemResolution {
     let degradedReason: StoryUnavailableReason?
 }
 
-private struct ProductionChoiceLabelInvocation {
+struct ProductionChoiceLabelInvocation {
     let key: String
     let variables: JSONValue
 }
@@ -173,7 +173,7 @@ extension StoryNarrativeLocalization {
         parseProductionChoiceLabel(wireLabel)?.key
     }
 
-    private static func parseProductionChoiceLabel(
+    static func parseProductionChoiceLabel(
         _ wireLabel: String
     ) -> ProductionChoiceLabelInvocation? {
         var input = wireLabel.trimmingCharacters(in: .whitespacesAndNewlines)
