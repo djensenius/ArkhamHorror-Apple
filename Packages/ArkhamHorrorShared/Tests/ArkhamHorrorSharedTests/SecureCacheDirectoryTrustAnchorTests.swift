@@ -60,6 +60,7 @@ struct SecureCacheDirectoryTrustAnchorTests {
         let fileManager = FileManager.default
         let caches = try #require(fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
             .first)
+        try fileManager.createDirectory(at: caches, withIntermediateDirectories: true)
         let target = caches.appendingPathComponent("CacheTrustAnchor-\(UUID().uuidString)")
         defer { try? fileManager.removeItem(at: target) }
         var inspected: [String] = []
