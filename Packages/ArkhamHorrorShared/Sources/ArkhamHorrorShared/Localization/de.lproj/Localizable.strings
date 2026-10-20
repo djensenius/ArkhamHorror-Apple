@@ -77,6 +77,9 @@
 "board.enemyActions.title" = "Gegneraktionen";
 "board.enemyActions.accessibility" = "Gegner-Aufforderungsaktionen bei %@";
 "board.enemyActions.duplicateSuffix" = "%1$@ (Gegner %2$lld)";
+"board.damageAssignment.assignOneDamage" = "%@ 1 Schaden zuweisen";
+"board.damageAssignment.assignOneHorror" = "%@ 1 Horror zuweisen";
+"board.damageAssignment.targetUnavailable" = "Nicht verfügbares Ziel";
 "board.role.active" = "Aktiv";
 "board.role.turn" = "Zug";
 "board.role.lead" = "Leitung";

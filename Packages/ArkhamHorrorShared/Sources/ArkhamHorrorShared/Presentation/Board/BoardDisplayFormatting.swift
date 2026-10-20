@@ -54,8 +54,14 @@ enum BoardDisplayFormatting {
         case .finishMulligan, .chooseAgendaConsequence:
             return labelResolution?.title
                 ?? "Unavailable action (choice \(choice.index + 1))"
-        case .resolveEnemyAttack, .assignEnemyAttackDamage, .assignAgendaHorror:
+        case .resolveEnemyAttack, .assignAgendaHorror:
             return investigatorChoiceDisplayTitle(for: choice, in: projection)
+        case let .assignEnemyAttackDamage(assignment):
+            return enemyAttackAssignmentDisplayTitle(
+                assignment,
+                fallback: choice.title,
+                in: projection
+            )
         case .gainResource, .drawCard, .endTurn, .investigate, .fight, .evade, .engage,
              .rolandDefeatReaction, .coverUpReaction, .resolveForcedAbility, .advanceAgenda,
              .continueReading, .skipTriggers, .startSkillTest, .applySkillTestResults,
@@ -73,9 +79,6 @@ enum BoardDisplayFormatting {
         case let .resolveEnemyAttack(_, id, _):
             investigatorID = id
             prefix = "Resolve enemy attack against"
-        case let .assignEnemyAttackDamage(assignment):
-            investigatorID = assignment.investigatorID
-            prefix = "\(assignment.kind.actionTitle) to"
         case let .assignAgendaHorror(assignment):
             investigatorID = assignment.investigatorID
             prefix = "Assign 2 horror to"
