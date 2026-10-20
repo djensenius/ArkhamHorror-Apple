@@ -86,6 +86,15 @@ struct GameLogPartRenderer {
         parts.flatMap { render($0) }
     }
 
+    /// The final summary part is the arithmetic stripe, not another sentence fragment.
+    /// Parity: `frontend/src/arkham/components/LogGroupBlock.vue:52-59,124-126`.
+    func renderBody(of entry: GameLogEntry) -> [StoryNode] {
+        guard entry.group?.role.rawValue == "GroupSummary",
+              entry.body.count > 1,
+              let statistics = entry.body.last else { return render(entry.body) }
+        return render(Array(entry.body.dropLast())) + [.lineBreak] + render(statistics)
+    }
+
     func render(_ part: GameLogPart) -> [StoryNode] {
         switch part {
         case let .text(text): runeNodes(text)

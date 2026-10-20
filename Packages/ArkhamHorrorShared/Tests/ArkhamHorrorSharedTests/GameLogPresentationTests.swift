@@ -17,6 +17,26 @@ struct GameLogPresentationTests {
         #expect(items[1].members.first?.seq == 354)
     }
 
+    @Test("Captured summary arithmetic is separated from the sentence, never concatenated")
+    func summaryArithmeticIsSeparated() throws {
+        let rows = try capturedRows()
+        guard case let .structured(summary) = rows[4] else {
+            Issue.record("Expected captured group summary")
+            return
+        }
+        let renderer = GameLogPartRenderer(resolver: nil)
+        let body = renderer.renderBody(of: summary)
+        let sentence = renderer.render(summary.body[0])
+        let statistics = renderer.render(summary.body[1])
+        #expect(body == sentence + [.lineBreak] + statistics)
+        #expect(body.filter { $0 == .lineBreak }.count == 1)
+        guard case let .structured(header) = rows[0] else {
+            Issue.record("Expected captured group header")
+            return
+        }
+        #expect(renderer.renderBody(of: header) == renderer.render(header.body))
+    }
+
     @Test("Grouping reunites nonadjacent rows and orphaned members remain readable")
     func nonadjacentAndPartialGroups() throws {
         let rows = try capturedRows()

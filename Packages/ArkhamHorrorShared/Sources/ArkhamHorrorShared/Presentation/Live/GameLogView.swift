@@ -50,7 +50,7 @@ struct GameLogView: View {
     @ViewBuilder
     private func logRow(_ row: GameLogOutlineRow) -> some View {
         let nodes = GameLogPartRenderer(resolver: resolver, cardCatalog: cardCatalog)
-            .render(row.entry.body)
+            .renderBody(of: row.entry)
         if row.canExpand {
             Button {
                 expansionOverrides[row.id] = !row.isExpanded
