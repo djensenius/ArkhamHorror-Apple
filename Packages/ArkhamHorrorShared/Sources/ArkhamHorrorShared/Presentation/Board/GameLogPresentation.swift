@@ -32,17 +32,7 @@ enum GameLogPresentation {
         var groups: [String: Int] = [:]
         for (index, row) in rows.enumerated() {
             let identity = identity(for: row, index: index)
-            let entry: GameLogEntry = switch row {
-            case let .legacy(text, step):
-                GameLogEntry(
-                    seq: 0, step: step, kind: OpenStringEnum("Mechanic"),
-                    body: LegacyGameLogParser.parse(text, locations: locations),
-                    source: nil, children: [], audience: .everyone,
-                    context: GameLogContext(round: nil, phase: nil, turn: nil), tone: nil,
-                    group: nil
-                )
-            case let .structured(structured): structured
-            }
+            let entry = normalizedEntry(row, locations: locations)
             guard let visible = visibleEntry(entry, playerID: playerID) else { continue }
             guard let group = visible.group, !group.id.isEmpty else {
                 items.append(GameLogItem(
@@ -67,6 +57,7 @@ enum GameLogPresentation {
             }
         }
         // Undo can remove a group's bars. Its surviving members must remain visible.
+        var occurrences: [String: Int] = [:]
         return items.flatMap { item in
             item.isGroup ? [item] : item.members.map { entry in
                 GameLogItem(
@@ -74,6 +65,33 @@ enum GameLogPresentation {
                     header: nil, members: [entry], summary: nil
                 )
             }
+        }.map { item in
+            GameLogItem(
+                id: uniqueID(item.id, occurrences: &occurrences), header: item.header,
+                members: item.members, summary: item.summary
+            )
+        }
+    }
+
+    /// Top-level seq values should be unique; retain every row if a server violates that rule.
+    static func uniqueID(_ base: String, occurrences: inout [String: Int]) -> String {
+        occurrences[base, default: 0] += 1
+        let count = occurrences[base, default: 0]
+        return count == 1 ? base : "\(base)#\(count)"
+    }
+
+    private static func normalizedEntry(
+        _ row: GameLogRow, locations: [String: LegacyGameLogParser.Location]
+    ) -> GameLogEntry {
+        switch row {
+        case let .legacy(text, step):
+            GameLogEntry(
+                seq: 0, step: step, kind: OpenStringEnum("Mechanic"),
+                body: LegacyGameLogParser.parse(text, locations: locations),
+                source: nil, children: [], audience: .everyone,
+                context: GameLogContext(round: nil, phase: nil, turn: nil), tone: nil, group: nil
+            )
+        case let .structured(entry): entry
         }
     }
 
@@ -109,7 +127,8 @@ struct GameLogPartRenderer {
     /// Parity: `frontend/src/arkham/components/LogGroupBlock.vue:52-59,124-126`.
     func renderBody(of entry: GameLogEntry, depth: Int = 0) -> [StoryNode] {
         guard entry.group?.role.rawValue == "GroupSummary"
-            || (entry.kind.rawValue == "Test" && depth == 0),
+            || (entry.kind.rawValue == "Test" && depth == 0
+                && entry.group?.role.rawValue != "GroupHeader"),
             entry.body.count > 1,
             let statistics = entry.body.last else { return render(entry.body) }
         return render(Array(entry.body.dropLast())) + [.lineBreak] + render(statistics)

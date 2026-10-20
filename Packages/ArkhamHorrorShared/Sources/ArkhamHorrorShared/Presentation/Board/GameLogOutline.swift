@@ -51,9 +51,13 @@ enum GameLogOutline {
                 rows.append(bar(header, id: item.id))
             }
             if open {
+                var occurrences: [String: Int] = [:]
                 for member in item.members {
+                    let memberID = GameLogPresentation.uniqueID(
+                        "\(item.id).entry:\(member.seq)", occurrences: &occurrences
+                    )
                     rows += entryRows(
-                        member, id: "\(item.id).entry:\(member.seq)", depth: 1,
+                        member, id: memberID, depth: 1,
                         autoOpen: autoOpen, overrides: overrides
                     )
                 }
@@ -83,9 +87,10 @@ enum GameLogOutline {
             isPinned: !annotated && (overrides[id].map { $0 != autoOpen } ?? false)
         )
         guard open else { return [row] }
-        let children = entry.children.flatMap { child in
+        // Nested seq values are always zero on the server; only their index path is meaningful.
+        let children = entry.children.enumerated().flatMap { index, child in
             entryRows(
-                child, id: "\(id).entry:\(child.seq)", depth: depth + 1,
+                child, id: "\(id).\(index)", depth: depth + 1,
                 autoOpen: autoOpen, overrides: overrides
             )
         }

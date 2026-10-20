@@ -151,14 +151,79 @@ struct GameLogReviewRegressionTests {
         ])
     }
 
+    @Test("Zero-sequence nested siblings have independent index-path IDs and expansion choices")
+    func zeroSequenceSiblingIdentities() throws {
+        let parent = entry(42, children: [
+            entry(0, children: [entry(0)], body: [.text("first cost")]),
+            entry(0, children: [entry(0)], body: [.text("second cost")]),
+        ])
+        let items = GameLogPresentation.items(rows: [.structured(parent)], playerID: nil)
+        let rows = GameLogOutline.rows(items: items)
+        #expect(rows.map(\.id) == [
+            "entry:42", "entry:42.0", "entry:42.0.0", "entry:42.1", "entry:42.1.0",
+        ])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+        let first = try #require(rows.first { $0.entry.body == [.text("first cost")] })
+        let second = try #require(rows.first { $0.entry.body == [.text("second cost")] })
+        let toggled = GameLogOutline.rows(items: items, overrides: [first.expansionID: false])
+        #expect(toggled.first { $0.id == first.id }?.isExpanded == false)
+        #expect(toggled.first { $0.id == second.id }?.isExpanded == true)
+        #expect(!toggled.contains { $0.id == "entry:42.0.0" })
+        #expect(toggled.contains { $0.id == "entry:42.1.0" })
+    }
+
+    @Test("Duplicate top-level sequence values are suffixed without changing valid sequence keys")
+    func duplicateTopLevelSequenceIdentities() {
+        let items = GameLogPresentation.items(rows: [
+            .structured(entry(8)), .structured(entry(8)), .structured(entry(9)),
+            .structured(entry(8)),
+            .structured(entry(10, group: .init(id: "test", role: OpenStringEnum("GroupHeader")))),
+            .structured(entry(11, group: .init(id: "test", role: OpenStringEnum("GroupMember")))),
+            .structured(entry(11, group: .init(id: "test", role: OpenStringEnum("GroupMember")))),
+            .structured(entry(12, group: .init(id: "test", role: OpenStringEnum("GroupMember")))),
+        ], playerID: nil)
+        let rows = GameLogOutline.rows(items: items)
+        #expect(rows.map(\.id) == [
+            "entry:8", "entry:8#2", "entry:9", "entry:8#3", "group:test",
+            "group:test.entry:11", "group:test.entry:11#2", "group:test.entry:12",
+        ])
+        #expect(Set(rows.map(\.id)).count == rows.count)
+    }
+
+    @Test("Arrivals preserve scrollback until the reader returns to the bottom")
+    func arrivalsRespectScrollback() {
+        var state = GameLogScrollState()
+        #expect(state.target(for: "entry:1") == "entry:1")
+        state.readerScrolled(distanceFromBottom: 120)
+        #expect(!state.isPinnedToBottom)
+        #expect(state.target(for: "entry:2") == nil)
+        #expect(state.target(for: "entry:3") == nil)
+        state.readerScrolled(distanceFromBottom: 40)
+        #expect(state.target(for: "entry:4") == nil)
+        state.readerScrolled(distanceFromBottom: 39)
+        #expect(state.isPinnedToBottom)
+        #expect(state.target(for: "entry:5") == "entry:5")
+        #expect(state.target(for: nil) == nil)
+    }
+
+    @Test("Depth-zero Test group headers never split off their last body part")
+    func groupHeaderDoesNotSplit() {
+        let header = entry(
+            346, kind: "Test", body: [.text("Test "), .text("against 3")],
+            group: .init(id: "test", role: OpenStringEnum("GroupHeader"))
+        )
+        let renderer = GameLogPartRenderer(resolver: nil)
+        #expect(renderer.renderBody(of: header, depth: 0) == [.text("Test "), .text("against 3")])
+    }
+
     private func entry(
         _ seq: Int, kind: String = "Mechanic", children: [GameLogEntry] = [],
-        body: [GameLogPart]? = nil
+        body: [GameLogPart]? = nil, group: GameLogGroup? = nil
     ) -> GameLogEntry {
         GameLogEntry(
             seq: seq, step: nil, kind: OpenStringEnum(kind), body: body ?? [.text("\(seq)")],
             source: nil, children: children, audience: .everyone,
-            context: .init(round: nil, phase: nil, turn: nil), tone: nil, group: nil
+            context: .init(round: nil, phase: nil, turn: nil), tone: nil, group: group
         )
     }
 }

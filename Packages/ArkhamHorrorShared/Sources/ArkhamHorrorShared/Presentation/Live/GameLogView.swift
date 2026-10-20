@@ -9,6 +9,8 @@ struct GameLogView: View {
     let cardCatalog: CardCatalogSnapshot?
 
     @State private var expansionOverrides: [String: Bool] = [:]
+    @State private var scrollState = GameLogScrollState()
+    @State private var isReaderScrolling = false
     @Environment(\.dismiss) private var dismiss
 
     private var items: [GameLogItem] {
@@ -35,14 +37,29 @@ struct GameLogView: View {
                             .accessibilityIdentifier("gameLog.row.\(row.id)")
                     }
                 }
+                .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                    geometry.contentSize.height - geometry.visibleRect.maxY
+                } action: { _, distanceFromBottom in
+                    if isReaderScrolling {
+                        scrollState.readerScrolled(distanceFromBottom: distanceFromBottom)
+                    }
+                }
+                .onScrollPhaseChange { oldPhase, phase, context in
+                    isReaderScrolling = phase != .idle && phase != .animating
+                    // Layout changes caused by arrivals must not unpin the live tail.
+                    if isReaderScrolling || (phase == .idle && oldPhase != .animating) {
+                        scrollState.readerScrolled(distanceFromBottom:
+                            context.geometry.contentSize.height - context.geometry.visibleRect.maxY)
+                    }
+                }
                 .onAppear {
-                    if let last = rows.last {
-                        scroll.scrollTo(last.id, anchor: .bottom)
+                    if let target = scrollState.target(for: rows.last?.id) {
+                        scroll.scrollTo(target, anchor: .bottom)
                     }
                 }
                 .onChange(of: rows.last?.id) { _, lastID in
-                    if let lastID {
-                        scroll.scrollTo(lastID, anchor: .bottom)
+                    if let target = scrollState.target(for: lastID) {
+                        scroll.scrollTo(target, anchor: .bottom)
                     }
                 }
             }
