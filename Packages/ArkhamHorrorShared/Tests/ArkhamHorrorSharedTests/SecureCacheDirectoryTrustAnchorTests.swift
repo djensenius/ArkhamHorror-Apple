@@ -77,18 +77,24 @@ struct SecureCacheDirectoryTrustAnchorTests {
     @Test("Home and temporary fallback anchors come from FileManager for development runs")
     func developmentAnchorsComeFromFileManager() throws {
         let fileManager = FileManager.default
-        let home = fileManager.homeDirectoryForCurrentUser
+        #if os(macOS)
+            let home = fileManager.homeDirectoryForCurrentUser
+        #else
+            let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        #endif
         let homeTarget = home.appendingPathComponent("CacheTrustAnchor-\(UUID().uuidString)")
         let temp = fileManager.temporaryDirectory
         let tempTarget = temp.appendingPathComponent("CacheTrustAnchor-\(UUID().uuidString)")
-        #expect(try SecureCacheDirectory.cacheTrustAnchor(
+        #expect(try SecureCacheDirectory.cacheTrustAnchors(
             for: homeTarget,
             fileManager: fileManager
-        ) == home)
-        #expect(try SecureCacheDirectory.cacheTrustAnchor(
-            for: tempTarget,
-            fileManager: fileManager
-        ) == temp)
+        ) == [home])
+        let tempAnchors = try SecureCacheDirectory.cacheTrustAnchors(
+            for: tempTarget, fileManager: fileManager
+        )
+        // A sandbox's temporary directory can itself be inside its home.
+        #expect(tempAnchors.last == temp)
+        #expect(tempAnchors.allSatisfy { $0 == home || $0 == temp })
     }
 
     @Test("Containment accepts iOS-family, sandboxed macOS, and unsandboxed macOS Caches spellings")
@@ -139,7 +145,7 @@ struct SecureCacheDirectoryTrustAnchorTests {
     func rejectsOutsideFileManagerAnchors() {
         let outside = URL(fileURLWithPath: "/Volumes/OutsideAppContainer/cache")
         #expect(throws: AssetError.self) {
-            _ = try SecureCacheDirectory.cacheTrustAnchor(for: outside, fileManager: .default)
+            _ = try SecureCacheDirectory.cacheTrustAnchors(for: outside, fileManager: .default)
         }
     }
 

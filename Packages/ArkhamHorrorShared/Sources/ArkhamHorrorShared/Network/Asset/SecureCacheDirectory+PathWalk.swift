@@ -17,9 +17,9 @@ extension SecureCacheDirectory {
         fileManager: FileManager = .default,
         directoryStat: (Int32, inout stat) -> Int32 = { fstat($0, &$1) }
     ) throws -> DirectoryWalkResult {
-        let anchor = try cacheTrustAnchor(for: directory, fileManager: fileManager)
+        let anchors = try cacheTrustAnchors(for: directory, fileManager: fileManager)
         return try openOrCreateVerifiedDirectory(
-            at: directory, trustAnchor: anchor, directoryStat: directoryStat
+            at: directory, trustAnchors: anchors, directoryStat: directoryStat
         )
     }
 
@@ -37,8 +37,40 @@ extension SecureCacheDirectory {
         trustAnchor: URL,
         directoryStat: (Int32, inout stat) -> Int32 = { fstat($0, &$1) }
     ) throws -> DirectoryWalkResult {
-        let components = try cacheRelativeComponents(of: directory, below: trustAnchor)
-        let anchor = try openAndVerifyCacheTrustAnchor(trustAnchor, directoryStat: directoryStat)
+        try openOrCreateVerifiedDirectory(
+            at: directory, trustAnchors: [trustAnchor], directoryStat: directoryStat
+        )
+    }
+
+    /// A missing Caches root may be created below the next containing OS
+    /// anchor (normally the container home). Only open's ENOENT permits
+    /// fallback; a symlink, failed stat, owner/mode check, or walk error
+    /// must fail closed immediately, never retry from a broader anchor.
+    static func openOrCreateVerifiedDirectory(
+        at directory: URL,
+        trustAnchors: [URL],
+        directoryStat: (Int32, inout stat) -> Int32 = { fstat($0, &$1) }
+    ) throws -> DirectoryWalkResult {
+        for trustAnchor in trustAnchors {
+            let components = try cacheRelativeComponents(of: directory, below: trustAnchor)
+            if let anchor = try openAndVerifyCacheTrustAnchor(
+                trustAnchor, directoryStat: directoryStat
+            ) {
+                return try walkCacheComponents(
+                    components,
+                    from: anchor,
+                    directoryStat: directoryStat
+                )
+            }
+        }
+        throw AssetError.cachePersistenceFailed("No existing cache trust anchor available")
+    }
+
+    private static func walkCacheComponents(
+        _ components: [String],
+        from anchor: (descriptor: Int32, info: stat),
+        directoryStat: (Int32, inout stat) -> Int32
+    ) throws -> DirectoryWalkResult {
         var currentFD = anchor.descriptor
         let devicePolicy = DeviceTransitionPolicy(rootDevice: anchor.info.st_dev)
         let trustedOwnerUID = getuid()
@@ -70,9 +102,12 @@ extension SecureCacheDirectory {
     private static func openAndVerifyCacheTrustAnchor(
         _ anchor: URL,
         directoryStat: (Int32, inout stat) -> Int32
-    ) throws -> (descriptor: Int32, info: stat) {
+    ) throws -> (descriptor: Int32, info: stat)? {
         let descriptor = open(anchor.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard descriptor >= 0 else {
+            if errno == ENOENT {
+                return nil
+            }
             throw AssetError.cachePersistenceFailed(
                 "Could not open cache trust anchor (errno \(errno))"
             )

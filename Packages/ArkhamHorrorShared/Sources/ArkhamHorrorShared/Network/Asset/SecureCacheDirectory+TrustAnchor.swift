@@ -5,7 +5,7 @@ extension SecureCacheDirectory {
     /// support unsandboxed macOS development/tests; in shipped sandboxed
     /// apps FileManager supplies locations inside the app container.
     /// Never infer an anchor from a caller's arbitrary cache URL.
-    static func cacheTrustAnchor(for directory: URL, fileManager: FileManager) throws -> URL {
+    static func cacheTrustAnchors(for directory: URL, fileManager: FileManager) throws -> [URL] {
         #if os(macOS)
             let home = fileManager.homeDirectoryForCurrentUser
         #else
@@ -13,15 +13,16 @@ extension SecureCacheDirectory {
             // Foundation supplies the app's data-container root instead.
             let home = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         #endif
-        let anchors = fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
-            + [home, fileManager.temporaryDirectory]
-        if let anchor = anchors.first(where: {
+        let anchors = (fileManager.urls(for: .cachesDirectory, in: .userDomainMask)
+            + [home, fileManager.temporaryDirectory]).filter {
             (try? cacheRelativeComponents(of: directory, below: $0)) != nil
-        }) {
-            return anchor
         }
-        throw AssetError
-            .cachePersistenceFailed("Cache directory is outside the trusted app locations")
+        guard !anchors.isEmpty else {
+            throw AssetError.cachePersistenceFailed(
+                "Cache directory is outside the trusted app locations"
+            )
+        }
+        return anchors
     }
 
     /// Purely lexical containment: no stat, readlink, or symlink resolution
