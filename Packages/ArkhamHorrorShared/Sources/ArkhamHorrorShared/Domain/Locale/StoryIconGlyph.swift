@@ -95,7 +95,7 @@ extension StoryIconGlyph {
     ///   (`:111-139`), curse/bless (`:143-155`), frost (`:159-163`), blood (`:167-171`)
     /// - skills: willpower/intellect/combat/agility (`:78-107`), wild (`:240-244`)
     /// - seals: seal A-E (`:176-212`)
-    static let all: [StoryIconGlyph] = [
+    static let storyGlyphs: [StoryIconGlyph] = [
         glyph("skull", "skull-icon", .arkhamIcons, "\u{E910}"),
         glyph("cultist", "cultist-icon", .arkhamIcons, "\u{E911}"),
         glyph("tablet", "tablet-icon", .arkhamIcons, "\u{E912}"),
@@ -117,6 +117,25 @@ extension StoryIconGlyph {
         glyph("sealD", "seal-d-icon", .arkhamSlim, "\u{0063}"),
         glyph("sealE", "seal-e-icon", .arkhamSlim, "\u{0064}"),
     ]
+
+    /// Additional log glyphs from `frontend/src/styles/icons.css:9-47,69-76,248-274,283-490`.
+    static let logGlyphs: [StoryIconGlyph] = [
+        glyph("action", "action-icon", .arkham, "\u{0049}"),
+        glyph("fast", "fast-icon", .arkham, "\u{0075}"),
+        glyph("reaction", "reaction-icon", .arkham, "\u{0079}"),
+        glyph("guardian", "guardian-icon", .arkham, "\u{0051}"),
+        glyph("seeker", "seeker-icon", .arkham, "\u{0045}"),
+        glyph("rogue", "rogue-icon", .arkham, "\u{0054}"),
+        glyph("mystic", "mystic-icon", .arkham, "\u{0057}"),
+        glyph("survivor", "survivor-icon", .arkham, "\u{0052}"),
+    ] + (0 ..< 26).compactMap { offset in
+        guard let letter = UnicodeScalar(65 + offset),
+              let scalar = UnicodeScalar(0xE900 + offset) else { return nil }
+        let name = "rune-\(letter)"
+        return StoryIconGlyph(iconName: name, cssClass: name, family: .arkhamSlim, scalar: scalar)
+    }
+
+    static let all = storyGlyphs + logGlyphs
 
     private static func glyph(
         _ iconName: String,

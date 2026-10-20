@@ -406,3 +406,5 @@
 "gameLog.empty" = "Noch keine Einträge im Spielverlauf.";
 "gameLog.close" = "Schließen";
 "gameLog.unavailable" = "Übersetzung nicht verfügbar (%@)";
+"gameLog.expanded" = "Ausgeklappt";
+"gameLog.collapsed" = "Eingeklappt";

@@ -180,7 +180,17 @@ struct GameLogPresentationTests {
     @Test("All game-log UI strings ship in the English and German bundles")
     func localizedBundles() {
         for (language, expected) in [
-            ("en", ["Game Log", "No log entries yet.", "Close", "Translation unavailable (%@)"]),
+            (
+                "en",
+                [
+                    "Game Log",
+                    "No log entries yet.",
+                    "Close",
+                    "Translation unavailable (%@)",
+                    "Expanded",
+                    "Collapsed",
+                ]
+            ),
             (
                 "de",
                 [
@@ -188,6 +198,8 @@ struct GameLogPresentationTests {
                     "Noch keine Einträge im Spielverlauf.",
                     "Schließen",
                     "Übersetzung nicht verfügbar (%@)",
+                    "Ausgeklappt",
+                    "Eingeklappt",
                 ]
             ),
         ] {
@@ -197,6 +209,7 @@ struct GameLogPresentationTests {
                     GameLogLocalization.empty,
                     GameLogLocalization.close,
                     GameLogLocalization.unavailable("%@"),
+                    GameLogLocalization.expanded, GameLogLocalization.collapsed,
                 ] == expected)
             }
         }

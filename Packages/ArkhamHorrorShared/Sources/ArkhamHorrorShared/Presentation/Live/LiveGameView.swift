@@ -34,6 +34,7 @@ struct LiveGameView: View {
 
     @State private var subscriptionToken: LiveGameSubscriptionToken?
     @State private var isViewVisible = false
+    @State private var isGameLogPresented = false
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
 
@@ -51,6 +52,25 @@ struct LiveGameView: View {
         #if os(iOS) || os(visionOS)
             .navigationBarTitleDisplayMode(.inline)
         #endif
+            .toolbar {
+                if state.lastKnownProjection != nil {
+                    Button {
+                        isGameLogPresented = true
+                    } label: {
+                        Label(GameLogLocalization.title, systemImage: "text.alignleft")
+                    }
+                    .accessibilityIdentifier("liveGame.openGameLog")
+                }
+            }
+            .sheet(isPresented: $isGameLogPresented) {
+                if let projection = state.lastKnownProjection {
+                    GameLogView(
+                        projection: projection, playerID: localParticipantPlayerID,
+                        resolver: model.localeCatalogResolver, cardCatalog: model.cardCatalog
+                    )
+                    .environment(\.storyIconFontAvailability, model.webIconFontAvailability)
+                }
+            }
             .onAppear {
                 isViewVisible = true
                 model.loadCardCatalogIfNeeded()

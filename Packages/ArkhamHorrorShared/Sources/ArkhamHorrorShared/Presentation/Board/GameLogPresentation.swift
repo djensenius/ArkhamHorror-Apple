@@ -215,6 +215,14 @@ enum GameLogLocalization {
         text("gameLog.close")
     }
 
+    static var expanded: String {
+        text("gameLog.expanded")
+    }
+
+    static var collapsed: String {
+        text("gameLog.collapsed")
+    }
+
     static func unavailable(_ key: String) -> String {
         String(format: text("gameLog.unavailable"), key)
     }

@@ -406,3 +406,5 @@
 "gameLog.empty" = "No log entries yet.";
 "gameLog.close" = "Close";
 "gameLog.unavailable" = "Translation unavailable (%@)";
+"gameLog.expanded" = "Expanded";
+"gameLog.collapsed" = "Collapsed";

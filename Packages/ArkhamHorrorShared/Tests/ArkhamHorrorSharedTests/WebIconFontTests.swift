@@ -17,7 +17,7 @@ struct WebIconFontGlyphMappingTests {
             fixture.provenance
                 == "fork 4203738708b0ad2d3cff426b4ce2e6b3d9904fec frontend/src/styles/icons.css"
         )
-        let actual = StoryIconGlyph.all.map(WebIconFontFixtureMapping.init(glyph:))
+        let actual = StoryIconGlyph.storyGlyphs.map(WebIconFontFixtureMapping.init(glyph:))
         #expect(actual == fixture.mappings)
     }
 
