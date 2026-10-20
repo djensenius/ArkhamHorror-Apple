@@ -212,6 +212,7 @@ struct LiveGameView: View {
             localPlayerID: localParticipantPlayerID,
             isSolo: isSoloGame,
             isLocalSpectator: isLocalSpectator,
+            isControllerInputSuspended: isGameLogPresented,
             cardCatalog: model.cardCatalog,
             onChoice: { index in
                 guard let identity = renderedPrompt?.identity else { return }

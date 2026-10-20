@@ -20,6 +20,7 @@ struct BoardView: View {
     let localPlayerID: PlayerID?
     let isSolo: Bool
     let isLocalSpectator: Bool
+    let isControllerInputSuspended: Bool
     let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
     let onAmounts: ([String: Int]) -> Void
@@ -33,9 +34,9 @@ struct BoardView: View {
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
+    @State var controllerInputOwner = BoardControllerInputOwner()
     #if canImport(GameController) && !os(tvOS)
         @State var controllerInputCenter: ControllerInputCenter?
-        @State var controllerInputOwner = BoardControllerInputOwner()
         @State var controllerInputStarted = false
         @State var controllerInputWindowIsKey = false
     #endif
@@ -52,6 +53,7 @@ struct BoardView: View {
         localPlayerID: PlayerID? = nil,
         isSolo: Bool = false,
         isLocalSpectator: Bool = false,
+        isControllerInputSuspended: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -69,6 +71,7 @@ struct BoardView: View {
         self.localPlayerID = localPlayerID
         self.isSolo = isSolo
         self.isLocalSpectator = isLocalSpectator
+        self.isControllerInputSuspended = isControllerInputSuspended
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
@@ -91,6 +94,7 @@ struct BoardView: View {
             }
         }
         .onAppear {
+            controllerInputOwner.isSuspended = isControllerInputSuspended
             let activeController: BoardCommandController
             if let controller {
                 updateControllerInputs(controller)
@@ -162,6 +166,9 @@ struct BoardView: View {
         .onChange(of: cardCatalog) { _, newValue in
             controller?.updateCardCatalog(newValue)
         }
+        .onChange(of: isControllerInputSuspended) { _, newValue in
+            controllerInputOwner.isSuspended = newValue
+        }
         .onChange(of: scenePhase) { _, newValue in
             controllerInputScenePhaseDidChange(newValue)
         }
@@ -200,11 +207,18 @@ struct BoardView: View {
             }
         }
         .environment(\.boardCardCatalog, cardCatalog)
+        .disabled(isControllerInputSuspended)
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)
             .semanticSiriRemoteInput(
-                canHandleBack: { controller.coordinator.isModalPresented },
-                onOutcome: { controller.handle($0) }
+                canHandleBack: {
+                    !isControllerInputSuspended && controller.coordinator.isModalPresented
+                },
+                onOutcome: { outcome in
+                    BoardControllerInputDispatchGate.dispatch(outcome, owner: controllerInputOwner) {
+                        controller.handle($0)
+                    }
+                }
             )
         #endif
             .onChange(of: controller.coordinator.currentFocus) { _, newValue in

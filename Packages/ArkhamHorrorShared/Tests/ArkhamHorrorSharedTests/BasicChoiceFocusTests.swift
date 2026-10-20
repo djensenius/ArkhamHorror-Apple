@@ -212,6 +212,43 @@ struct BasicChoiceFocusTests {
         #expect(submitted == [0, 10])
     }
 
+    @Test("Presenting the game log suspends controller dispatch until dismissal")
+    func gameLogSuspendsControllerDispatchUntilDismissal() throws {
+        let owner = BoardControllerInputOwner()
+        let coordinator = ControllerInputOwnershipCoordinator()
+        coordinator.claim(owner)
+        var submitted: [Int] = []
+        var handleCalls = 0
+        let controller = try BoardCommandController(
+            projection: BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot()),
+            prompt: actionablePrompt(),
+            onChoice: { submitted.append($0) }
+        )
+        #expect(controller.handle(.command(.jumpToActivePrompt)))
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        let dispatchPrimaryAction = {
+            BoardControllerInputDispatchGate.dispatch(
+                .command(.primaryAction), owner: owner, coordinator: coordinator
+            ) {
+                handleCalls += 1
+                controller.handle($0)
+            }
+        }
+
+        #expect(dispatchPrimaryAction())
+        #expect(handleCalls == 1)
+        #expect(submitted == [0])
+        owner.isSuspended = true
+        #expect(!dispatchPrimaryAction())
+        #expect(handleCalls == 1)
+        #expect(submitted == [0])
+        #expect(controller.coordinator.currentFocus == BoardFocusID.promptChoice(0))
+        owner.isSuspended = false
+        #expect(dispatchPrimaryAction())
+        #expect(handleCalls == 2)
+        #expect(submitted == [0, 0])
+    }
+
     @Test("Completing choices focus after regular choices when the server lists Done first")
     func completingChoiceFocusMatchesVisibleOrder() throws {
         var submitted: [Int] = []
