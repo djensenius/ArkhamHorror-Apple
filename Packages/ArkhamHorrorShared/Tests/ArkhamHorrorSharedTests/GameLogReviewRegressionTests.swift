@@ -235,7 +235,9 @@ struct GameLogReviewRegressionTests {
         #expect(readingHistory.renderedRowsChanged(after.map(\.id)) == nil)
         #expect(!readingHistory.isPinnedToBottom)
         readingHistory.readerScrolled(distanceFromBottom: 0)
-        let next = GameLogOutline.rows(items: GameLogPresentation.items(rows: captured, playerID: nil))
+        let next = GameLogOutline.rows(items: GameLogPresentation.items(
+            rows: captured, playerID: nil
+        ))
         #expect(readingHistory.renderedRowsChanged(next.map(\.id)) == "entry:354")
     }
 

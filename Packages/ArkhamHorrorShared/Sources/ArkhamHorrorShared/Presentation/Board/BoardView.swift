@@ -1,6 +1,7 @@
 // swiftlint:disable file_length
 import SwiftUI
 
+// swiftlint:disable type_body_length
 /// The reusable, read-only native Arkham Horror board: a fixture/snapshot-backed
 /// presentation of a decoded ``PublicGameSnapshot`` (via ``BoardProjection``), adaptive
 /// across compact iPhone, iPad, resizable macOS, tvOS, and visionOS.
@@ -215,9 +216,9 @@ struct BoardView: View {
                     !isControllerInputSuspended && controller.coordinator.isModalPresented
                 },
                 onOutcome: { outcome in
-                    BoardControllerInputDispatchGate.dispatch(outcome, owner: controllerInputOwner) {
-                        controller.handle($0)
-                    }
+                    BoardControllerInputDispatchGate.dispatch(
+                        outcome, owner: controllerInputOwner
+                    ) { controller.handle($0) }
                 }
             )
         #endif
@@ -298,6 +299,8 @@ struct BoardView: View {
         return BoardInspectorContent.resolve(id: inspectedID, in: controller.projection)
     }
 }
+
+// swiftlint:enable type_body_length
 
 /// Pure Reduce-Motion transition policy: fully disabled (`nil`) under Reduce Motion,
 /// otherwise the system default — extracted from ``BoardView/body`` so it is directly
