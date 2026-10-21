@@ -3,12 +3,13 @@ import Foundation
 /// Follow arrivals only while the reader is at the live tail, with the web's 40-point tolerance.
 struct GameLogScrollState {
     private(set) var isPinnedToBottom = true
-    private var renderedRowIDs: [String] = []
+    private var presentedItems: [GameLogItem] = []
 
-    mutating func renderedRowsChanged(_ rowIDs: [String]) -> String? {
-        guard rowIDs != renderedRowIDs else { return nil }
-        renderedRowIDs = rowIDs
-        return target(for: rowIDs.last)
+    mutating func itemsChanged(_ items: [GameLogItem], renderedRowIDs: [String]) -> String? {
+        // Expansion overrides change rendered rows, not log data, and must not move the reader.
+        guard items != presentedItems else { return nil }
+        presentedItems = items
+        return target(for: renderedRowIDs.last)
     }
 
     mutating func readerScrolled(distanceFromBottom: CGFloat) {

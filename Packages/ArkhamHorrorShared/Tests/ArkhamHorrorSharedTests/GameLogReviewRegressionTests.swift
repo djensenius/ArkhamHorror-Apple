@@ -213,32 +213,33 @@ struct GameLogReviewRegressionTests {
             subdirectory: "Fixtures/LiveGameLog"
         ))
         let captured = try ContractJSON.decode([GameLogRow].self, from: Data(contentsOf: url))
-        let before = GameLogOutline.rows(items: GameLogPresentation.items(
-            rows: Array(captured.prefix(5)), playerID: nil
-        ))
-        let after = GameLogOutline.rows(items: GameLogPresentation.items(
-            rows: Array(captured.prefix(8)), playerID: nil
-        ))
+        let beforeItems = GameLogPresentation.items(rows: Array(captured.prefix(5)), playerID: nil)
+        let afterItems = GameLogPresentation.items(rows: Array(captured.prefix(8)), playerID: nil)
+        let before = GameLogOutline.rows(items: beforeItems)
+        let after = GameLogOutline.rows(items: afterItems)
         #expect(before.map(\.entry.seq) == [346, 347, 348, 349, 350])
         #expect(after.map(\.entry.seq) == [346, 347, 348, 349, 351, 352, 353, 350])
         let summaryID = try #require(before.last?.id)
         #expect(after.last?.id == summaryID)
 
         var pinned = GameLogScrollState()
-        #expect(pinned.renderedRowsChanged(before.map(\.id)) == summaryID)
-        #expect(pinned.renderedRowsChanged(after.map(\.id)) == summaryID)
-        #expect(pinned.renderedRowsChanged(after.map(\.id)) == nil)
+        #expect(pinned.itemsChanged(beforeItems, renderedRowIDs: before.map(\.id)) == summaryID)
+        #expect(pinned.itemsChanged(afterItems, renderedRowIDs: after.map(\.id)) == summaryID)
+        #expect(pinned.itemsChanged(afterItems, renderedRowIDs: after.map(\.id)) == nil)
 
         var readingHistory = GameLogScrollState()
-        #expect(readingHistory.renderedRowsChanged(before.map(\.id)) == summaryID)
+        #expect(readingHistory.itemsChanged(
+            beforeItems, renderedRowIDs: before.map(\.id)
+        ) == summaryID)
         readingHistory.readerScrolled(distanceFromBottom: 120)
-        #expect(readingHistory.renderedRowsChanged(after.map(\.id)) == nil)
+        #expect(readingHistory.itemsChanged(afterItems, renderedRowIDs: after.map(\.id)) == nil)
         #expect(!readingHistory.isPinnedToBottom)
         readingHistory.readerScrolled(distanceFromBottom: 0)
-        let next = GameLogOutline.rows(items: GameLogPresentation.items(
-            rows: captured, playerID: nil
-        ))
-        #expect(readingHistory.renderedRowsChanged(next.map(\.id)) == "entry:354")
+        let nextItems = GameLogPresentation.items(rows: captured, playerID: nil)
+        let next = GameLogOutline.rows(items: nextItems)
+        #expect(readingHistory.itemsChanged(
+            nextItems, renderedRowIDs: next.map(\.id)
+        ) == "entry:354")
     }
 
     @Test("Depth-zero Test group headers never split off their last body part")

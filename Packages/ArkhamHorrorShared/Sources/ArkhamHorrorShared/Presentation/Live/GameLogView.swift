@@ -52,8 +52,10 @@ struct GameLogView: View {
                             context.geometry.contentSize.height - context.geometry.visibleRect.maxY)
                     }
                 }
-                .onChange(of: rows.map(\.id), initial: true) { _, rowIDs in
-                    if let target = scrollState.renderedRowsChanged(rowIDs) {
+                .onChange(of: presentedItems, initial: true) { _, newItems in
+                    if let target = scrollState.itemsChanged(
+                        newItems, renderedRowIDs: rows.map(\.id)
+                    ) {
                         scroll.scrollTo(target, anchor: .bottom)
                     }
                 }
