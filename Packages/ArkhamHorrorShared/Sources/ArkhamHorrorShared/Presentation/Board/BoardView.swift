@@ -169,6 +169,9 @@ struct BoardView: View {
         }
         .onChange(of: isControllerInputSuspended) { _, newValue in
             controllerInputOwner.isSuspended = newValue
+            if !newValue {
+                focusedID = controller?.coordinator.currentFocus
+            }
         }
         .onChange(of: scenePhase) { _, newValue in
             controllerInputScenePhaseDidChange(newValue)
@@ -208,7 +211,6 @@ struct BoardView: View {
             }
         }
         .environment(\.boardCardCatalog, cardCatalog)
-        .disabled(isControllerInputSuspended)
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)
             .semanticSiriRemoteInput(
