@@ -96,7 +96,10 @@ answer-enemy-attack.json:contracts/fixtures/answer-enemy-attack.json
 answer-exchange-amounts.json:contracts/fixtures/answer-exchange-amounts.json
 answer-payment-amounts.json:contracts/fixtures/answer-payment-amounts.json
 answer-question.json:contracts/fixtures/answer-question.json
+arkhamdb.json:contracts/fixtures/arkhamdb.json
+arkhamdb.schema.json:contracts/schemas/arkhamdb.schema.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
+capabilities-arkhamdb.json:contracts/fixtures/capabilities-arkhamdb.json
 capabilities-locale-catalog.json:contracts/fixtures/capabilities-locale-catalog.json
 capabilities.json:contracts/fixtures/capabilities.json
 capabilities.schema.json:contracts/schemas/capabilities.schema.json

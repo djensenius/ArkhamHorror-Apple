@@ -63,16 +63,28 @@ enum ContractFixtureDigests {
             sha256Hex: "b6d6b4d70acadd6d11d7c30fd67d052085384c478a00520d68c5c2f4d1b18fa7"
         ),
         VendoredFixtureDigest(
+            fileName: "arkhamdb",
+            sha256Hex: "6f65fa4ce1abc81da016b6fa3bad93b2f1e4bbee5ff5bf08f7f09749088ada40"
+        ),
+        VendoredFixtureDigest(
+            fileName: "arkhamdb.schema",
+            sha256Hex: "43a8782d8daab78f4db076a282a56567342b7b497683e497e31d7c7eb8a7e898"
+        ),
+        VendoredFixtureDigest(
+            fileName: "capabilities-arkhamdb",
+            sha256Hex: "548cec7914c02fe7cb78c37f71d9346f0e8bacfcca428db0d915bf709932ffc4"
+        ),
+        VendoredFixtureDigest(
             fileName: "basic-choice-question.schema",
             sha256Hex: "2d611ed83a47a8efb7843f989434dd772421528e9945f7e2c5054d4395f10172"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities",
-            sha256Hex: "096e253b657ebbe286c080f3b4aca7def50861764959d56715da3e3e7c339f61"
+            sha256Hex: "e7e2375383add93478ce22929c811fcd813c24dbbbee0b4dc3630ed53c577e10"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities-locale-catalog",
-            sha256Hex: "8a3e38bf22b53c4e09c407cb7f59413ca9463b0f6570b388b4df02f6fa85ea06"
+            sha256Hex: "1b376e4e5edde3b8cf14eb0291622f8826d31183df14d3237db29c7218c9beeb"
         ),
         VendoredFixtureDigest(
             fileName: "capabilities.schema",
@@ -128,7 +140,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "manifest",
-            sha256Hex: "5c74d543a47fa244a36e320460193f09eac9a906da7c365ea1dbab30d1b53739"
+            sha256Hex: "5ba1e91cda84b59eeed2e33b027f3b2db4333d7e615cc18981df3f81c9772b06"
         ),
         VendoredFixtureDigest(
             fileName: "mode-campaign-only",
@@ -444,7 +456,7 @@ enum ContractFixtureDigests {
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation",
-            sha256Hex: "dd35364723200ac1d53ea2b991b2bdcc90804f72e3a199677e53ffec7315c9cf"
+            sha256Hex: "b445a7ed2b139cac64f5835136e4cdbdf0d648f8df1b64fc45b634f7bc20c3ac"
         ),
         VendoredFixtureDigest(
             fileName: "replay-attestation.schema",
