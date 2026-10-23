@@ -107,8 +107,8 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// opened as a directory (including if it is itself a symlink: opened
     /// with `O_NOFOLLOW`) or if creating it first fails.
     ///
-    /// Every path component from the filesystem root down to `directory`
-    /// itself is walked with its own `openat`/`mkdirat` call chained off
+    /// Every path component below the FileManager-provided container/Caches
+    /// trust anchor down to `directory` is walked with `openat`/`mkdirat` chained off
     /// the previous component's own already-opened, `O_NOFOLLOW`-verified
     /// descriptor (see ``Self/openVerifiedComponent(parentFD:name:createIfMissing:)``)
     /// — never `FileManager.createDirectory(at:withIntermediateDirectories:)`,
@@ -119,19 +119,19 @@ final class SecureCacheDirectory: @unchecked Sendable {
     /// transparently redirecting where this cache's data is actually read
     /// from and written to.
     ///
-    /// `fileManager` is intentionally unused: kept only so every existing
-    /// call site (production and test) stays source-compatible without
-    /// this type ever again touching a `FileManager` path-string API for
-    /// directory creation.
-    init(directory: URL, fileManager _: FileManager) throws {
-        let walkResult = try Self.openOrCreateVerifiedDirectory(at: directory)
+    /// `fileManager` supplies only trusted anchor URLs, never path-based
+    /// directory creation or metadata access above the container boundary.
+    init(directory: URL, fileManager: FileManager) throws {
+        let walkResult = try Self.openOrCreateVerifiedDirectory(
+            at: directory, fileManager: fileManager
+        )
         let descriptor = walkResult.descriptor
         var rootStat = stat()
         guard fstat(descriptor, &rootStat) == 0, (rootStat.st_mode & S_IFMT) == S_IFDIR else {
             close(descriptor)
             throw AssetError.cachePersistenceFailed("Cache root is not a verified directory")
         }
-        // Every ancestor up to and including this leaf directory already
+        // Every walked component, from the anchor through this leaf, already
         // passed ``SecureCacheDirectory/requireTrustedAncestor(info:name:trustedOwnerUID:)``'s
         // "root or this process's own uid" policy during the walk above
         // (see `SecureCacheDirectory+PathWalk.swift`), tolerating a
