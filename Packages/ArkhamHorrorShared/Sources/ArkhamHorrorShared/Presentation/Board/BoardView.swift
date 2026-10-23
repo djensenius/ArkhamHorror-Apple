@@ -1,6 +1,7 @@
 // swiftlint:disable file_length
 import SwiftUI
 
+// swiftlint:disable type_body_length
 /// The reusable, read-only native Arkham Horror board: a fixture/snapshot-backed
 /// presentation of a decoded ``PublicGameSnapshot`` (via ``BoardProjection``), adaptive
 /// across compact iPhone, iPad, resizable macOS, tvOS, and visionOS.
@@ -20,6 +21,7 @@ struct BoardView: View {
     let localPlayerID: PlayerID?
     let isSolo: Bool
     let isLocalSpectator: Bool
+    let isControllerInputSuspended: Bool
     let cardCatalog: CardCatalogSnapshot?
     let onChoice: (Int) -> Void
     let onAmounts: ([String: Int]) -> Void
@@ -33,9 +35,9 @@ struct BoardView: View {
     let onCatalogRetry: (BasicChoiceCatalogRetryPresentation) -> Void
 
     @State private var controller: BoardCommandController?
+    @State var controllerInputOwner = BoardControllerInputOwner()
     #if canImport(GameController) && !os(tvOS)
         @State var controllerInputCenter: ControllerInputCenter?
-        @State var controllerInputOwner = BoardControllerInputOwner()
         @State var controllerInputStarted = false
         @State var controllerInputWindowIsKey = false
     #endif
@@ -52,6 +54,7 @@ struct BoardView: View {
         localPlayerID: PlayerID? = nil,
         isSolo: Bool = false,
         isLocalSpectator: Bool = false,
+        isControllerInputSuspended: Bool = false,
         cardCatalog: CardCatalogSnapshot? = nil,
         onChoice: @escaping (Int) -> Void = { _ in },
         onAmounts: @escaping ([String: Int]) -> Void = { _ in },
@@ -69,6 +72,7 @@ struct BoardView: View {
         self.localPlayerID = localPlayerID
         self.isSolo = isSolo
         self.isLocalSpectator = isLocalSpectator
+        self.isControllerInputSuspended = isControllerInputSuspended
         self.cardCatalog = cardCatalog
         self.onChoice = onChoice
         self.onAmounts = onAmounts
@@ -91,6 +95,7 @@ struct BoardView: View {
             }
         }
         .onAppear {
+            controllerInputOwner.isSuspended = isControllerInputSuspended
             let activeController: BoardCommandController
             if let controller {
                 updateControllerInputs(controller)
@@ -138,7 +143,7 @@ struct BoardView: View {
         .onDisappear {
             stopControllerInputIfAvailable()
         }
-        .onChange(of: projection) { _, newValue in
+        .onChange(of: projection.boardInteractionProjection) { _, newValue in
             if let controller {
                 updateControllerInputs(controller)
                 controller.applySnapshot(newValue, prompt: prompt)
@@ -161,6 +166,12 @@ struct BoardView: View {
         }
         .onChange(of: cardCatalog) { _, newValue in
             controller?.updateCardCatalog(newValue)
+        }
+        .onChange(of: isControllerInputSuspended) { _, newValue in
+            controllerInputOwner.isSuspended = newValue
+            if !newValue {
+                focusedID = controller?.coordinator.currentFocus
+            }
         }
         .onChange(of: scenePhase) { _, newValue in
             controllerInputScenePhaseDidChange(newValue)
@@ -203,8 +214,14 @@ struct BoardView: View {
         .semanticKeyboardInput { controller.handle($0) }
         #if os(tvOS)
             .semanticSiriRemoteInput(
-                canHandleBack: { controller.coordinator.isModalPresented },
-                onOutcome: { controller.handle($0) }
+                canHandleBack: {
+                    !isControllerInputSuspended && controller.coordinator.isModalPresented
+                },
+                onOutcome: { outcome in
+                    BoardControllerInputDispatchGate.dispatch(
+                        outcome, owner: controllerInputOwner
+                    ) { controller.handle($0) }
+                }
             )
         #endif
             .onChange(of: controller.coordinator.currentFocus) { _, newValue in
@@ -284,6 +301,8 @@ struct BoardView: View {
         return BoardInspectorContent.resolve(id: inspectedID, in: controller.projection)
     }
 }
+
+// swiftlint:enable type_body_length
 
 /// Pure Reduce-Motion transition policy: fully disabled (`nil`) under Reduce Motion,
 /// otherwise the system default — extracted from ``BoardView/body`` so it is directly

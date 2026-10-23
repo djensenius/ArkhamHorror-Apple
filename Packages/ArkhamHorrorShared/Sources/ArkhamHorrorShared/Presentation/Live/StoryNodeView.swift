@@ -336,7 +336,7 @@ private struct ResolvedStoryListItemView: View {
     }
 }
 
-private struct StoryNodeSequenceView: View {
+struct StoryNodeSequenceView: View {
     let nodes: [StoryNode]
     var inlineTextStyle: StoryInlineTextStyle = .body
 
@@ -477,9 +477,7 @@ enum StoryInlineTextRenderer {
         case .lineBreak:
             Text("\n")
         case let .icon(name):
-            Text(
-                "\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))"
-            )
+            namedIconText(name, iconFonts: iconFonts, textStyle: textStyle)
         case let .semanticIcon(icon):
             semanticIconText(for: icon, iconFonts: iconFonts, textStyle: textStyle)
         case let .cardReference(_, children):
@@ -491,6 +489,27 @@ enum StoryInlineTextRenderer {
         case .paragraph, .heading, .list, .rule, .image, .table:
             nil
         }
+    }
+
+    static func namedIconGlyph(
+        _ name: String, iconFonts: WebIconFontAvailability
+    ) -> StoryInlineSemanticIconRun? {
+        guard let glyph = StoryIconGlyph.byIconName[name],
+              let fontName = iconFonts.postScriptName(for: glyph) else { return nil }
+        return .webGlyph(iconName: name, fontName: fontName, glyph: glyph.string)
+    }
+
+    private static func namedIconText(
+        _ name: String, iconFonts: WebIconFontAvailability, textStyle: StoryInlineTextStyle
+    ) -> Text {
+        if case let .webGlyph(_, fontName, glyph) = namedIconGlyph(name, iconFonts: iconFonts) {
+            return Text(verbatim: glyph).font(.custom(
+                fontName,
+                size: StoryWebGlyphFontMetrics.pointSize(forIconNamed: name, textStyle: textStyle),
+                relativeTo: textStyle.swiftUITextStyle
+            ))
+        }
+        return Text("\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))")
     }
 
     private static func semanticIconText(

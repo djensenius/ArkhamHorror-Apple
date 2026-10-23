@@ -217,7 +217,8 @@ final class BoardCommandController {
         with latestProjection: BoardProjection,
         prompt latestPrompt: BasicChoicePromptPresentation? = nil
     ) {
-        guard projection != latestProjection || prompt != latestPrompt else { return }
+        guard projection.boardInteractionProjection != latestProjection.boardInteractionProjection
+            || prompt != latestPrompt else { return }
         applySnapshot(latestProjection, prompt: latestPrompt)
     }
 

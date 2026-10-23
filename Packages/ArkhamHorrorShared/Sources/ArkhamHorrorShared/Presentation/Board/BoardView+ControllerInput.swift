@@ -4,9 +4,30 @@ import SwiftUI
     import UIKit
 #endif
 
-#if canImport(GameController) && !os(tvOS)
-    final class BoardControllerInputOwner {}
+final class BoardControllerInputOwner {
+    var isSuspended = false
+}
 
+enum BoardControllerInputDispatchGate {
+    @MainActor
+    @discardableResult
+    static func dispatch(
+        _ outcome: SemanticDispatchOutcome,
+        owner: BoardControllerInputOwner,
+        coordinator: ControllerInputOwnershipCoordinator = .shared,
+        handler: (SemanticDispatchOutcome) -> Void
+    ) -> Bool {
+        guard !owner.isSuspended else { return false }
+        // tvOS uses native focus/remote events rather than process-wide discovery.
+        #if canImport(GameController) && !os(tvOS)
+            guard coordinator.canDispatch(for: owner) else { return false }
+        #endif
+        handler(outcome)
+        return true
+    }
+}
+
+#if canImport(GameController) && !os(tvOS)
     enum BoardControllerInputOwnershipDecision: Equatable {
         case claim
         case release
@@ -44,20 +65,6 @@ import SwiftUI
         }
     }
 
-    enum BoardControllerInputDispatchGate {
-        @MainActor
-        @discardableResult
-        static func dispatch(
-            _ outcome: SemanticDispatchOutcome,
-            owner: BoardControllerInputOwner,
-            coordinator: ControllerInputOwnershipCoordinator = .shared,
-            handler: (SemanticDispatchOutcome) -> Void
-        ) -> Bool {
-            guard coordinator.canDispatch(for: owner) else { return false }
-            handler(outcome)
-            return true
-        }
-    }
 #endif
 
 #if (os(iOS) || os(visionOS)) && canImport(UIKit) && canImport(GameController)

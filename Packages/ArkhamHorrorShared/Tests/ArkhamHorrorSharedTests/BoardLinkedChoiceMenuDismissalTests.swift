@@ -52,6 +52,59 @@ struct BoardLinkedChoiceMenuDismissalTests {
         #expect(submittedChoices.isEmpty)
     }
 
+    @Test("Log-only updates do not apply a board snapshot or close the linked-choice menu")
+    func logOnlyUpdatePreservesLinkedChoiceMenu() {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        let playerID = BoardTestFixtures.playerID("000000000001")
+        let enemyID = BoardTestFixtures.enemyID("000000000486")
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    engagedEnemies: [enemyID],
+                    playerID: playerID
+                ),
+            ],
+            playerOrder: [investigatorID],
+            activeInvestigatorID: investigatorID,
+            enemyValues: [enemyID: .null]
+        ))
+        let prompt = enemyPrompt(choices: [
+            enemyChoice(index: 7, enemyID: enemyID, kind: .fight),
+            enemyChoice(index: 8, enemyID: enemyID, kind: .evade),
+        ])
+        let controller = BoardCommandController(
+            projection: projection,
+            prompt: prompt,
+            localPlayerID: playerID,
+            onChoice: { _ in }
+        )
+        let enemyFocus = BoardFocusID.promptElement(.enemy(enemyID))
+
+        #expect(controller.handle(focusID: enemyFocus, .command(.primaryAction)))
+        guard let request = controller.linkedChoiceMenuRequest else {
+            Issue.record("Expected linked-choice menu request")
+            return
+        }
+        var updated = projection
+        updated.gameLog = [.legacy(text: "Teammate chat", step: nil)]
+        #expect(updated != projection) // The log sheet must still observe this arrival.
+        var snapshotApplyCount = 0
+        // The exact value watched by BoardView.onChange, not full projection equality.
+        if projection.boardInteractionProjection != updated.boardInteractionProjection {
+            snapshotApplyCount += 1
+            controller.applySnapshot(updated, prompt: prompt)
+        }
+        #expect(snapshotApplyCount == 0)
+        #expect(controller.linkedChoiceMenuRequest == request)
+        #expect(controller.coordinator.isModalPresented)
+        #expect(controller.projection.gameLog == projection.gameLog)
+        controller.reconcileOnAppear(with: updated, prompt: prompt)
+        #expect(controller.linkedChoiceMenuRequest == request)
+        #expect(controller.coordinator.isModalPresented)
+        #expect(controller.projection.gameLog == projection.gameLog)
+    }
+
     private enum EnemyChoiceKind {
         case fight
         case evade

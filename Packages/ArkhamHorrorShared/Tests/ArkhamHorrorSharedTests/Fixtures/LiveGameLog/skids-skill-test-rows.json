@@ -1,0 +1,534 @@
+[
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 346,
+      "step": 212,
+      "kind": "Test",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.testOpensAgainst",
+            {
+              "difficulty": {
+                "tag": "LogNumber",
+                "contents": 4
+              },
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              },
+              "skill": {
+                "tag": "LogIcon",
+                "contents": "intellect"
+              },
+              "target": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefLocation",
+                  "name": "Kitchen",
+                  "cardCode": "c13080",
+                  "cardId": null,
+                  "entityId": "5d5c9975-e932-4596-9c16-d5f90b5da7e0",
+                  "faceDown": false
+                }
+              },
+              "verb": {
+                "tag": "LogI18n",
+                "contents": [
+                  "log.action.investigate",
+                  {}
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupHeader"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 347,
+      "step": 213,
+      "kind": "Notice",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.commits",
+            {
+              "card": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefCard",
+                  "name": "Unexpected Courage",
+                  "cardCode": "c01093",
+                  "cardId": "a4b50405-13f4-4cd2-bf5f-851c298280ab",
+                  "entityId": null,
+                  "faceDown": false
+                }
+              },
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": "commit:a4b50405-13f4-4cd2-bf5f-851c298280ab"
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 348,
+      "step": 214,
+      "kind": "Mechanic",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.drawsChaosTokens",
+            {
+              "count": {
+                "tag": "LogNumber",
+                "contents": 1
+              },
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              },
+              "tokens": {
+                "tag": "LogList",
+                "contents": [
+                  {
+                    "tag": "LogToken",
+                    "contents": "Zero"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 349,
+      "step": 215,
+      "kind": "Notice",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.testBreakdown",
+            {
+              "difficulty": {
+                "tag": "LogNumber",
+                "contents": 4
+              },
+              "icons": {
+                "tag": "LogDelta",
+                "contents": 2
+              },
+              "skill": {
+                "tag": "LogNumber",
+                "contents": 3
+              },
+              "tokens": {
+                "tag": "LogDelta",
+                "contents": 0
+              },
+              "total": {
+                "tag": "LogNumber",
+                "contents": 5
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 350,
+      "step": 215,
+      "kind": "Test",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.skillTestPassedAgainst",
+            {
+              "by": {
+                "tag": "LogNumber",
+                "contents": 1
+              },
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              },
+              "skill": {
+                "tag": "LogIcon",
+                "contents": "intellect"
+              },
+              "target": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefLocation",
+                  "name": "Kitchen",
+                  "cardCode": "c13080",
+                  "cardId": null,
+                  "entityId": "5d5c9975-e932-4596-9c16-d5f90b5da7e0",
+                  "faceDown": false
+                }
+              },
+              "verb": {
+                "tag": "LogI18n",
+                "contents": [
+                  "log.action.investigate",
+                  {}
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.testArithmetic",
+            {
+              "difficulty": {
+                "tag": "LogNumber",
+                "contents": 4
+              },
+              "value": {
+                "tag": "LogNumber",
+                "contents": 5
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": "Good",
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupSummary"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 351,
+      "step": 215,
+      "kind": "Mechanic",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.discoveredCluesAt",
+            {
+              "count": {
+                "tag": "LogNumber",
+                "contents": 1
+              },
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              },
+              "location": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefLocation",
+                  "name": "Kitchen",
+                  "cardCode": "c13080",
+                  "cardId": null,
+                  "entityId": "5d5c9975-e932-4596-9c16-d5f90b5da7e0",
+                  "faceDown": false
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 352,
+      "step": 216,
+      "kind": "Action",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.triggersForcedAbility",
+            {
+              "investigator": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              },
+              "source": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefLocation",
+                  "name": "Kitchen",
+                  "cardCode": "c13080",
+                  "cardId": null,
+                  "entityId": "5d5c9975-e932-4596-9c16-d5f90b5da7e0",
+                  "faceDown": false
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 353,
+      "step": 217,
+      "kind": "Mechanic",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.takesHorrorFrom",
+            {
+              "count": {
+                "tag": "LogNumber",
+                "contents": 1
+              },
+              "source": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefLocation",
+                  "name": "Kitchen",
+                  "cardCode": "c13080",
+                  "cardId": null,
+                  "entityId": "5d5c9975-e932-4596-9c16-d5f90b5da7e0",
+                  "faceDown": false
+                }
+              },
+              "target": {
+                "tag": "LogRefPart",
+                "contents": {
+                  "kind": "RefInvestigator",
+                  "name": "\"Skids\" O'Toole: The Ex-Con",
+                  "cardCode": "c01003",
+                  "cardId": null,
+                  "entityId": "c01003",
+                  "faceDown": false
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": {
+        "id": "skillTest:a3d670b6-a22e-4409-96e4-cf48872f2425",
+        "role": "GroupMember"
+      },
+      "tag": null
+    }
+  },
+  {
+    "tag": "LogRowStructured",
+    "contents": {
+      "seq": 354,
+      "step": 218,
+      "kind": "Structure",
+      "body": [
+        {
+          "tag": "LogI18n",
+          "contents": [
+            "log.phase.enemy",
+            {}
+          ]
+        }
+      ],
+      "source": null,
+      "children": [],
+      "audience": {
+        "tag": "Everyone"
+      },
+      "context": {
+        "round": null,
+        "phase": null,
+        "turn": null
+      },
+      "tone": null,
+      "group": null,
+      "tag": null
+    }
+  }
+]
