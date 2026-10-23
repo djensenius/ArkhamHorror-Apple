@@ -60,7 +60,8 @@ enum BoardProjectionBuilder { // swiftlint:disable:this type_body_length
                 skillTest: snapshot.skillTest,
                 results: snapshot.skillTestResults
             ),
-            questions: snapshot.question
+            questions: snapshot.question,
+            gameLog: snapshot.log
         )
     }
 

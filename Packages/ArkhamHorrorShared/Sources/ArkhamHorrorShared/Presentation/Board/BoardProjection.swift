@@ -394,4 +394,6 @@ struct BoardProjection: Sendable, Equatable {
     let skillTest: BoardSkillTestProjection?
     /// Exact player-keyed prompts. Choice arrays retain their authoritative wire order.
     let questions: UUIDKeyedMap<PlayerIDTag, BasicChoiceQuestionPayload>
+    /// Raw audience-bearing rows are filtered for the current seat at presentation time.
+    var gameLog: [GameLogRow] = []
 }
