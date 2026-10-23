@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.53",'
+    echo '  "schemaRevision": "0.1.54",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
@@ -141,6 +141,9 @@ write_backend_manifest() {
       first=0
       schema="contracts/schemas/raw-question-fixture.schema.json"
       case "$name" in
+        arkhamdb.json)
+          schema="contracts/schemas/arkhamdb.schema.json"
+          ;;
         answer-*.json)
           schema="contracts/schemas/client-answer.schema.json"
           ;;
