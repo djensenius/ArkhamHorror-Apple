@@ -123,6 +123,9 @@ struct ContractFixtureDigestTests {
             "answer-exchange-amounts",
             "answer-payment-amounts",
             "answer-question",
+            "arkhamdb",
+            "arkhamdb.schema",
+            "capabilities-arkhamdb",
             "basic-choice-question.schema",
             "campaign-catalog",
             "campaign-catalog.schema",
@@ -291,7 +294,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "06d5df29d991cc69c83637b1833be81045e8b113"
+            ContractPin.current.backendCommit == "b9ffd84474de90a6b61e228180d89083cabf57cc"
         )
     }
 
