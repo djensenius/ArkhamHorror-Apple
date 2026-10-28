@@ -16,3 +16,18 @@ func arkhamDBErrorMessage(_ error: ArkhamDBError?) -> String {
     }
     return arkhamDBLocalized("failed")
 }
+
+func arkhamDBSkippedText(_ count: Int) -> String {
+    String(format: arkhamDBLocalized(count == 1 ? "skippedOne" : "skipped"), count)
+}
+
+func arkhamDBUpdatedText(_ value: String?) -> String? {
+    guard let value else { return nil }
+    let date = (try? Date(value, strategy: .iso8601))
+        ?? (try? Date(value, strategy: .iso8601.time(includingFractionalSeconds: true)))
+    guard let date else { return nil }
+    return String(
+        format: arkhamDBLocalized("updated"),
+        date.formatted(date: .abbreviated, time: .shortened)
+    )
+}

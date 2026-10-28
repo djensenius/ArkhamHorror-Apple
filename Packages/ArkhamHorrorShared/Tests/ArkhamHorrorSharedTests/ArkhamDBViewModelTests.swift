@@ -6,6 +6,7 @@ import Testing
 final class ArkhamDBStubAuthentication: ArkhamDBAuthenticating {
     var result: Result<URL, any Error>
     var onAuthenticate: () -> Void = {}
+    var beforeReturn: () async -> Void = {}
     private(set) var urls: [URL] = []
 
     init(_ result: Result<URL, any Error>) {
@@ -15,6 +16,7 @@ final class ArkhamDBStubAuthentication: ArkhamDBAuthenticating {
     func authenticate(url: URL) async throws -> URL {
         urls.append(url)
         onAuthenticate()
+        await beforeReturn()
         return try result.get()
     }
 }
@@ -47,7 +49,10 @@ struct ArkhamDBViewModelTests {
     @Test("A failed first status refresh never leaves Loading on screen", arguments: [0, 501, 502])
     func failedInitialStatus(status: Int) async throws {
         let responses = try status == 0 ? [] : [(status, ContractJSON.encode(
-            ArkhamDBError(code: status == 501 ? .disabled : .remoteUnavailable, error: "server detail")
+            ArkhamDBError(
+                code: status == 501 ? .disabled : .remoteUnavailable,
+                error: "server detail"
+            )
         ))]
         let model = model(ArkhamDBScriptedTransport(responses))
         await model.refreshStatus()
@@ -56,6 +61,22 @@ struct ArkhamDBViewModelTests {
         #expect(model.message != nil)
         #expect(model.statusText == arkhamDBLocalized("statusUnavailable"))
         #expect(model.statusText != arkhamDBLocalized("loading"))
+    }
+
+    @Test("A skipped busy load cannot claim the remote deck list is empty")
+    func busyDeckLoadDoesNotClaimEmpty() async {
+        let transport = ArkhamDBScriptedTransport([(200, Data("[]".utf8))])
+        let model = model(transport)
+        model.isBusy = true
+        await model.loadDecks()
+        model.isBusy = false
+        #expect(await transport.requests.isEmpty)
+        #expect(!model.hasLoadedDecks)
+        #expect(!model.showsEmptyDecks)
+        await model.loadDecks()
+        #expect(model.hasLoadedDecks)
+        #expect(model.showsEmptyDecks)
+        #expect(await transport.requests.count == 1)
     }
 
     @Test("Link runs start → browser → authenticated completion → authoritative status")
@@ -68,7 +89,7 @@ struct ArkhamDBViewModelTests {
         let model = model(transport, authentication: auth)
         await model.link()
         #expect(model.status?.linked == true)
-        #expect(model.statusText == "Linked as Investigator")
+        #expect(model.statusText == String(format: arkhamDBLocalized("linkedAs"), "Investigator"))
         #expect(model.message == nil)
         #expect(!model.isBusy)
         #expect(auth.urls.map(\.scheme) == ["https"])
@@ -213,12 +234,68 @@ struct ArkhamDBViewModelTests {
         ])
         let model = model(transport)
         await model.refreshStatus()
-        #expect(model.statusText == "Linked")
+        #expect(model.statusText == arkhamDBLocalized("linked"))
         model.confirmsUnlink = true
         await model.unlink()
         #expect(!model.confirmsUnlink)
         #expect(model.status?.linked == false)
-        #expect(model.statusText == "Not linked")
+        #expect(model.statusText == arkhamDBLocalized("unlinked"))
         #expect(model.decks.isEmpty)
+    }
+}
+
+extension ArkhamDBViewModelTests {
+    @Test("Double-tapping Link starts only one browser and completion")
+    func concurrentLinkIsIgnored() async throws {
+        let auth = try authentication()
+        let entered = AsyncStream<Void>.makeStream()
+        let release = AsyncStream<Void>.makeStream()
+        auth.onAuthenticate = { entered.continuation.yield() }
+        auth.beforeReturn = { for await _ in release.stream {
+            break
+        } }
+        let transport = try ArkhamDBScriptedTransport([
+            (200, arkhamDBFixtureData("linkStart")), (200, Data("[]".utf8)),
+            (200, arkhamDBFixtureData("linkedStatus")),
+        ])
+        let model = model(transport, authentication: auth)
+        let first = Task { await model.link() }
+        for await _ in entered.stream {
+            break
+        }
+        await model.link()
+        #expect(model.isBusy)
+        #expect(await transport.requests.count == 1)
+        #expect(auth.urls.count == 1)
+        release.continuation.yield()
+        release.continuation.finish()
+        await first.value
+        #expect(model.status?.linked == true)
+        #expect(model.message == nil)
+        #expect(await transport.requests.count == 3)
+    }
+
+    @Test("An invalid OAuth completion fails locally without expiring the app session")
+    func invalidCompletionDoesNotSignOut() async throws {
+        let auth = try authentication()
+        let transport = try ArkhamDBScriptedTransport([
+            (200, arkhamDBFixtureData("linkStart")),
+            (
+                403,
+                ContractJSON.encode(ArkhamDBError(
+                    code: .oauthCompletionInvalid,
+                    error: "private detail"
+                ))
+            ),
+        ])
+        var expiredCount = 0
+        let model = model(transport, authentication: auth, expired: { _ in expiredCount += 1 })
+        await model.link()
+        #expect(model.message == arkhamDBLocalized("failed"))
+        #expect(model.status == nil)
+        #expect(!model.needsRelinking)
+        #expect(!model.isBusy)
+        #expect(expiredCount == 0)
+        #expect(await transport.requests.count == 2)
     }
 }

@@ -119,31 +119,43 @@ struct ArkhamDBService: Sendable {
         case 200 ... 299: return data
         case 401: throw DeckServiceError.sessionExpired
         default:
-            let remote = try? ContractJSON.decode(ArkhamDBError.self, from: data)
-            if remote != nil || http.statusCode == 409 {
-                throw DeckServiceError.arkhamDB(remote)
+            throw responseError(data, statusCode: http.statusCode, deckOperation: deckOperation)
+        }
+    }
+
+    private func responseError(
+        _ data: Data, statusCode: Int, deckOperation: Bool
+    ) -> DeckServiceError {
+        let remote = try? ContractJSON.decode(ArkhamDBError.self, from: data)
+        if remote != nil || statusCode == 409 {
+            return .arkhamDB(remote)
+        }
+        if deckOperation {
+            return deckOperationError(data, statusCode: statusCode)
+        }
+        if statusCode == 501 {
+            return .arkhamDB(nil)
+        }
+        if statusCode == 400 {
+            if let errors = try? ContractJSON.decode(DeckValidationErrors.self, from: data) {
+                return .validationFailed(errors)
             }
-            // Unmapped decks use the server's public fetch fallback. Preserve the
-            // same operation errors as DeckService, without masking typed link errors.
-            if deckOperation {
-                if http.statusCode == 400 {
-                    guard let error = try? ContractJSON.decode(DeckOperationError.self, from: data)
-                    else { throw DeckServiceError.malformedPayload }
-                    throw DeckServiceError.operationFailed(error)
-                }
-                if (500 ... 599).contains(http.statusCode) {
-                    throw DeckServiceError.remoteDeckSourceUnavailable
-                }
-            }
-            if http.statusCode == 501 {
-                throw DeckServiceError.arkhamDB(nil)
-            }
-            if http.statusCode == 400 {
-                if let errors = try? ContractJSON.decode(DeckValidationErrors.self, from: data) {
-                    throw DeckServiceError.validationFailed(errors)
-                }
-            }
-            throw DeckServiceError.unexpectedStatus(http.statusCode)
+        }
+        return .unexpectedStatus(statusCode)
+    }
+
+    private func deckOperationError(_ data: Data, statusCode: Int) -> DeckServiceError {
+        // Unmapped decks use the server's public fetch fallback. Preserve the
+        // same operation errors as DeckService, without masking typed link errors.
+        switch statusCode {
+        case 400:
+            guard let error = try? ContractJSON.decode(DeckOperationError.self, from: data)
+            else { return .malformedPayload }
+            return .operationFailed(error)
+        case 500 ... 599:
+            return .remoteDeckSourceUnavailable
+        default:
+            return .unexpectedStatus(statusCode)
         }
     }
 }

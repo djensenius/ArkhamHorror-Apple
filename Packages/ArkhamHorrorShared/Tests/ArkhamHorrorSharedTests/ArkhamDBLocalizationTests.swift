@@ -7,20 +7,21 @@ struct ArkhamDBLocalizationTests {
     @Test("Account, browser and error strings resolve in English and German bundles")
     func bundledStrings() throws {
         let suffixes = [
-            "account", "loading", "unlinked", "linked", "linkedAs", "link", "relink", "unlink",
+            "account", "loading", "statusUnavailable", "unlinked", "linked", "linkedAs", "link",
+            "relink",
+            "unlink",
             "unlinkConfirmation", "unlinkExplanation", "anotherDevice", "refresh", "cancel",
             "decks",
-            "skipped", "empty", "updated", "imported", "import", "importAccessibility",
+            "skipped", "skippedOne", "empty", "updated", "imported", "import",
+            "importAccessibility",
             "relinkRequired",
             "disabled", "remoteUnavailable", "failed", "denied",
         ]
-        #expect(arkhamDBLocalized("linked") == "Linked")
         for locale in ["en", "de"] {
-            let url = URL(fileURLWithPath: #filePath)
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .deletingLastPathComponent()
-                .appending(path: "Sources/ArkhamHorrorShared/Localization/\(locale).lproj")
+            let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()
+                .appending(path: "ArkhamHorrorShared_ArkhamHorrorShared.bundle")
+            let module = try #require(Bundle(url: moduleURL))
+            let url = try #require(module.url(forResource: locale, withExtension: "lproj"))
             let bundle = try #require(Bundle(url: url))
             for suffix in suffixes {
                 let key = "arkhamdb.\(suffix)"
@@ -33,6 +34,30 @@ struct ArkhamDBLocalizationTests {
             let skipped = bundle.localizedString(forKey: "arkhamdb.skipped", value: nil, table: nil)
             #expect(String(format: skipped, 3).contains("3"))
             #expect(!String(format: skipped, 3).contains("%"))
+            let singular = bundle.localizedString(
+                forKey: "arkhamdb.skippedOne",
+                value: nil,
+                table: nil
+            )
+            #expect(String(format: singular, 1) == (locale == "de"
+                    ? "1 ArkhamDB-Deckeintrag konnte nicht gelesen werden. "
+                    + "Andere Decks werden unten angezeigt."
+                    : "Could not read 1 ArkhamDB deck entry. Other decks are shown below."))
         }
+    }
+
+    @Test("Browser copy formats timestamps and uses the singular skipped-entry message")
+    func browserCopy() {
+        let date = Date(timeIntervalSince1970: 1_767_225_600)
+        let expected = String(
+            format: arkhamDBLocalized("updated"),
+            date.formatted(date: .abbreviated, time: .shortened)
+        )
+        #expect(arkhamDBUpdatedText("2026-01-01T00:00:00Z") == expected)
+        #expect(arkhamDBUpdatedText("2026-01-01T00:00:00.000Z") == expected)
+        #expect(arkhamDBUpdatedText("not a timestamp") == nil)
+        #expect(arkhamDBUpdatedText(nil) == nil)
+        #expect(arkhamDBSkippedText(1) == String(format: arkhamDBLocalized("skippedOne"), 1))
+        #expect(arkhamDBSkippedText(3) == String(format: arkhamDBLocalized("skipped"), 3))
     }
 }

@@ -433,6 +433,7 @@
 "arkhamdb.cancel" = "Abbrechen";
 "arkhamdb.decks" = "ArkhamDB-Decks";
 "arkhamdb.skipped" = "%lld ArkhamDB-Deckeinträge konnten nicht gelesen werden. Andere Decks werden unten angezeigt.";
+"arkhamdb.skippedOne" = "%lld ArkhamDB-Deckeintrag konnte nicht gelesen werden. Andere Decks werden unten angezeigt.";
 "arkhamdb.empty" = "Keine ArkhamDB-Decks gefunden.";
 "arkhamdb.updated" = "Aktualisiert: %@";
 "arkhamdb.imported" = "Bereits importiert";
