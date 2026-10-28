@@ -136,6 +136,31 @@ struct ArkhamDBServiceTests {
         }
     }
 
+    @Test("Linked sync and import preserve unsupported-card validation errors")
+    func deckValidationErrors() async throws {
+        let url = try #require(Bundle.module.url(
+            forResource: "decks", withExtension: "json", subdirectory: "Fixtures/Contract"
+        ))
+        let fixture = try ContractJSON.decode([String: JSONValue].self, from: Data(contentsOf: url))
+        let data = try ContractJSON.encode(#require(fixture["validationErrors"]))
+        let errors = try DeckValidationErrors([.unimplementedCard(CardCode("c99999"))])
+        let expected = DeckServiceError.validationFailed(errors)
+        let deck = try arkhamDBFixture(Deck.self, "importedDeck")
+        let transport = ArkhamDBScriptedTransport([(400, data), (400, data)])
+        let service = ArkhamDBService(transport: transport)
+        let sync = ArkhamDBSyncDeckService(base: DeckService(), arkhamDB: service)
+        await #expect(throws: expected) {
+            try await sync.syncDeck(deck.id, on: .hosted, token: "token", timeout: 7)
+        }
+        await #expect(throws: expected) {
+            try await service.importDeck(
+                ArkhamDBImportRequest(deckId: "123"),
+                on: .hosted,
+                token: "token"
+            )
+        }
+    }
+
     @Test("Capability-enabled saved deck sync uses the server-owned mapping route")
     func linkedSyncRoute() async throws {
         let deck = try arkhamDBFixture(Deck.self, "importedDeck")

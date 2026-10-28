@@ -149,9 +149,13 @@ struct ArkhamDBService: Sendable {
         // same operation errors as DeckService, without masking typed link errors.
         switch statusCode {
         case 400:
-            guard let error = try? ContractJSON.decode(DeckOperationError.self, from: data)
-            else { return .malformedPayload }
-            return .operationFailed(error)
+            if let error = try? ContractJSON.decode(DeckOperationError.self, from: data) {
+                return .operationFailed(error)
+            }
+            if let errors = try? ContractJSON.decode(DeckValidationErrors.self, from: data) {
+                return .validationFailed(errors)
+            }
+            return .malformedPayload
         case 500 ... 599:
             return .remoteDeckSourceUnavailable
         default:
