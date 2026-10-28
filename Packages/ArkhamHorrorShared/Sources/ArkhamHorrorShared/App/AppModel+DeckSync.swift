@@ -115,7 +115,7 @@ extension AppModel {
         profile: ServerProfile,
         context: DeckRequestContext
     ) async throws {
-        let service = deckService
+        let service = deckService(on: profile)
         do {
             _ = try await withDeckChoiceSyncTimeout(seconds: deckChoiceSyncTimeout) {
                 try await service.validateDeckList(
@@ -175,6 +175,15 @@ extension AppModel {
             throw CancellationError()
         } catch GameLifecycleTokenAccessError.stale {
             throw GameLifecycleTokenAccessError.stale
+        } catch let DeckServiceError.arkhamDB(error) where error?.requiresRelinking == true {
+            try ensureCurrentDeckChoiceContext(context, on: profile)
+            let note = arkhamDBErrorMessage(error)
+            deckChoiceSyncNotes[key] = DeckChoiceSyncNote(message: note, expiresAt: nil)
+            return DeckChoiceSyncResult(
+                deck: deckForChoice(deck, on: profile),
+                note: note,
+                didAttemptSync: true
+            )
         } catch {
             return try fallbackDeckChoiceSyncResult(
                 for: deck,
@@ -206,7 +215,7 @@ extension AppModel {
         profile: ServerProfile,
         context: DeckRequestContext
     ) async throws -> Deck {
-        let service = deckService
+        let service = deckService(on: profile)
         let timeout = deckChoiceSyncTimeout
         return try await withDeckChoiceSyncTimeout(seconds: timeout) {
             try await service.syncDeck(

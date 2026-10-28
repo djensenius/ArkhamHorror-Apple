@@ -415,3 +415,32 @@
 "gameLog.level" = "Ebene %d";
 "gameLog.hiddenRows" = "%d ausgeblendete Einträge";
 "gameLog.pinned" = "Angeheftet";
+
+/* ArkhamDB read-side account linking and deck import. */
+"arkhamdb.account" = "ArkhamDB-Konto";
+"arkhamdb.loading" = "ArkhamDB wird geladen …";
+"arkhamdb.statusUnavailable" = "ArkhamDB-Status nicht verfügbar";
+"arkhamdb.unlinked" = "Nicht verknüpft";
+"arkhamdb.linked" = "Verknüpft";
+"arkhamdb.linkedAs" = "Verknüpft als %@";
+"arkhamdb.link" = "ArkhamDB verknüpfen";
+"arkhamdb.relink" = "ArkhamDB erneut verknüpfen";
+"arkhamdb.unlink" = "ArkhamDB-Verknüpfung aufheben";
+"arkhamdb.unlinkConfirmation" = "Verknüpfung mit diesem ArkhamDB-Konto aufheben?";
+"arkhamdb.unlinkExplanation" = "Gespeicherte Decks bleiben erhalten. Zum Synchronisieren privater Decks ist eine erneute Verknüpfung nötig.";
+"arkhamdb.anotherDevice" = "Verknüpfe ArkhamDB auf einem anderen Gerät mit demselben Serverkonto und aktualisiere dann hier den Status.";
+"arkhamdb.refresh" = "ArkhamDB aktualisieren";
+"arkhamdb.cancel" = "Abbrechen";
+"arkhamdb.decks" = "ArkhamDB-Decks";
+"arkhamdb.skipped" = "%lld ArkhamDB-Deckeinträge konnten nicht gelesen werden. Andere Decks werden unten angezeigt.";
+"arkhamdb.skippedOne" = "%lld ArkhamDB-Deckeintrag konnte nicht gelesen werden. Andere Decks werden unten angezeigt.";
+"arkhamdb.empty" = "Keine ArkhamDB-Decks gefunden.";
+"arkhamdb.updated" = "Aktualisiert: %@";
+"arkhamdb.imported" = "Bereits importiert";
+"arkhamdb.import" = "Importieren";
+"arkhamdb.importAccessibility" = "%@ von ArkhamDB importieren";
+"arkhamdb.relinkRequired" = "Verknüpfe dein ArkhamDB-Konto unter Decks erneut, um private Decks zu synchronisieren. Du bleibst in der App angemeldet.";
+"arkhamdb.disabled" = "Auf diesem Server ist die ArkhamDB-Kontoverknüpfung nicht eingerichtet.";
+"arkhamdb.remoteUnavailable" = "ArkhamDB konnte nicht erreicht werden. Versuche es später erneut.";
+"arkhamdb.failed" = "Die ArkhamDB-Aktion ist fehlgeschlagen. Aktualisiere den Status oder versuche es erneut.";
+"arkhamdb.denied" = "Die ArkhamDB-Autorisierung wurde abgelehnt. Du kannst die Verknüpfung erneut versuchen.";

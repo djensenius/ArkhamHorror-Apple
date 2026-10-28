@@ -127,6 +127,7 @@ final class AppModel {
     /// The injectable authenticated saved-deck client used by deck management and
     /// lobby deck choice.
     @ObservationIgnored let deckService: any DeckServicing
+    @ObservationIgnored let arkhamDBService: ArkhamDBService
     /// Tracks recent source syncs for saved decks so automatic deck-choice syncs
     /// stay bounded and avoid refetching a deck repeatedly across nearby prompts.
     @ObservationIgnored let deckSyncTracker: any DeckSyncTracking
@@ -394,6 +395,7 @@ final class AppModel {
         cleanupPendingStore: any TokenCleanupPendingStore = KeychainTokenCleanupPendingStore(),
         gameLifecycleService: any GameLifecycleServicing = GameLifecycleService(),
         deckService: any DeckServicing = DeckService(),
+        arkhamDBService: ArkhamDBService = ArkhamDBService(),
         deckSyncTracker: any DeckSyncTracking = DeckSyncTracker(),
         deckChoiceSyncTimeout: TimeInterval = 5,
         deckChoiceSyncMinimumInterval: TimeInterval = 5 * 60,
@@ -416,6 +418,7 @@ final class AppModel {
         self.cleanupPendingStore = cleanupPendingStore
         self.gameLifecycleService = gameLifecycleService
         self.deckService = deckService
+        self.arkhamDBService = arkhamDBService
         self.deckSyncTracker = deckSyncTracker
         self.deckChoiceSyncTimeout = deckChoiceSyncTimeout
         self.deckChoiceSyncMinimumInterval = deckChoiceSyncMinimumInterval

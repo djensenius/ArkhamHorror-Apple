@@ -143,7 +143,6 @@ struct ArkhamDBContractTests {
             ("storageFailure", .storageFailure), ("remoteUnavailable", .remoteUnavailable),
             ("oauthCompletionInvalid", .oauthCompletionInvalid),
         ]
-        #expect(Set(expected.map(\.1)) == Set(ArkhamDBErrorCode.allCases))
         for (raw, code) in expected {
             let error = try decode(
                 ArkhamDBError.self,
@@ -152,12 +151,12 @@ struct ArkhamDBContractTests {
             #expect(error.code == code)
             #expect(error.requiresRelinking == (code == .notLinked || code == .tokenExpired))
         }
-        #expect(throws: (any Error).self) {
-            try decode(
-                ArkhamDBError.self,
-                ["code": .string("sessionExpired"), "error": .string("message")]
-            )
-        }
+        let unknown = try decode(
+            ArkhamDBError.self,
+            ["code": .string("sessionExpired"), "error": .string("message")]
+        )
+        #expect(unknown.code == .unknown("sessionExpired"))
+        #expect(!unknown.requiresRelinking)
     }
 
     @Test("Required keys, including nullable keys, reject missing and wrongly typed values")
