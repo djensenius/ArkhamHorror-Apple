@@ -46,6 +46,19 @@ struct ArkhamDBLocalizationTests {
         }
     }
 
+    @Test("Browser copy formats raw ArkhamDB date_update offsets and hides unreadable dates")
+    func rawArkhamDBTimestamp() {
+        let date = Date(timeIntervalSince1970: 1_714_564_800)
+        let expected = String(
+            format: arkhamDBLocalized("updated"),
+            date.formatted(date: .abbreviated, time: .shortened)
+        )
+        #expect(arkhamDBUpdatedText("2024-05-01T12:00:00+00:00") == expected)
+        #expect(arkhamDBUpdatedText("2024-05-01T12:00:00.123+00:00") == expected)
+        #expect(arkhamDBUpdatedText("2024-05-01T14:00:00+02:00") == expected)
+        #expect(arkhamDBUpdatedText("unreadable ArkhamDB date_update") == nil)
+    }
+
     @Test("Browser copy formats timestamps and uses the singular skipped-entry message")
     func browserCopy() {
         let date = Date(timeIntervalSince1970: 1_767_225_600)
