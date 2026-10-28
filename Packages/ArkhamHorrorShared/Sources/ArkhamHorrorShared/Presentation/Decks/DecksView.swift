@@ -4,12 +4,13 @@ import SwiftUI
 struct DecksView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: DecksViewModel
+    @State private var arkhamDB: ArkhamDBViewModel?
 
     init(model: AppModel, profile: ServerProfile) {
         _viewModel = State(
             initialValue: DecksViewModel(
                 profile: profile,
-                deckService: model.deckService,
+                deckService: model.deckService(on: profile),
                 deckSyncTracker: model.deckSyncTracker,
                 tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
                 sessionExpiredHandler: { context in
@@ -26,11 +27,33 @@ struct DecksView: View {
                 }
             )
         )
+        if model.supportsArkhamDB(on: profile) {
+            #if os(tvOS)
+                let authentication: (any ArkhamDBAuthenticating)? = nil
+            #else
+                let authentication: (any ArkhamDBAuthenticating)? = ArkhamDBAuthenticationSession()
+            #endif
+            _arkhamDB = State(initialValue: ArkhamDBViewModel(
+                profile: profile,
+                service: model.arkhamDBService,
+                authentication: authentication,
+                tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
+                contextValidator: { model.isCurrentDeckRequestContext($0, for: profile) },
+                sessionExpiredHandler: {
+                    await model.handleDeckSessionExpired(profile: profile, context: $0)
+                }
+            ))
+        } else {
+            _arkhamDB = State(initialValue: nil)
+        }
     }
 
     var body: some View {
         @Bindable var viewModel = viewModel
         List {
+            if let arkhamDB {
+                ArkhamDBAccountSection(model: arkhamDB, onImported: viewModel.upsert)
+            }
             #if !os(tvOS)
                 Section("Import") {
                     importURLField(text: $viewModel.importURL)
