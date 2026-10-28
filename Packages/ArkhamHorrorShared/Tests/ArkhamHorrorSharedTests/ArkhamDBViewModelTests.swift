@@ -44,6 +44,20 @@ struct ArkhamDBViewModelTests {
         )
     }
 
+    @Test("A failed first status refresh never leaves Loading on screen", arguments: [0, 501, 502])
+    func failedInitialStatus(status: Int) async throws {
+        let responses = try status == 0 ? [] : [(status, ContractJSON.encode(
+            ArkhamDBError(code: status == 501 ? .disabled : .remoteUnavailable, error: "server detail")
+        ))]
+        let model = model(ArkhamDBScriptedTransport(responses))
+        await model.refreshStatus()
+        #expect(!model.isBusy)
+        #expect(model.status == nil)
+        #expect(model.message != nil)
+        #expect(model.statusText == arkhamDBLocalized("statusUnavailable"))
+        #expect(model.statusText != arkhamDBLocalized("loading"))
+    }
+
     @Test("Link runs start → browser → authenticated completion → authoritative status")
     func startCompleteStatus() async throws {
         let auth = try authentication()

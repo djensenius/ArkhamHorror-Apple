@@ -419,6 +419,7 @@
 /* ArkhamDB read-side account linking and deck import. */
 "arkhamdb.account" = "ArkhamDB-Konto";
 "arkhamdb.loading" = "ArkhamDB wird geladen …";
+"arkhamdb.statusUnavailable" = "ArkhamDB-Status nicht verfügbar";
 "arkhamdb.unlinked" = "Nicht verknüpft";
 "arkhamdb.linked" = "Verknüpft";
 "arkhamdb.linkedAs" = "Verknüpft als %@";

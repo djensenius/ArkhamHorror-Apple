@@ -36,7 +36,9 @@ final class ArkhamDBViewModel {
     }
 
     var statusText: String {
-        guard let status else { return arkhamDBLocalized("loading") }
+        guard let status else {
+            return arkhamDBLocalized(isBusy ? "loading" : "statusUnavailable")
+        }
         guard status.linked else { return arkhamDBLocalized("unlinked") }
         if let name = status.remoteAccountName {
             return String(format: arkhamDBLocalized("linkedAs"), name)

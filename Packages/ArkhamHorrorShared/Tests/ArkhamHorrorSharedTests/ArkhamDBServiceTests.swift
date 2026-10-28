@@ -97,6 +97,31 @@ struct ArkhamDBServiceTests {
         #expect(requests.first?.value(forHTTPHeaderField: "Content-Type") == "application/json")
     }
 
+    @Test("Linked sync and import preserve public deck operation errors", arguments: [400, 500, 501, 502])
+    func publicDeckOperationErrors(status: Int) async throws {
+        let data = status == 400 ? Data(#"{"errorMsg":"Could not sync deck"}"#.utf8) : Data()
+        let expected: DeckServiceError = status == 400
+            ? .operationFailed(DeckOperationError(errorMsg: "Could not sync deck"))
+            : .remoteDeckSourceUnavailable
+        let deck = try arkhamDBFixture(Deck.self, "importedDeck")
+        let transport = ArkhamDBScriptedTransport([(status, data), (status, data)])
+        let service = ArkhamDBService(transport: transport)
+        let sync = ArkhamDBSyncDeckService(base: DeckService(), arkhamDB: service)
+        await #expect(throws: expected) {
+            try await sync.syncDeck(deck.id, on: .hosted, token: "token", timeout: 7)
+        }
+        await #expect(throws: expected) {
+            try await service.importDeck(ArkhamDBImportRequest(deckId: "123"), on: .hosted, token: "token")
+        }
+        let legacy = DeckService(transport: ArkhamDBScriptedTransport([(status, data), (status, data)]))
+        await #expect(throws: expected) {
+            try await legacy.syncDeck(deck.id, on: .hosted, token: "token", timeout: 7)
+        }
+        await #expect(throws: expected) {
+            try await legacy.importDeck(from: "https://arkhamdb.com/deck/view/123", on: .hosted, token: "token")
+        }
+    }
+
     @Test("Capability-enabled saved deck sync uses the server-owned mapping route")
     func linkedSyncRoute() async throws {
         let deck = try arkhamDBFixture(Deck.self, "importedDeck")

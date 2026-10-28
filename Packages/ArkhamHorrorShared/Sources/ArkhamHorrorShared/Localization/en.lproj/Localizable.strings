@@ -419,6 +419,7 @@
 /* ArkhamDB read-side account linking and deck import. */
 "arkhamdb.account" = "ArkhamDB account";
 "arkhamdb.loading" = "Loading ArkhamDB…";
+"arkhamdb.statusUnavailable" = "ArkhamDB status unavailable";
 "arkhamdb.unlinked" = "Not linked";
 "arkhamdb.linked" = "Linked";
 "arkhamdb.linkedAs" = "Linked as %@";
