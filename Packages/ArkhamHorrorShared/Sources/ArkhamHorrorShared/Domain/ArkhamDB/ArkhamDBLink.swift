@@ -1,3 +1,5 @@
+import Foundation
+
 /// Authorization browser URL and expiry returned by `POST /arkham/arkhamdb/link/start`.
 struct ArkhamDBLinkStartResponse: Sendable, Equatable, Codable {
     let authorizeUrl: String
@@ -5,11 +7,54 @@ struct ArkhamDBLinkStartResponse: Sendable, Equatable, Codable {
 }
 
 /// A single-use completion secret, not an ArkhamDB access token or app session token.
-enum ArkhamDBCompletionSecretTag: Sendable {}
-typealias ArkhamDBCompletionSecret = NonEmptyString<ArkhamDBCompletionSecretTag>
+struct ArkhamDBCompletionSecret: Sendable, Equatable, Codable,
+    CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
+{
+    let rawValue: String
 
-struct ArkhamDBLinkCompletionRequest: Sendable, Equatable, Codable {
+    init(_ rawValue: String) throws {
+        guard !rawValue.isEmpty else { throw NonEmptyStringError.empty }
+        self.rawValue = rawValue
+    }
+
+    init(from decoder: any Decoder) throws {
+        try self.init(decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    var description: String {
+        "[redacted]"
+    }
+
+    var debugDescription: String {
+        description
+    }
+
+    var customMirror: Mirror {
+        Mirror(self, children: [:])
+    }
+}
+
+struct ArkhamDBLinkCompletionRequest: Sendable, Equatable, Codable,
+    CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
+{
     let completion: ArkhamDBCompletionSecret
+
+    var description: String {
+        "ArkhamDBLinkCompletionRequest([redacted])"
+    }
+
+    var debugDescription: String {
+        description
+    }
+
+    var customMirror: Mirror {
+        Mirror(self, children: [:])
+    }
 }
 
 /// Completion returns an empty JSON array, not a status object; refresh status afterwards.
