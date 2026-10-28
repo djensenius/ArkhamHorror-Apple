@@ -156,6 +156,23 @@ struct ArkhamDBViewModelTests {
         }
     }
 
+    @Test("An unavailable presenter explains how to retry without completing or signing out")
+    func unavailablePresenter() async throws {
+        let auth = ArkhamDBStubAuthentication(.failure(
+            ArkhamDBLinkFlowError.presentationUnavailable
+        ))
+        let transport = try ArkhamDBScriptedTransport([(200, arkhamDBFixtureData("linkStart"))])
+        var expiredCount = 0
+        let model = model(transport, authentication: auth, expired: { _ in expiredCount += 1 })
+        await model.link()
+        #expect(model.message == arkhamDBLocalized("presentationUnavailable"))
+        #expect(model.message != arkhamDBLocalized("failed"))
+        #expect(!model.isBusy)
+        #expect(model.status == nil)
+        #expect(await transport.requests.count == 1)
+        #expect(expiredCount == 0)
+    }
+
     @Test("An insecure authorization URL is rejected before the auth session opens")
     func insecureStartDoesNotOpen() async throws {
         let start = ArkhamDBLinkStartResponse(

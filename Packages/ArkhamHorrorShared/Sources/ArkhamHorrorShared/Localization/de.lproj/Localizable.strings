@@ -443,4 +443,5 @@
 "arkhamdb.disabled" = "Auf diesem Server ist die ArkhamDB-Kontoverknüpfung nicht eingerichtet.";
 "arkhamdb.remoteUnavailable" = "ArkhamDB konnte nicht erreicht werden. Versuche es später erneut.";
 "arkhamdb.failed" = "Die ArkhamDB-Aktion ist fehlgeschlagen. Aktualisiere den Status oder versuche es erneut.";
+"arkhamdb.presentationUnavailable" = "Der ArkhamDB-Anmeldebrowser benötigt ein geöffnetes Decks-Fenster. Öffne Decks erneut in einem aktiven Fenster und versuche die Verknüpfung noch einmal.";
 "arkhamdb.denied" = "Die ArkhamDB-Autorisierung wurde abgelehnt. Du kannst die Verknüpfung erneut versuchen.";

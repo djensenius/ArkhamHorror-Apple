@@ -15,7 +15,7 @@ struct ArkhamDBLocalizationTests {
             "skipped", "skippedOne", "empty", "updated", "imported", "import",
             "importAccessibility",
             "relinkRequired",
-            "disabled", "remoteUnavailable", "failed", "denied",
+            "disabled", "remoteUnavailable", "failed", "denied", "presentationUnavailable",
         ]
         for locale in ["en", "de"] {
             let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()

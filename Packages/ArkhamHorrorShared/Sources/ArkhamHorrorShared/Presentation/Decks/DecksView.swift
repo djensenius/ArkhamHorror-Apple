@@ -6,7 +6,10 @@ struct DecksView: View {
     @State private var viewModel: DecksViewModel
     @State private var arkhamDB: ArkhamDBViewModel?
 
-    init(model: AppModel, profile: ServerProfile) {
+    init(
+        model: AppModel, profile: ServerProfile,
+        authentication: (any ArkhamDBAuthenticating)?
+    ) {
         _viewModel = State(
             initialValue: DecksViewModel(
                 profile: profile,
@@ -28,11 +31,6 @@ struct DecksView: View {
             )
         )
         if model.supportsArkhamDB(on: profile) {
-            #if os(tvOS)
-                let authentication: (any ArkhamDBAuthenticating)? = nil
-            #else
-                let authentication: (any ArkhamDBAuthenticating)? = ArkhamDBAuthenticationSession()
-            #endif
             _arkhamDB = State(initialValue: ArkhamDBViewModel(
                 profile: profile,
                 service: model.arkhamDBService,
@@ -301,10 +299,8 @@ private struct DeckRow: View {
 
 #if DEBUG
     #Preview("Decks") {
-        NavigationStack {
-            DecksView(model: previewAppModel(), profile: .hosted)
-        }
-        .background(ArkhamTheme.backgroundGradient)
-        .foregroundStyle(ArkhamTheme.bone)
+        DecksSheet(model: previewAppModel(), profile: .hosted)
+            .background(ArkhamTheme.backgroundGradient)
+            .foregroundStyle(ArkhamTheme.bone)
     }
 #endif

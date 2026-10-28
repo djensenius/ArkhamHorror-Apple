@@ -58,9 +58,7 @@ struct AccountShellView: View {
                 }
             }
             .sheet(isPresented: $isPresentingDecks) {
-                NavigationStack {
-                    DecksView(model: model, profile: profile)
-                }
+                DecksSheet(model: model, profile: profile)
             }
     }
 }

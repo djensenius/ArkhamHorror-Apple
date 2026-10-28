@@ -443,4 +443,5 @@
 "arkhamdb.disabled" = "ArkhamDB account linking is not configured on this server.";
 "arkhamdb.remoteUnavailable" = "ArkhamDB could not be reached. Try again later.";
 "arkhamdb.failed" = "The ArkhamDB operation failed. Refresh status or try again.";
+"arkhamdb.presentationUnavailable" = "The ArkhamDB sign-in browser needs an open Decks window. Reopen Decks in an active window and try linking again.";
 "arkhamdb.denied" = "ArkhamDB authorization was declined. You can try linking again.";

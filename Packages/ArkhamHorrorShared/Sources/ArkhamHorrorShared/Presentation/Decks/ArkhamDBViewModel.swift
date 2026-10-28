@@ -161,10 +161,8 @@ final class ArkhamDBViewModel {
                 if serviceError == .sessionExpired {
                     await sessionExpiredHandler(context)
                 }
-            } else if error as? ArkhamDBLinkFlowError == .denied {
-                message = arkhamDBLocalized("denied")
             } else {
-                message = arkhamDBLocalized("failed")
+                message = arkhamDBLinkErrorMessage(error as? ArkhamDBLinkFlowError)
             }
         }
     }
