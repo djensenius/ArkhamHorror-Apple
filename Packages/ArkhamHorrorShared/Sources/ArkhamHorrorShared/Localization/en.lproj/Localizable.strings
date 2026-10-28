@@ -415,3 +415,30 @@
 "gameLog.level" = "Level %d";
 "gameLog.hiddenRows" = "%d hidden entries";
 "gameLog.pinned" = "Pinned";
+
+/* ArkhamDB read-side account linking and deck import. */
+"arkhamdb.account" = "ArkhamDB account";
+"arkhamdb.loading" = "Loading ArkhamDB…";
+"arkhamdb.unlinked" = "Not linked";
+"arkhamdb.linked" = "Linked";
+"arkhamdb.linkedAs" = "Linked as %@";
+"arkhamdb.link" = "Link ArkhamDB";
+"arkhamdb.relink" = "Relink ArkhamDB";
+"arkhamdb.unlink" = "Unlink ArkhamDB";
+"arkhamdb.unlinkConfirmation" = "Unlink this ArkhamDB account?";
+"arkhamdb.unlinkExplanation" = "Saved decks remain, but private deck sync requires linking again.";
+"arkhamdb.anotherDevice" = "Link ArkhamDB on another device signed in to this server account, then refresh status here.";
+"arkhamdb.refresh" = "Refresh ArkhamDB";
+"arkhamdb.cancel" = "Cancel";
+"arkhamdb.decks" = "ArkhamDB decks";
+"arkhamdb.skipped" = "Could not read %lld ArkhamDB deck entries. Other decks are shown below.";
+"arkhamdb.empty" = "No ArkhamDB decks found.";
+"arkhamdb.updated" = "Updated: %@";
+"arkhamdb.imported" = "Already imported";
+"arkhamdb.import" = "Import";
+"arkhamdb.importAccessibility" = "Import %@ from ArkhamDB";
+"arkhamdb.relinkRequired" = "Relink your ArkhamDB account in Decks to sync private decks. Your app session is still signed in.";
+"arkhamdb.disabled" = "ArkhamDB account linking is not configured on this server.";
+"arkhamdb.remoteUnavailable" = "ArkhamDB could not be reached. Try again later.";
+"arkhamdb.failed" = "The ArkhamDB operation failed. Refresh status or try again.";
+"arkhamdb.denied" = "ArkhamDB authorization was declined. You can try linking again.";

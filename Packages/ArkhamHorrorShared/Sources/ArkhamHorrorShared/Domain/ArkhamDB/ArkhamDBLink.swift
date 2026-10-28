@@ -7,9 +7,7 @@ struct ArkhamDBLinkStartResponse: Sendable, Equatable, Codable {
 }
 
 /// A single-use completion secret, not an ArkhamDB access token or app session token.
-struct ArkhamDBCompletionSecret: Sendable, Equatable, Codable,
-    CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
-{
+struct ArkhamDBCompletionSecret: Sendable, Equatable, Codable {
     let rawValue: String
 
     init(_ rawValue: String) throws {
@@ -25,13 +23,11 @@ struct ArkhamDBCompletionSecret: Sendable, Equatable, Codable,
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
+}
 
+extension ArkhamDBCompletionSecret: CustomStringConvertible, CustomReflectable {
     var description: String {
         "[redacted]"
-    }
-
-    var debugDescription: String {
-        description
     }
 
     var customMirror: Mirror {
@@ -39,21 +35,29 @@ struct ArkhamDBCompletionSecret: Sendable, Equatable, Codable,
     }
 }
 
-struct ArkhamDBLinkCompletionRequest: Sendable, Equatable, Codable,
-    CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable
-{
-    let completion: ArkhamDBCompletionSecret
+extension ArkhamDBCompletionSecret: CustomDebugStringConvertible {
+    var debugDescription: String {
+        description
+    }
+}
 
+struct ArkhamDBLinkCompletionRequest: Sendable, Equatable, Codable {
+    let completion: ArkhamDBCompletionSecret
+}
+
+extension ArkhamDBLinkCompletionRequest: CustomStringConvertible, CustomReflectable {
     var description: String {
         "ArkhamDBLinkCompletionRequest([redacted])"
     }
 
-    var debugDescription: String {
-        description
-    }
-
     var customMirror: Mirror {
         Mirror(self, children: [:])
+    }
+}
+
+extension ArkhamDBLinkCompletionRequest: CustomDebugStringConvertible {
+    var debugDescription: String {
+        description
     }
 }
 

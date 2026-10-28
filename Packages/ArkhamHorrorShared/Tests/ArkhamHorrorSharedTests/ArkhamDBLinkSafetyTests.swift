@@ -37,7 +37,10 @@ struct ArkhamDBLinkSafetyTests {
 
     @Test("Only absolute HTTPS authorization URLs may open the browser")
     func authorizationURLValidation() throws {
-        let valid = ArkhamDBLinkStartResponse(authorizeUrl: "https://arkhamdb.example/auth?state=x", expiresAt: "later")
+        let valid = ArkhamDBLinkStartResponse(
+            authorizeUrl: "https://arkhamdb.example/auth?state=x",
+            expiresAt: "later"
+        )
         #expect(try valid.authorizationURL().absoluteString == valid.authorizeUrl)
         for invalid in [
             "http://arkhamdb.example/auth",
@@ -83,6 +86,7 @@ struct ArkhamDBLinkSafetyTests {
         let error = try ContractJSON.decode(ArkhamDBError.self, from: data)
         #expect(error.code == .unknown("futureCode"))
         #expect(!error.requiresRelinking)
-        #expect(try ContractJSON.decode(ArkhamDBError.self, from: ContractJSON.encode(error)) == error)
+        #expect(try ContractJSON
+            .decode(ArkhamDBError.self, from: ContractJSON.encode(error)) == error)
     }
 }

@@ -272,6 +272,7 @@ enum DeckServiceError: Error, Equatable, Sendable {
     case remoteDeckSourceUnavailable
     case operationFailed(DeckOperationError)
     case validationFailed(DeckValidationErrors)
+    case arkhamDB(ArkhamDBError?)
 }
 
 extension DeckServiceError {
@@ -297,6 +298,8 @@ extension DeckServiceError {
             "Couldn't reach ArkhamDB. Try again later."
         case let .operationFailed(error):
             error.errorMsg
+        case let .arkhamDB(error):
+            arkhamDBErrorMessage(error)
         case let .validationFailed(errors):
             Self.validationMessage(errors)
         }
