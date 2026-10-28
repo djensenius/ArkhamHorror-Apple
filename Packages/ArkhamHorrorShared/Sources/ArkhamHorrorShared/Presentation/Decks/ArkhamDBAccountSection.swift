@@ -119,6 +119,8 @@ private struct ArkhamDBDeckBrowser: View {
             Button(arkhamDBLocalized("refresh")) { Task { await model.loadDecks() } }
                 .disabled(model.isBusy)
         }
+        .onAppear { model.isDeckBrowserOpen = true }
+        .onDisappear { model.isDeckBrowserOpen = false }
         .task { await model.loadDecks() }
         .refreshable { await model.loadDecks() }
     }

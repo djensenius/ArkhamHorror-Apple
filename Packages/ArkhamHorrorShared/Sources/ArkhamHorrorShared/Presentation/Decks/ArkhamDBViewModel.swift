@@ -15,6 +15,7 @@ final class ArkhamDBViewModel {
     var decks: [ArkhamDBRemoteDeckSummary] = []
     var skippedCount = 0
     var hasLoadedDecks = false
+    var isDeckBrowserOpen = false
     var isBusy = false
     var message: String?
     var needsRelinking = false
@@ -67,7 +68,13 @@ final class ArkhamDBViewModel {
             let request = try ArkhamDBLinkCompletionRequest(callback: callback)
             try await self.service.completeLink(request, on: self.profile, token: context.token)
             try self.validate(context)
+            self.decks = []
+            self.skippedCount = 0
+            self.hasLoadedDecks = false
             try await self.updateStatus(context)
+            if self.isDeckBrowserOpen {
+                try await self.updateDecks(context)
+            }
         }
     }
 
@@ -76,6 +83,7 @@ final class ArkhamDBViewModel {
         await perform { context in
             try await self.service.unlink(on: self.profile, token: context.token)
             try self.validate(context)
+            self.status = nil
             self.decks = []
             self.skippedCount = 0
             self.hasLoadedDecks = false
@@ -121,6 +129,7 @@ final class ArkhamDBViewModel {
         decks = list.decks
         skippedCount = list.skippedCount
         hasLoadedDecks = true
+        needsRelinking = false
     }
 
     private func perform(_ operation: (DeckRequestContext) async throws -> Void) async {
