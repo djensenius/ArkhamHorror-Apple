@@ -4,6 +4,14 @@ func arkhamDBLocalized(_ suffix: String) -> String {
     NSLocalizedString("arkhamdb.\(suffix)", bundle: .module, comment: "")
 }
 
+func arkhamDBLinkErrorMessage(_ error: ArkhamDBLinkFlowError?) -> String {
+    switch error {
+    case .denied: arkhamDBLocalized("denied")
+    case .presentationUnavailable: arkhamDBLocalized("presentationUnavailable")
+    default: arkhamDBLocalized("failed")
+    }
+}
+
 func arkhamDBErrorMessage(_ error: ArkhamDBError?) -> String {
     if error?.requiresRelinking == true {
         return arkhamDBLocalized("relinkRequired")

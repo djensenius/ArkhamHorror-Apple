@@ -4,6 +4,7 @@ enum ArkhamDBLinkFlowError: Error, Equatable {
     case invalidAuthorizationURL
     case invalidCallback
     case denied
+    case presentationUnavailable
     case failed
 }
 
