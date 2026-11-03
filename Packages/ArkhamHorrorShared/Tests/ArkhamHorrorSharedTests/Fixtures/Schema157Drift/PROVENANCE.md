@@ -8,12 +8,15 @@ fork commit and may then replace these drift copies.
 ## Captured bytes
 
 Byte-for-byte copies from the fork **upstream sync candidate for TASK-2.56**, worktree
-`ArkhamHorror-task-2.56-upstream-sync` at provisional commit
-`948608b28e2eb7b55865ada24f0a166a7208a420` (schemaRevision `0.1.57`,
-nativeClientMinimumRevision `0.1.57`). That commit is provisional: the sync PR may be
-rewritten before it merges, so the merge commit, not this SHA, is what the repin pins.
-Every file below was re-checked byte-identical at the later sync-candidate commit
-`398c660b1234127868372b85726d6526673ec361`, which is still provisional.
+`ArkhamHorror-task-2.56-upstream-sync`. The verified candidate is the sync head
+`dd9bf9030499458cff90d0ecbdd51782a5685346` (djensenius/ArkhamHorror#247, schemaRevision
+`0.1.57`, nativeClientMinimumRevision `0.1.57`): all 17 files below are byte-identical at
+that commit. The candidate is still provisional: the sync PR may change before it merges,
+so the merge commit, not this SHA, is what the repin pins.
+
+History: the files were first copied at candidate commit
+`948608b28e2eb7b55865ada24f0a166a7208a420` and re-checked byte-identical at
+`398c660b1234127868372b85726d6526673ec361` before being re-checked at `dd9bf903`.
 
 | File | Source path in the fork contracts tree | SHA-256 |
 | --- | --- | --- |
