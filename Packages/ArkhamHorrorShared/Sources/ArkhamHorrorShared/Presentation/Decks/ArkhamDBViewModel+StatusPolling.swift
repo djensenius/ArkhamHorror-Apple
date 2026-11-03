@@ -37,7 +37,9 @@ extension ArkhamDBViewModel {
                 return
             }
             guard !Task.isCancelled, isAwaitingWriteBackCompletion else { return }
-            if let lastContext, !contextValidator(lastContext) { return }
+            if let lastContext, !contextValidator(lastContext) {
+                return
+            }
             guard !isBusy, !isPollingStatus else { continue }
             attempt += 1
             guard let context = await pollStatusOnce() else { return }
