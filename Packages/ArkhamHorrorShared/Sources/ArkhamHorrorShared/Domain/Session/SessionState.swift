@@ -38,7 +38,7 @@ enum SessionUnavailableReason: Equatable, Sendable {
     case probeFailed(CapabilityProbeError)
     /// Restoring the selected profile's token failed.
     case tokenValidationFailed(TokenValidationFailure)
-    /// The server answered the capability probe with HTTP 503 (a maintenance window).
+    /// The server answered the capability probe with its maintenance 503 body.
     case maintenance(ServerMaintenance)
 }
 

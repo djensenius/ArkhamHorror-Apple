@@ -5,8 +5,8 @@ import Testing
 /// Schema 0.1.57 maintenance mode: every non-allow-listed route answers HTTP 503 with
 /// `Retry-After: 120` and `{"maintenance": true, "since", "message"}` (backend
 /// Foundation.hs `maintenanceMiddleware`, synthetic bytes below). The capability probe
-/// must surface that as a maintenance state, never "Update Required" or the generic
-/// probe failure.
+/// must surface that body as a maintenance state, never "Update Required" or the generic
+/// probe failure. A 503 without that body stays the generic probe failure.
 @MainActor
 @Suite("Schema 0.1.57 maintenance 503")
 struct Schema157MaintenanceTests {
@@ -57,11 +57,11 @@ struct Schema157MaintenanceTests {
         Self.expectNotUpdateOrProbeFailure(state, message: message)
     }
 
-    @Test("A 503 with only Retry-After still becomes a maintenance state")
-    func maintenanceWithHeaderOnly() async throws {
-        let state = await sessionState(
-            HookedTransport(status: 503, headers: ["Retry-After": "60"], body: Data())
-        )
+    @Test("A maintenance body without a message uses the generic maintenance copy")
+    func maintenanceBodyWithoutMessage() async throws {
+        let state = await sessionState(HookedTransport(
+            status: 503, headers: ["Retry-After": "60"], body: Data(#"{"maintenance":true}"#.utf8)
+        ))
         let maintenance = ServerMaintenance(retryAfterSeconds: 60)
         #expect(state == .unavailable(profile: .hosted, reason: .maintenance(maintenance)))
         let message = try #require(Self.reason(state)).message
@@ -70,7 +70,34 @@ struct Schema157MaintenanceTests {
         Self.expectNotUpdateOrProbeFailure(state, message: message)
     }
 
-    @Test("A 503 without, or with a malformed, Retry-After has no retry hint")
+    /// A 503 from an ingress, proxy or load balancer is not maintenance: it keeps the
+    /// pre-0.1.57 generic probe failure, whatever its `Retry-After` says.
+    @Test("A 503 without the maintenance body stays a generic probe failure")
+    func nonMaintenance503IsGenericFailure() async {
+        let responses: [([String: String]?, String)] = [
+            (nil, ""),
+            (["Retry-After": "60"], ""),
+            (["Retry-After": "120"], "<html><body>503 Service Unavailable</body></html>"),
+            (nil, "not json"),
+            (nil, #"{"maintenance":false,"message":"x"}"#),
+            (nil, #"{"maintenance":"true","message":"x"}"#),
+            (nil, #"{"message":"x"}"#),
+        ]
+        for (headers, body) in responses {
+            let state = await sessionState(
+                HookedTransport(status: 503, headers: headers, body: Data(body.utf8))
+            )
+            #expect(
+                state == .unavailable(
+                    profile: .hosted, reason: .probeFailed(.unexpectedStatus(503))
+                ),
+                "\(String(describing: headers)) \(body)"
+            )
+            #expect(state.title == "Server unavailable", "\(body)")
+        }
+    }
+
+    @Test("A maintenance 503 without, or with a malformed, Retry-After has no retry hint")
     func maintenanceWithoutUsableHeader() async throws {
         let headers: [[String: String]?] = [
             nil,
@@ -82,22 +109,26 @@ struct Schema157MaintenanceTests {
             ["Retry-After": "99999999999999999999"],
             ["Retry-After": "\(ServerMaintenance.maximumRetryAfterSeconds + 1)"],
         ]
+        let notice = ServerMaintenanceNotice(
+            since: "2025-01-02T03:04:05Z", message: Self.serverMessage
+        )
         for header in headers {
             let state = await sessionState(
-                HookedTransport(status: 503, headers: header, body: Data())
+                HookedTransport(status: 503, headers: header, body: Self.body)
             )
             #expect(
-                state == .unavailable(profile: .hosted, reason: .maintenance(.init())),
+                state == .unavailable(
+                    profile: .hosted, reason: .maintenance(.init(notice: notice))
+                ),
                 "\(String(describing: header))"
             )
             let message = try #require(Self.reason(state)).message
-            #expect(message == "This server is temporarily down, most likely for "
-                + "maintenance. Try again later.")
+            #expect(message == "\(Self.serverMessage) Try again later.")
             Self.expectNotUpdateOrProbeFailure(state, message: message)
         }
     }
 
-    @Test("Malformed or non-maintenance 503 bodies fall back to the generic maintenance copy")
+    @Test("Malformed or non-maintenance 503 bodies are not a maintenance notice")
     func malformedBodiesAreIgnored() {
         let bodies = [
             "not json",

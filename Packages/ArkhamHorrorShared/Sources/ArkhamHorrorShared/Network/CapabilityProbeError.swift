@@ -10,10 +10,10 @@ enum CapabilityProbeError: Error, Sendable {
     /// HTTP 404 is handled separately as ``CompatibilityOutcome/legacyFallback``
     /// and is never reported here.
     case unexpectedStatus(Int)
-    /// HTTP 503: the server is refusing traffic, normally for a maintenance window.
+    /// HTTP 503 with the backend's maintenance body (`"maintenance": true`).
     ///
-    /// Carries the defensively parsed `Retry-After` and optional maintenance body; HTTP 503
-    /// is never reported as ``unexpectedStatus(_:)``.
+    /// Carries the defensively parsed `Retry-After` and the body. Any other 503 is
+    /// reported as ``unexpectedStatus(_:)``.
     case maintenance(ServerMaintenance)
     /// The 2xx response body could not be decoded as a valid ``ServerCapabilities`` payload.
     ///

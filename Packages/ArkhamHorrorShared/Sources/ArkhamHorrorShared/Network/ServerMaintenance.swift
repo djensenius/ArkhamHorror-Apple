@@ -4,28 +4,31 @@ import Foundation
 /// route (backend Foundation.hs `maintenanceMiddleware`): `Retry-After: 120` plus the
 /// body `{"maintenance": true, "since": <UTCTime>, "message": <Text>}`.
 ///
-/// Every part is parsed defensively and is optional, so any 503 (with or without the
-/// header or body) maps here rather than to a generic probe failure.
+/// Only a 503 whose body is that maintenance object maps here. Any other 503 (for
+/// example from an ingress or proxy) stays a generic probe failure. `Retry-After` and
+/// the body's `since`/`message` are parsed defensively and are optional.
 struct ServerMaintenance: Equatable, Sendable {
     /// Seconds from `Retry-After`, when it is a plain non-negative integer of at most a
     /// week. An HTTP-date or any other value is ignored.
     let retryAfterSeconds: Int?
-    /// The body, when it is a JSON object with `"maintenance": true`.
-    let notice: ServerMaintenanceNotice?
+    /// The body: a JSON object with `"maintenance": true`.
+    let notice: ServerMaintenanceNotice
 
     static let maximumRetryAfterSeconds = 7 * 24 * 60 * 60
 
-    init(retryAfterSeconds: Int? = nil, notice: ServerMaintenanceNotice? = nil) {
+    init(retryAfterSeconds: Int? = nil, notice: ServerMaintenanceNotice = .init()) {
         self.retryAfterSeconds = retryAfterSeconds
         self.notice = notice
     }
 
-    init(response: HTTPURLResponse, body: Data) {
+    /// `nil` unless `body` is the maintenance object.
+    init?(response: HTTPURLResponse, body: Data) {
+        guard let notice = ServerMaintenanceNotice(body: body) else { return nil }
         self.init(
             retryAfterSeconds: Self.retryAfterSeconds(
                 response.value(forHTTPHeaderField: "Retry-After")
             ),
-            notice: ServerMaintenanceNotice(body: body)
+            notice: notice
         )
     }
 
@@ -75,10 +78,10 @@ struct ServerMaintenanceNotice: Equatable, Sendable {
 }
 
 extension ServerMaintenance {
-    /// A user-facing explanation: the server's own notice when it sent one, otherwise a
+    /// A user-facing explanation: the server's own message when it sent one, otherwise a
     /// generic maintenance line, followed by when to try again.
     var message: String {
-        let reason = notice?.message
+        let reason = notice.message
             ?? "This server is temporarily down, most likely for maintenance."
         guard let retryAfterSeconds else {
             return "\(reason) Try again later."
