@@ -58,15 +58,35 @@ extension ArkhamDBWriteBackStatus {
         return reason
     }
 
-    /// The server requires the deck to be opted in for retry and resolution.
+    /// The server requires the deck to be opted in for retry and resolution. A
+    /// `validationFailed` push (campaign-identity fence or unsupported cards) is not
+    /// repaired by retrying the same snapshot, so Retry is not offered for it.
     var canRetry: Bool {
-        enabled && state == .failed
+        enabled && state == .failed && error != "validationFailed"
     }
 
     /// Unknown future states offer nothing, even when they carry a conflict object.
+    /// Failed creation intents (`pushUncertain`, or `writeBackDisabled` retained by
+    /// opting out) block later snapshots; the server reconciles them with retry,
+    /// keep-remote or save-as-new (`canResolvePush` accepts `failed`). Overwrite is
+    /// never offered there because the server refuses it for creation intents.
+    /// Overwrite for remoteChanged may still be refused for hidden creation lineage; the
+    /// 409 `conflict` path then shows a specific message and refreshes status.
     var allowedResolutions: [ArkhamDBWriteBackResolution] {
-        guard enabled, state == .conflict else { return [] }
-        return conflict?.reason.allowedResolutions ?? []
+        guard enabled else { return [] }
+        switch state {
+        case .conflict:
+            return conflict?.reason.allowedResolutions ?? []
+        case .failed where error == "pushUncertain" || error == "writeBackDisabled":
+            return [.keepRemote, .saveAsNew]
+        default:
+            return []
+        }
+    }
+
+    /// Whether the row offers the resolution sheet (conflicts are always viewable).
+    var opensResolution: Bool {
+        state == .conflict || !allowedResolutions.isEmpty
     }
 
     var statusText: String {
@@ -83,6 +103,7 @@ extension ArkhamDBWriteBackStatus {
             switch error {
             case "pushUncertain": return arkhamDBLocalized("writeBack.state.failedUncertain")
             case "writeBackDisabled": return arkhamDBLocalized("writeBack.state.failedDisabled")
+            case "validationFailed": return arkhamDBLocalized("writeBack.state.failedValidation")
             default: return arkhamDBLocalized("writeBack.state.failed")
             }
         case .succeeded: return arkhamDBLocalized("writeBack.state.succeeded")

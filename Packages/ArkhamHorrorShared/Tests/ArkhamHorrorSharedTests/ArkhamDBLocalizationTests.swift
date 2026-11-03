@@ -59,12 +59,13 @@ struct ArkhamDBLocalizationTests {
             + [
                 "toggle", "toggleAccessibility", "state.off", "state.idle", "state.pending",
                 "state.running", "state.failed", "state.failedUncertain", "state.failedDisabled",
+                "state.failedValidation",
                 "state.succeeded", "state.cancelled", "state.unknown", "blocked", "spentXp",
                 "retry", "retryAccessibility", "resolve", "details", "resolveAccessibility",
                 "conflictTitle", "skipped", "skippedOne", "error.disabled", "error.conflict",
                 "error.pushUncertain", "error.validationFailed", "error.confirmationRequired",
             ].map { "writeBack.\($0)" }
-        #expect(suffixes.count == 42)
+        #expect(suffixes.count == 43)
         let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()
             .appending(path: "ArkhamHorrorShared_ArkhamHorrorShared.bundle")
         let module = try #require(Bundle(url: moduleURL))
@@ -94,7 +95,25 @@ struct ArkhamDBLocalizationTests {
                 forKey: "arkhamdb.writeBack.toggleAccessibility", value: nil, table: nil
             )
             #expect(String(format: toggle, "Roland") == (locale == "de"
-                    ? "Roland zu ArkhamDB zurückschreiben" : "Write Roland back to ArkhamDB"))
+                    ? "Roland an ArkhamDB zurückschreiben" : "Write Roland back to ArkhamDB"))
+        }
+    }
+
+    @Test("Write-back confirmations name the deck they act on in en and de")
+    func writeBackConfirmationsNameTheDeck() throws {
+        let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()
+            .appending(path: "ArkhamHorrorShared_ArkhamHorrorShared.bundle")
+        let module = try #require(Bundle(url: moduleURL))
+        for locale in ["en", "de"] {
+            let url = try #require(module.url(forResource: locale, withExtension: "lproj"))
+            let bundle = try #require(Bundle(url: url))
+            let confirmed = ArkhamDBWriteBackResolution.allCases.filter(\.requiresConfirmation)
+            for resolution in confirmed {
+                let title = bundle.localizedString(
+                    forKey: "arkhamdb.\(resolution.confirmationTitleKey)", value: nil, table: nil
+                )
+                #expect(String(format: title, "Roland").contains("Roland"), "\(locale) \(title)")
+            }
         }
     }
 

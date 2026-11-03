@@ -43,9 +43,17 @@ extension ArkhamDBViewModel {
         }
     }
 
-    func openConflict(_ deckID: DeckID) {
-        guard writeBackStatus(for: deckID)?.state == .conflict else { return }
+    /// Opens the resolution sheet for a conflict or a resolvable failed push. Any
+    /// confirmation left from another deck is dropped so it can never reappear here.
+    func openResolution(_ deckID: DeckID) {
+        guard writeBackStatus(for: deckID)?.opensResolution == true else { return }
+        pendingConfirmation = nil
         resolvingDeckID = deckID
+    }
+
+    func closeResolution() {
+        pendingConfirmation = nil
+        resolvingDeckID = nil
     }
 
     /// Keep-remote is sent at once; overwrite and save-as-new only ask for confirmation.
@@ -62,8 +70,9 @@ extension ArkhamDBViewModel {
     func confirmPendingResolution() async {
         guard let pending = pendingConfirmation else { return }
         pendingConfirmation = nil
-        guard writeBackStatus(for: pending.deckID)?.allowedResolutions
-            .contains(pending.resolution) == true
+        guard pending.deckID == resolvingDeckID,
+              writeBackStatus(for: pending.deckID)?.allowedResolutions
+              .contains(pending.resolution) == true
         else { return }
         await resolve(pending.deckID, pending.resolution, confirmed: true)
     }

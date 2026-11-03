@@ -62,11 +62,11 @@ struct ArkhamDBWriteBackRowSection: View {
             ))
             .accessibilityIdentifier("arkhamdb.writeBack.retry.\(id)")
         }
-        if status.state == .conflict {
+        if status.opensResolution {
             Button(arkhamDBLocalized(
                 status.allowedResolutions.isEmpty ? "writeBack.details" : "writeBack.resolve"
             )) {
-                model.openConflict(deck.id)
+                model.openResolution(deck.id)
             }
             .buttonStyle(.borderless)
             .disabled(model.isBusy)
@@ -78,7 +78,7 @@ struct ArkhamDBWriteBackRowSection: View {
     }
 }
 
-/// The conflict sheet offers only the server-accepted resolutions for the reason.
+/// The resolution sheet offers only the server-accepted resolutions for the row.
 struct ArkhamDBWriteBackConflictSheet: View {
     @Bindable var model: ArkhamDBViewModel
     let deckName: String
@@ -123,14 +123,14 @@ struct ArkhamDBWriteBackConflictSheet: View {
             .navigationTitle(deckName)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(arkhamDBLocalized("cancel")) { model.resolvingDeckID = nil }
+                    Button(arkhamDBLocalized("cancel")) { model.closeResolution() }
                         .accessibilityIdentifier("arkhamdb.writeBack.conflict.close")
                 }
             }
             .confirmationDialog(
-                arkhamDBLocalized(
-                    model.pendingConfirmation?.resolution.confirmationTitleKey ?? "cancel"
-                ),
+                model.pendingConfirmation.map {
+                    String(format: arkhamDBLocalized($0.resolution.confirmationTitleKey), deckName)
+                } ?? "",
                 isPresented: Binding(
                     get: { model.pendingConfirmation != nil },
                     set: {
@@ -163,7 +163,7 @@ extension View {
             get: { model?.resolvingStatus != nil },
             set: {
                 if !$0 {
-                    model?.resolvingDeckID = nil
+                    model?.closeResolution()
                 }
             }
         )) {

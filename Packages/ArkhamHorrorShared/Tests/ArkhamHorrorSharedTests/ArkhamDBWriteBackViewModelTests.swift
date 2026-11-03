@@ -2,41 +2,6 @@
 import Foundation
 import Testing
 
-private func row(
-    _ id: DeckID,
-    enabled: Bool = true,
-    state: ArkhamDBWriteBackState = .idle,
-    reason: ArkhamDBWriteBackConflictReason? = nil,
-    error: String? = nil,
-    resulting: DeckID? = nil,
-    spentXpSynced: Bool = false
-) -> ArkhamDBWriteBackStatus {
-    ArkhamDBWriteBackStatus(
-        localDeckId: id, remoteDeckId: "123", enabled: enabled, state: state,
-        pushId: nil, campaignKey: nil, error: error,
-        conflict: reason.map {
-            ArkhamDBWriteBackConflict(
-                reason: $0, lastSyncedDateUpdate: nil, lastSyncedVersion: nil,
-                remoteDateUpdate: nil, remoteVersion: nil
-            )
-        },
-        resultingLocalDeckId: resulting, spentXpSynced: spentXpSynced
-    )
-}
-
-private func statusData(_ rows: [ArkhamDBWriteBackStatus]) throws -> Data {
-    try ContractJSON.encode(ArkhamDBLinkStatus(
-        linked: true, remoteAccountId: "7", remoteAccountName: "Agnes",
-        tokenExpiry: nil, linkedAt: nil,
-        writeBackEnabledDeckCount: rows.count { $0.enabled },
-        deckLinks: rows, skippedDeckLinkCount: 0
-    ))
-}
-
-private func body(_ request: URLRequest) throws -> JSONValue {
-    try ContractJSON.decode(JSONValue.self, from: #require(request.httpBody))
-}
-
 @Suite("ArkhamDB write-back view model")
 @MainActor
 struct ArkhamDBWriteBackViewModelTests {
@@ -62,7 +27,9 @@ struct ArkhamDBWriteBackViewModelTests {
         then responses: [(Int, Data)],
         savedDecksChanged: @escaping @MainActor () async -> Void = {}
     ) async throws -> (ArkhamDBViewModel, ArkhamDBScriptedTransport) {
-        let transport = try ArkhamDBScriptedTransport([(200, statusData(rows))] + responses)
+        let transport = try ArkhamDBScriptedTransport(
+            [(200, writeBackStatusData(rows))] + responses
+        )
         let model = model(transport, savedDecksChanged: savedDecksChanged)
         await model.refreshStatus()
         #expect(model.writeBackStatus(for: rows[0].localDeckId) == rows[0])
@@ -72,17 +39,19 @@ struct ArkhamDBWriteBackViewModelTests {
     @Test("The toggle sends PUT write-back and updates every row from the response")
     func toggle() async throws {
         let (model, transport) = try await loaded(
-            [row(deckA, enabled: false), row(deckB, state: .pending)],
-            then: [(200, ContractJSON.encode([row(deckA, state: .pending), row(deckB)]))]
+            [writeBackRow(deckA, enabled: false), writeBackRow(deckB, state: .pending)],
+            then: [(200, ContractJSON.encode([
+                writeBackRow(deckA, state: .pending), writeBackRow(deckB),
+            ]))]
         )
         #expect(model.writeBackStatus(for: deckA)?.showsSpentXpNote == false)
         await model.setWriteBack(deckA, enabled: true)
         let request = try #require(await transport.requests.last)
         #expect(request.httpMethod == "PUT")
         #expect(request.url?.path == "\(base)/write-back")
-        #expect(try body(request) == .object(["enabled": .bool(true)]))
-        #expect(model.writeBackStatus(for: deckA) == row(deckA, state: .pending))
-        #expect(model.writeBackStatus(for: deckB) == row(deckB))
+        #expect(try writeBackBody(request) == .object(["enabled": .bool(true)]))
+        #expect(model.writeBackStatus(for: deckA) == writeBackRow(deckA, state: .pending))
+        #expect(model.writeBackStatus(for: deckB) == writeBackRow(deckB))
         #expect(model.writeBackStatus(for: deckA)?.showsSpentXpNote == true)
         #expect(model.message == nil)
     }
@@ -99,27 +68,27 @@ struct ArkhamDBWriteBackViewModelTests {
             (.unknown("future"), []),
         ]
         for (reason, resolutions) in expected {
-            let status = row(deckA, state: .conflict, reason: reason)
+            let status = writeBackRow(deckA, state: .conflict, reason: reason)
             #expect(status.allowedResolutions == resolutions)
             #expect(!status.canRetry)
             #expect(status.statusText == arkhamDBLocalized(reason.messageKey))
         }
         // The server refuses retry and resolution for opted-out decks.
-        #expect(row(deckA, enabled: false, state: .conflict, reason: .remoteChanged)
+        #expect(writeBackRow(deckA, enabled: false, state: .conflict, reason: .remoteChanged)
             .allowedResolutions.isEmpty)
-        #expect(row(deckA, state: .failed).canRetry)
-        #expect(!row(deckA, enabled: false, state: .failed).canRetry)
-        #expect(!row(deckA, state: .pending).canRetry)
-        #expect(row(deckA, state: .failed, error: "pushUncertain").statusText
+        #expect(writeBackRow(deckA, state: .failed).canRetry)
+        #expect(!writeBackRow(deckA, enabled: false, state: .failed).canRetry)
+        #expect(!writeBackRow(deckA, state: .pending).canRetry)
+        #expect(writeBackRow(deckA, state: .failed, error: "pushUncertain").statusText
             == arkhamDBLocalized("writeBack.state.failedUncertain"))
         // An unknown future state is unsupported even with a resolvable-looking conflict.
-        let future = row(deckA, state: .unknown("reconciling"), reason: .remoteChanged)
+        let future = writeBackRow(deckA, state: .unknown("reconciling"), reason: .remoteChanged)
         #expect(future.allowedResolutions.isEmpty)
         #expect(!future.canRetry)
         #expect(future.statusText == arkhamDBLocalized("writeBack.state.unknown"))
         // The spent-XP note never trusts a contract-violating spentXpSynced=true.
-        #expect(row(deckA, spentXpSynced: true).showsSpentXpNote)
-        #expect(!row(deckA, enabled: false, spentXpSynced: true).showsSpentXpNote)
+        #expect(writeBackRow(deckA, spentXpSynced: true).showsSpentXpNote)
+        #expect(!writeBackRow(deckA, enabled: false, spentXpSynced: true).showsSpentXpNote)
     }
 
     @Test(
@@ -127,11 +96,11 @@ struct ArkhamDBWriteBackViewModelTests {
         arguments: [ArkhamDBWriteBackResolution.overwrite, .saveAsNew]
     )
     func confirmation(resolution: ArkhamDBWriteBackResolution) async throws {
-        let conflict = row(deckA, state: .conflict, reason: .remoteChanged)
+        let conflict = writeBackRow(deckA, state: .conflict, reason: .remoteChanged)
         let (model, transport) = try await loaded(
-            [conflict], then: [(200, ContractJSON.encode([row(deckA, state: .pending)]))]
+            [conflict], then: [(200, ContractJSON.encode([writeBackRow(deckA, state: .pending)]))]
         )
-        model.openConflict(deckA)
+        model.openResolution(deckA)
         #expect(model.resolvingDeckID == deckA)
         await model.chooseResolution(resolution, for: deckA)
         #expect(model.pendingConfirmation == ArkhamDBPendingResolution(
@@ -150,25 +119,25 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(await transport.requests.count == 2)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.path == "\(base)/resolve-conflict")
-        #expect(try body(request) == .object([
+        #expect(try writeBackBody(request) == .object([
             "resolution": .string(resolution.rawValue), "confirmed": .bool(true),
         ]))
-        #expect(model.writeBackStatus(for: deckA) == row(deckA, state: .pending))
+        #expect(model.writeBackStatus(for: deckA) == writeBackRow(deckA, state: .pending))
         #expect(model.resolvingDeckID == nil)
     }
 
     @Test("Keep-remote is sent at once; a refused resolution is never sent or confirmed")
     func keepRemoteAndRefused() async throws {
         let (model, transport) = try await loaded(
-            [row(deckA, state: .conflict, reason: .campaignChanged)],
-            then: [(200, ContractJSON.encode([row(deckA, state: .pending)]))]
+            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged)],
+            then: [(200, ContractJSON.encode([writeBackRow(deckA, state: .pending)]))]
         )
         await model.chooseResolution(.overwrite, for: deckA)
         #expect(model.pendingConfirmation == nil)
         #expect(await transport.requests.count == 1)
         await model.chooseResolution(.keepRemote, for: deckA)
         let request = try #require(await transport.requests.last)
-        #expect(try body(request) == .object([
+        #expect(try writeBackBody(request) == .object([
             "resolution": .string("keepRemote"), "confirmed": .bool(false),
         ]))
         #expect(model.writeBackStatus(for: deckA)?.state == .pending)
@@ -179,17 +148,17 @@ struct ArkhamDBWriteBackViewModelTests {
         arguments: [ArkhamDBWriteBackConflictReason.boundaryUndone, .accountChanged]
     )
     func deadEnds(reason: ArkhamDBWriteBackConflictReason) async throws {
-        let fenced = row(deckA, state: .conflict, reason: reason)
+        let fenced = writeBackRow(deckA, state: .conflict, reason: reason)
         let (model, transport) = try await loaded([fenced], then: [])
         let status = try #require(model.writeBackStatus(for: deckA))
         #expect(status.blockedReason == reason)
         #expect(status.allowedResolutions.isEmpty)
         #expect(!status.canRetry)
         // The fence survives opting out, and is still shown as blocked.
-        #expect(row(deckA, enabled: false, state: .conflict, reason: reason).blockedReason
+        #expect(writeBackRow(deckA, enabled: false, state: .conflict, reason: reason).blockedReason
             == reason)
-        #expect(row(deckA, state: .conflict, reason: .remoteChanged).blockedReason == nil)
-        model.openConflict(deckA)
+        #expect(writeBackRow(deckA, state: .conflict, reason: .remoteChanged).blockedReason == nil)
+        model.openResolution(deckA)
         #expect(model.resolvingStatus == fenced)
         await model.retryWriteBack(deckA)
         for resolution in ArkhamDBWriteBackResolution.allCases {
@@ -202,9 +171,9 @@ struct ArkhamDBWriteBackViewModelTests {
     @Test("Saved decks are refreshed after save-as-new only")
     func refreshAfterSaveAsNew() async throws {
         var refreshes = 0
-        let response = try ContractJSON.encode([row(deckA, state: .pending)])
+        let response = try ContractJSON.encode([writeBackRow(deckA, state: .pending)])
         let (model, _) = try await loaded(
-            [row(deckA, state: .conflict, reason: .remoteChanged)],
+            [writeBackRow(deckA, state: .conflict, reason: .remoteChanged)],
             then: [(200, response)],
             savedDecksChanged: { refreshes += 1 }
         )
@@ -212,10 +181,11 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(refreshes == 0)
 
         let (saving, _) = try await loaded(
-            [row(deckA, state: .conflict, reason: .campaignChanged)],
+            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged)],
             then: [(200, response)],
             savedDecksChanged: { refreshes += 1 }
         )
+        saving.openResolution(deckA)
         await saving.chooseResolution(.saveAsNew, for: deckA)
         #expect(refreshes == 0)
         await saving.confirmPendingResolution()
@@ -224,10 +194,10 @@ struct ArkhamDBWriteBackViewModelTests {
 
     @Test("A failed write-back call refreshes status and shows a specific message")
     func refreshAfterError() async throws {
-        let refreshed = row(deckA, enabled: false, state: .cancelled)
-        let (model, transport) = try await loaded([row(deckA, state: .failed)], then: [
+        let refreshed = writeBackRow(deckA, enabled: false, state: .cancelled)
+        let (model, transport) = try await loaded([writeBackRow(deckA, state: .failed)], then: [
             (409, Data(#"{"code":"writeBackDisabled","error":"disabled"}"#.utf8)),
-            (200, statusData([refreshed])),
+            (200, writeBackStatusData([refreshed])),
         ])
         await model.retryWriteBack(deckA)
         let requests = await transport.requests
@@ -242,13 +212,13 @@ struct ArkhamDBWriteBackViewModelTests {
     @Test("An unreadable save-as-new response refreshes status and saved decks")
     func refreshAfterUnreadableSaveAsNew() async throws {
         var refreshes = 0
-        let applied = row(deckA, state: .pending)
+        let applied = writeBackRow(deckA, state: .pending)
         let (model, transport) = try await loaded(
-            [row(deckA, state: .conflict, reason: .remoteChanged)],
-            then: [(200, Data("not json".utf8)), (200, statusData([applied]))],
+            [writeBackRow(deckA, state: .conflict, reason: .remoteChanged)],
+            then: [(200, Data("not json".utf8)), (200, writeBackStatusData([applied]))],
             savedDecksChanged: { refreshes += 1 }
         )
-        model.openConflict(deckA)
+        model.openResolution(deckA)
         await model.chooseResolution(.saveAsNew, for: deckA)
         await model.confirmPendingResolution()
         #expect(await transport.requests.map(\.httpMethod) == ["GET", "POST", "GET"])
@@ -271,17 +241,19 @@ struct ArkhamDBWriteBackViewModelTests {
     @Test("Session expiry is not followed by a status refresh")
     func noRefreshAfterSessionExpiry() async throws {
         let (model, transport) = try await loaded(
-            [row(deckA)], then: [(401, Data()), (200, statusData([]))]
+            [writeBackRow(deckA)], then: [(401, Data()), (200, writeBackStatusData([]))]
         )
         await model.setWriteBack(deckA, enabled: false)
         #expect(await transport.requests.count == 2)
-        #expect(model.writeBackStatus(for: deckA) == row(deckA))
+        #expect(model.writeBackStatus(for: deckA) == writeBackRow(deckA))
     }
 
     @Test("Without arkhamdb.write-back.v1 no write-back row or request exists")
     func capabilityGate() async throws {
         let transport = try ArkhamDBScriptedTransport([
-            (200, statusData([row(deckA, state: .conflict, reason: .remoteChanged)])),
+            (200, writeBackStatusData([
+                writeBackRow(deckA, state: .conflict, reason: .remoteChanged),
+            ])),
         ])
         let model = model(transport, supportsWriteBack: false)
         await model.refreshStatus()
@@ -290,7 +262,7 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(model.writeBackStatuses.isEmpty)
         await model.setWriteBack(deckA, enabled: false)
         await model.chooseResolution(.keepRemote, for: deckA)
-        model.openConflict(deckA)
+        model.openResolution(deckA)
         #expect(model.resolvingDeckID == nil)
         #expect(await transport.requests.count == 1)
     }
