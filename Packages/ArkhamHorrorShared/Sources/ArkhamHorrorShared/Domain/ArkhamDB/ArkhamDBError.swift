@@ -14,39 +14,44 @@ enum ArkhamDBErrorCode: Sendable, Hashable, Codable {
     case validationFailed
     case unknown(String)
 
-    /// Known wire spellings; a table keeps the mapping flat as the contract grows.
-    private static let knownCodes: [String: ArkhamDBErrorCode] = [
-        "disabled": .disabled,
-        "oauthCallbackInvalidState": .oauthCallbackInvalidState,
-        "notLinked": .notLinked,
-        "tokenExpired": .tokenExpired,
-        "notFound": .notFound,
-        "storageFailure": .storageFailure,
-        "remoteUnavailable": .remoteUnavailable,
-        "oauthCompletionInvalid": .oauthCompletionInvalid,
-        "writeBackDisabled": .writeBackDisabled,
-        "conflict": .conflict,
-        "pushUncertain": .pushUncertain,
-        "validationFailed": .validationFailed,
+    /// Every typed code, used to decode. Encoding goes through the exhaustive `rawValue`
+    /// switch, so a new case cannot compile without a wire spelling.
+    static let allKnown: [ArkhamDBErrorCode] = [
+        .disabled, .oauthCallbackInvalidState, .notLinked, .tokenExpired, .notFound,
+        .storageFailure, .remoteUnavailable, .oauthCompletionInvalid, .writeBackDisabled,
+        .conflict, .pushUncertain, .validationFailed,
     ]
 
-    private static let rawValues = Dictionary(
-        uniqueKeysWithValues: knownCodes.map { ($0.value, $0.key) }
-    )
+    /// The exact wire spelling. Unknown codes keep the server's spelling.
+    var rawValue: String {
+        switch self {
+        case .disabled: "disabled"
+        case .oauthCallbackInvalidState: "oauthCallbackInvalidState"
+        case .notLinked: "notLinked"
+        case .tokenExpired: "tokenExpired"
+        case .notFound: "notFound"
+        case .storageFailure: "storageFailure"
+        case .remoteUnavailable: "remoteUnavailable"
+        case .oauthCompletionInvalid: "oauthCompletionInvalid"
+        case .writeBackDisabled: "writeBackDisabled"
+        case .conflict: "conflict"
+        case .pushUncertain: "pushUncertain"
+        case .validationFailed: "validationFailed"
+        case let .unknown(raw): raw
+        }
+    }
+
+    init(rawValue: String) {
+        self = Self.allKnown.first { $0.rawValue == rawValue } ?? .unknown(rawValue)
+    }
 
     init(from decoder: any Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
-        self = Self.knownCodes[raw] ?? .unknown(raw)
+        try self.init(rawValue: decoder.singleValueContainer().decode(String.self))
     }
 
     func encode(to encoder: any Encoder) throws {
-        let raw: String = if case let .unknown(raw) = self {
-            raw
-        } else {
-            Self.rawValues[self] ?? ""
-        }
         var container = encoder.singleValueContainer()
-        try container.encode(raw)
+        try container.encode(rawValue)
     }
 }
 

@@ -134,26 +134,6 @@ struct ArkhamDBWriteBackContractTests {
         #expect(error.code == .unknown("quotaExceeded"))
     }
 
-    @Test("Write-back error codes are typed, never relink, and every known code round-trips")
-    func writeBackErrorCodes() throws {
-        let expected: [(String, ArkhamDBErrorCode)] = [
-            ("writeBackDisabled", .writeBackDisabled), ("conflict", .conflict),
-            ("pushUncertain", .pushUncertain), ("validationFailed", .validationFailed),
-            ("disabled", .disabled), ("oauthCallbackInvalidState", .oauthCallbackInvalidState),
-            ("notFound", .notFound), ("storageFailure", .storageFailure),
-            ("remoteUnavailable", .remoteUnavailable),
-            ("oauthCompletionInvalid", .oauthCompletionInvalid),
-        ]
-        for (raw, code) in expected {
-            let body = JSONValue.object(["code": .string(raw), "error": .string("message")])
-            let error = try decode(ArkhamDBError.self, body)
-            #expect(error.code == code)
-            #expect(!error.requiresRelinking)
-            #expect(try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(error))
-                == body)
-        }
-    }
-
     @Test("Status and conflict keys are required; nullable keys accept null; types are strict")
     func strictKeys() throws {
         let rows = try arkhamDBWriteBackStateRows()
@@ -262,5 +242,35 @@ struct ArkhamDBWriteBackContractTests {
         #expect(decoded.deckLinks.map(\.remoteDeckId) == ["124", "123"])
         #expect(decoded.skippedDeckLinkCount == 2)
         #expect(decoded.linked)
+    }
+}
+
+@Suite("ArkhamDB error code wire spellings")
+struct ArkhamDBErrorCodeWireTests {
+    @Test("Every known error code has its exact unique wire spelling and round-trips")
+    func errorCodeWireSpellings() throws {
+        let expected: [(String, ArkhamDBErrorCode)] = [
+            ("disabled", .disabled), ("oauthCallbackInvalidState", .oauthCallbackInvalidState),
+            ("notLinked", .notLinked), ("tokenExpired", .tokenExpired), ("notFound", .notFound),
+            ("storageFailure", .storageFailure), ("remoteUnavailable", .remoteUnavailable),
+            ("oauthCompletionInvalid", .oauthCompletionInvalid),
+            ("writeBackDisabled", .writeBackDisabled), ("conflict", .conflict),
+            ("pushUncertain", .pushUncertain), ("validationFailed", .validationFailed),
+        ]
+        #expect(ArkhamDBErrorCode.allKnown == expected.map(\.1))
+        let spellings = ArkhamDBErrorCode.allKnown.map(\.rawValue)
+        #expect(spellings == expected.map(\.0))
+        #expect(Set(spellings).count == 12)
+        #expect(!spellings.contains(""))
+        for code in ArkhamDBErrorCode.allKnown {
+            let body = JSONValue.object(["code": .string(code.rawValue), "error": .string("m")])
+            let error = try ContractJSON.decode(ArkhamDBError.self, from: ContractJSON.encode(body))
+            #expect(error.code == code)
+            #expect(error.requiresRelinking == (code == .notLinked || code == .tokenExpired))
+            #expect(try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(error))
+                == body)
+            #expect(ArkhamDBErrorCode(rawValue: code.rawValue) == code)
+        }
+        #expect(ArkhamDBErrorCode(rawValue: "quotaExceeded").rawValue == "quotaExceeded")
     }
 }
