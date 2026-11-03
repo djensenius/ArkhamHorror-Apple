@@ -136,6 +136,8 @@ final class ArkhamDBViewModel {
         self.status = status
         needsRelinking = false
         await applyWriteBack(status.linked ? status.deckLinks : [])
+        // The saved-deck reload may suspend; never write into a session that went stale.
+        try validate(context)
         skippedWriteBackCount = status.linked ? status.skippedDeckLinkCount : 0
         if !status.linked {
             decks = []

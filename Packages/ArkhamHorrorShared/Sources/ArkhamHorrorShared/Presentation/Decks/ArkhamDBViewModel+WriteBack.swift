@@ -164,6 +164,7 @@ extension ArkhamDBViewModel {
                 let rows = try await operation(context)
                 try self.validate(context)
                 await self.applyWriteBack(rows)
+                try self.validate(context)
                 self.skippedWriteBackCount = 0
                 outcome = .succeeded
             } catch {
