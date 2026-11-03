@@ -13,12 +13,18 @@ struct ArkhamDBWriteBackPollEpisodeTests {
         case retry, keepRemote, saveAsNew, overwrite
     }
 
+    private struct Result {
+        let episodes: Int
+        let awaiting: Set<DeckID>
+        let requests: Int
+    }
+
     /// Loads `row`, runs `action` against the queued `responses` and returns the episode
     /// change, the awaited decks and the number of requests after the initial load.
     private func run(
         _ action: Action, from row: ArkhamDBWriteBackStatus,
         then responses: [(Int, Data)], busy: Bool = false
-    ) async throws -> (episodes: Int, awaiting: Set<DeckID>, requests: Int) {
+    ) async throws -> Result {
         let transport = try ArkhamDBScriptedTransport(
             [(200, writeBackStatusData([row]))] + responses
         )
@@ -41,9 +47,10 @@ struct ArkhamDBWriteBackPollEpisodeTests {
             await model.confirmPendingResolution()
         }
         model.isBusy = false
-        return (
-            model.writeBackPollEpisode - episode, model.awaitingResolutionDeckIDs,
-            await transport.requests.count - 1
+        let requests = await transport.requests.count - 1
+        return Result(
+            episodes: model.writeBackPollEpisode - episode,
+            awaiting: model.awaitingResolutionDeckIDs, requests: requests
         )
     }
 
