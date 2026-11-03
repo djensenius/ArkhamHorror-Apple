@@ -205,6 +205,11 @@ extension BasicChoicePromptPresentation {
             return "Choose a reaction"
         case .chooseOne, .chooseOneWizard, .dropDown, .pickSupplies:
             return "Choose an action"
+        case .chooseFromCollection:
+            return semanticLocalized(
+                "semantic.question.title.chooseCard",
+                value: "Choose a card"
+            )
         case .chooseAmounts, .chooseDeck, .chooseExchangeAmounts, .chooseJoinDeck,
              .choosePaymentAmounts, .chooseSome, .chooseSome1, .chooseUpgradeDeck,
              .continueCampaign, .pickCampaignSettings, .pickCampaignSpecific,

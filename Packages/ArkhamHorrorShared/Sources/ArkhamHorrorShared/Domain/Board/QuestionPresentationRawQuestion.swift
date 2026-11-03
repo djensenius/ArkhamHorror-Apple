@@ -94,6 +94,8 @@ enum QuestionPresentationRawQuestionDeriver {
                 shape = try noChoice(object, keys: ["tag"], kind: .continueCampaign)
             case "Read":
                 shape = try readChoices(object)
+            case "ChooseFromCollection":
+                shape = try collectionChoices(object)
             default:
                 shape = .init(kind: .unsupported, choices: [])
             }

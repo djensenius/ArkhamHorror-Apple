@@ -254,7 +254,8 @@ extension QuestionPresentation: Codable {
             guard case .campaignSettings = answer else { try answerMismatch(in: container) }
         case .pickScenarioSettings:
             guard case .standaloneSettings = answer else { try answerMismatch(in: container) }
-        case .chooseOne, .dropDown, .playerWindowChooseOne, .windowChooseOne:
+        case .chooseOne, .chooseFromCollection, .dropDown, .playerWindowChooseOne,
+             .windowChooseOne:
             try requireSingleChoiceAnswer(in: container)
         case .unsupported:
             break

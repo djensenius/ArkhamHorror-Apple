@@ -12,11 +12,16 @@ Byte-for-byte copies from the fork **upstream sync candidate for TASK-2.56**, wo
 `948608b28e2eb7b55865ada24f0a166a7208a420` (schemaRevision `0.1.57`,
 nativeClientMinimumRevision `0.1.57`). That commit is provisional: the sync PR may be
 rewritten before it merges, so the merge commit, not this SHA, is what the repin pins.
+Every file below was re-checked byte-identical at the later sync-candidate commit
+`398c660b1234127868372b85726d6526673ec361`, which is still provisional.
 
 | File | Source path in the fork contracts tree | SHA-256 |
 | --- | --- | --- |
 | `game-list.json` | `contracts/fixtures/game-list.json` | `15a68bfc25bdb5e73b4876ef4e7bbf97c66666bf2e185a6fbbb117ab6fe6ca80` |
+| `game-unarchive-failed.json` | `contracts/fixtures/game-unarchive-failed.json` | `efec46cf0b4e4fe26d6cd56a56ed6d87edaa259cdd0109486032064a1bb2ec6c` |
+| `game-unarchived.json` | `contracts/fixtures/game-unarchived.json` | `c3f84c0306025fc9f7275eb1c9735f7b63644ad1a8bd9ba693e17453924c7c28` |
 | `game-update.json` | `contracts/fixtures/game-update.json` | `d53eb5492e82698f393921d3d8d033f13f5d54df50453d0b2095bec043a6757e` |
+| `game-watcher-count.json` | `contracts/fixtures/game-watcher-count.json` | `8bccfde3a9cd97ec9e10ae21a840bafa8ea4700783df3fb43320fc25b6e3b531` |
 | `get-game.json` | `contracts/fixtures/get-game.json` | `21ede54dd82f648d1487b8aae3299f9f37e5b4e2085f6c269d5cb9f5a7062892` |
 | `investigator-unhealed-horror-negative.json` | `contracts/fixtures/investigator-unhealed-horror-negative.json` | `56f3d6439b9d4572d801dbe69218210311a0d11082cda915673fd4f5b69dfe25` |
 | `mode-campaign-scenario.json` | `contracts/fixtures/mode-campaign-scenario.json` | `a050c83368de1269c2292955963a15e6980de606b17f2d794645a21a04ec6c77` |
@@ -39,3 +44,19 @@ Haskell encoders, and each test names its source. They are labelled synthetic th
   the captured `get-game.json`, shaped from the sync candidate's
   `contracts/schemas/{public-game,investigator,chaos-bag,mode,game-list}.schema.json`.
   The captured bytes carry only empty or null values for these fields.
+- `Schema157QuestionFallbackTests.chooseFromCollection` (synthetic): the raw
+  `ChooseFromCollection` question, the defaultOptions record encoding of
+  `backend/arkham-api/library/Arkham/Question.hs:188`
+  (`{tag, investigatorId, source, cardCodes}`), with card codes matching the captured
+  `chooseFromCollection` representative. The answer index picks `cardCodes`
+  (`Entity/Answer.hs:935`).
+- `Schema157QuestionFallbackTests.turnPlayerQuestion` and `turnPlayerPresentation`
+  (synthetic): the `ChooseTurnPlayer` prompt from `Arkham/Game/Runner.hs`
+  (`questionLabel "$label.choosePlayerToTakeTurn"` over `ChooseOne [PortraitLabel iid
+  [ChoosePlayer iid SetTurnPlayer|ResumeTurnPlayer]]`), and its presentation per
+  `Arkham/Question/Presentation.hs` (`PortraitLabel` is a `chooseTarget` on the
+  investigator).
+- `Schema157SocketMessageTests` `RoomClosed` frames (synthetic):
+  `{"tag":"RoomClosed","contents":"abandoned"|"maintenance"}`, from
+  `Api/Arkham/Helpers.hs` (`closeAbandonedRoom`, `applyMaintenance`), encoded like the
+  captured Contract `room-closed.json`.

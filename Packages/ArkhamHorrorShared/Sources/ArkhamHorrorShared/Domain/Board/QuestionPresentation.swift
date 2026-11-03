@@ -136,6 +136,7 @@ extension QuestionPresentation {
         case chooseAmounts
         case chooseDeck
         case chooseExchangeAmounts
+        case chooseFromCollection
         case chooseJoinDeck
         case chooseN
         case chooseOne

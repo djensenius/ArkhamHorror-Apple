@@ -34,9 +34,22 @@ func liveGameRoomClosedTitle() -> String {
     gameLifecycleLocalized("games.live.roomClosed.title", "Game closed")
 }
 
-func liveGameRoomClosedMessage() -> String {
-    gameLifecycleLocalized(
-        "games.live.roomClosed.message",
-        "This game was closed on the server."
-    )
+func liveGameRoomClosedMessage(reason: String? = nil) -> String {
+    switch reason {
+    case "abandoned":
+        gameLifecycleLocalized(
+            "games.live.roomClosed.message.abandoned",
+            "Every player left this game, so the server closed its room."
+        )
+    case "maintenance":
+        gameLifecycleLocalized(
+            "games.live.roomClosed.message.maintenance",
+            "The server is down for maintenance. Open the game again once it is back."
+        )
+    default:
+        gameLifecycleLocalized(
+            "games.live.roomClosed.message",
+            "This game was closed on the server."
+        )
+    }
 }

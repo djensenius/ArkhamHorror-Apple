@@ -139,11 +139,11 @@ struct LiveGameView: View {
                 message: "Your session has expired. Sign in again to continue.",
                 accessibilityID: AccountAccessibilityID.liveGameAuthenticationExpiredText
             )
-        case .roomClosed:
+        case let .roomClosed(reason, _):
             dismissibleFailureContent(
                 title: liveGameRoomClosedTitle(),
                 systemImage: "xmark.circle",
-                message: liveGameRoomClosedMessage(),
+                message: liveGameRoomClosedMessage(reason: reason),
                 accessibilityID: AccountAccessibilityID.liveGameRoomClosedText
             )
         case let .terminalFailure(error, _):

@@ -10,4 +10,12 @@ struct RoomClosedNotice: Equatable, Identifiable, Sendable {
     var id: GameID {
         gameID
     }
+
+    /// `RoomClosed` reasons the server sends while the game itself still exists: the last
+    /// player left (`abandoned`, Api/Arkham/Helpers.hs `closeAbandonedRoom`) or the server
+    /// entered maintenance (`maintenance`, `applyMaintenance`). Any other reason, including
+    /// `deleted`, keeps the deleted-game handling.
+    static func keepsGame(reason: String) -> Bool {
+        reason == "abandoned" || reason == "maintenance"
+    }
 }
