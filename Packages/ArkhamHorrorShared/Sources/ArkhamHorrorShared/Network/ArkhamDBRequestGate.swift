@@ -7,6 +7,10 @@ import Foundation
 /// User requests wait in FIFO order and are never dropped unless their own task is
 /// cancelled. Background requests never wait: they are refused while a request is in
 /// flight or a user request is waiting, so a background poll always yields.
+///
+/// Waits can be long: during a refresh-and-sync a user action can queue behind one
+/// in-flight deck sync plus up to two queued ones, each with a 10 s idle request
+/// timeout, so roughly 30 s or more.
 actor ArkhamDBRequestGate {
     enum Priority: Sendable {
         case user

@@ -181,8 +181,10 @@ extension ArkhamDBViewModel {
     /// (except session expiry, cancellation or a stale session) so the row never shows a
     /// stale state. A mutation can be applied even when its response is unreadable.
     /// `beforeSend` runs after `perform` has waited out any status poll and validated the
-    /// context, with no suspension before the request: a completion tracker inserted
-    /// earlier could be cleared by a poll applying the deck's pre-request status.
+    /// context: a completion tracker inserted earlier could be cleared by a poll applying
+    /// the deck's pre-request status. The request may still suspend before it is sent (the
+    /// app-wide gate wait and the main-actor `sendCheck` hop); the ordering holds because
+    /// `waitForStatusPoll` drained any running poll and `isBusy` blocks new poll ticks.
     @discardableResult
     private func performWriteBack(
         beforeSend: @escaping () -> Void = {},

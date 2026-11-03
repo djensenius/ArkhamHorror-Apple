@@ -16,7 +16,9 @@ struct ArkhamDBService: Sendable {
 
     /// Runs after a request is admitted by the gate and before it is sent. A request can
     /// wait behind others, so callers bind their session check here; a throw sends
-    /// nothing and is rethrown unchanged.
+    /// nothing and is rethrown unchanged. Task-locals are inherited by child and
+    /// unstructured tasks, so every gated caller must bind its own check (or nil) rather
+    /// than run under one bound by whoever started it.
     @TaskLocal static var sendCheck: (@Sendable () async throws -> Void)?
 
     init(

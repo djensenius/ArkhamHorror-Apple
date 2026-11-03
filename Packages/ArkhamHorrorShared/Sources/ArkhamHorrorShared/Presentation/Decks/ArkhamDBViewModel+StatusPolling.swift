@@ -86,7 +86,10 @@ extension ArkhamDBViewModel {
             let current = try await tokenProvider()
             context = current
             try validate(current)
-            try await updateStatus(current, priority: .background)
+            // Never inherit another caller's check (see `ArkhamDBService.sendCheck`).
+            try await ArkhamDBService.$sendCheck.withValue(nil) {
+                try await updateStatus(current, priority: .background)
+            }
             // Every awaited deck opted out: nothing more will run for it.
             let stillEnabled = awaitingResolutionDeckIDs.contains {
                 writeBackStatuses[$0]?.enabled == true
