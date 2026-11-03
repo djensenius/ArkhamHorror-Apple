@@ -235,3 +235,55 @@ struct ArkhamDBWriteBackReloadTests {
         #expect(reloads == 1)
     }
 }
+
+@Suite("ArkhamDB write-back completion tracking rules")
+@MainActor
+struct ArkhamDBWriteBackTrackingRuleTests {
+    private let deckA = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!)
+
+    @Test(
+        "Only succeeded, idle, cancelled or a new conflict end a tracked resolution",
+        arguments: [
+            (ArkhamDBWriteBackState.succeeded, true), (.idle, true), (.cancelled, true),
+            (.conflict, true), (.pending, false), (.running, false), (.failed, false),
+            (.unknown("x"), false),
+        ]
+    )
+    func endsTrackedResolution(state: ArkhamDBWriteBackState, ends: Bool) {
+        #expect(state.endsTrackedResolution == ends)
+    }
+
+    /// A linked model whose deckA push failed retryably, with Retry skipped as busy.
+    private func busyFailedModel() async throws -> (ArkhamDBViewModel, ArkhamDBScriptedTransport) {
+        let transport = try ArkhamDBScriptedTransport([
+            (200, writeBackStatusData([
+                writeBackRow(deckA, state: .failed, error: "remoteUnavailable"),
+            ])),
+        ])
+        let model = ArkhamDBViewModel(
+            profile: .hosted, service: ArkhamDBService(transport: transport),
+            authentication: nil, tokenProvider: { arkhamDBTestContext },
+            supportsWriteBack: true
+        )
+        await model.refreshStatus()
+        model.isBusy = true
+        return (model, transport)
+    }
+
+    @Test("A Retry skipped while busy keeps a tracker it did not add")
+    func skippedRetryKeepsExistingTracker() async throws {
+        let (model, transport) = try await busyFailedModel()
+        model.awaitingResolutionDeckIDs = [deckA]
+        await model.retryWriteBack(deckA)
+        #expect(await transport.requests.count == 1)
+        #expect(model.awaitingResolutionDeckIDs == [deckA])
+    }
+
+    @Test("A Retry skipped while busy leaves no tracker on an untracked deck")
+    func skippedRetryLeavesNoTracker() async throws {
+        let (model, transport) = try await busyFailedModel()
+        await model.retryWriteBack(deckA)
+        #expect(await transport.requests.count == 1)
+        #expect(model.awaitingResolutionDeckIDs.isEmpty)
+    }
+}
