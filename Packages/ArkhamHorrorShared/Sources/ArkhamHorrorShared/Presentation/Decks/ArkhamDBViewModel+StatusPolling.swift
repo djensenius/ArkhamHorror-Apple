@@ -1,17 +1,17 @@
 import Foundation
 
-// Keep-remote, save-as-new and retry return at once; the server finishes them in the
-// background, so status is refreshed on a bounded schedule until completion shows up
-// (`applyWriteBack` then reloads saved decks once and stops tracking).
-//
-// Known limits:
-// - Status reports only each linked deck's oldest unfinished push, so a resolved push
-//   can stay "pending" behind another campaign's push. The attempt cap bounds that.
-// - A poll never overlaps another request of this view model, but there is no app-wide
-//   ArkhamDB gate: `DecksViewModel` and `AppModel` deck sync may still reach ArkhamDB
-//   at the same time.
-// - A poll that finds the app session expired stops quietly; the next user request
-//   reports the expiry.
+/// Keep-remote, save-as-new and retry return at once; the server finishes them in the
+/// background, so status is refreshed on a bounded schedule until completion shows up
+/// (`applyWriteBack` then reloads saved decks once and stops tracking).
+///
+/// Known limits:
+/// - Status reports only each linked deck's oldest unfinished push, so a resolved push
+///   can stay "pending" behind another campaign's push. The attempt cap bounds that.
+/// - A poll never overlaps another request of this view model, but there is no app-wide
+///   ArkhamDB gate: `DecksViewModel` and `AppModel` deck sync may still reach ArkhamDB
+///   at the same time.
+/// - A poll that finds the app session expired stops quietly; the next user request
+///   reports the expiry.
 extension ArkhamDBViewModel {
     /// The server's dispatcher runs every 30 s, admits each user at most once per 30 s
     /// and backs off failures (60/120/240 s, capped at 5 min); polls never ask sooner.
