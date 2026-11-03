@@ -37,4 +37,30 @@ struct ArkhamDBCapabilityTests {
             .supportsArkhamDBAccountLinking)
         #expect(!ServerCompatibility.modern(capabilities: []).supportsArkhamDBAccountLinking)
     }
+
+    @Test("The write-back gate needs its own capability, independent of account linking")
+    func writeBackCapabilityGate() throws {
+        let enabled = try ContractJSON.decode(
+            ServerCapabilities.self,
+            from: Data(arkhamDBWriteBackCapabilitiesJSON.utf8)
+        )
+        #expect(enabled.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 55))
+        let compatibility = ServerCompatibility.modern(capabilities: enabled.capabilities)
+        #expect(compatibility.supportsArkhamDBWriteBack)
+        #expect(compatibility.supportsArkhamDBAccountLinking)
+        let url = try #require(Bundle.module.url(
+            forResource: "capabilities-arkhamdb", withExtension: "json",
+            subdirectory: "Fixtures/Contract"
+        ))
+        let previous = try ContractJSON.decode(ServerCapabilities.self, from: Data(contentsOf: url))
+        #expect(previous.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 54))
+        let linkingOnly = ServerCompatibility.modern(capabilities: previous.capabilities)
+        #expect(linkingOnly.supportsArkhamDBAccountLinking)
+        #expect(!linkingOnly.supportsArkhamDBWriteBack)
+        #expect(!ServerCompatibility.legacy.supportsArkhamDBWriteBack)
+        #expect(!ServerCompatibility.modern(capabilities: ["arkhamdb.write-back.v2"])
+            .supportsArkhamDBWriteBack)
+        #expect(ServerCompatibility.modern(capabilities: ["arkhamdb.write-back.v1"])
+            .supportsArkhamDBWriteBack)
+    }
 }
