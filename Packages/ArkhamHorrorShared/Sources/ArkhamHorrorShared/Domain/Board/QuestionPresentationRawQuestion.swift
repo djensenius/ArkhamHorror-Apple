@@ -152,7 +152,9 @@ enum QuestionPresentationRawQuestionDeriver {
             try wrappedQuestion(
                 object,
                 tag: tag,
-                keys: ["tag", "label", "card", "question"],
+                // `card` (before schema 0.1.57) or `labelCards` (0.1.57+), never both;
+                // hasValidQuestionLabelWrapperFields enforces exactly one.
+                keys: ["tag", "label", "question"],
                 validate: {
                     guard JSONValue.hasValidQuestionLabelWrapperFields($0) else {
                         throw invalid("Malformed QuestionLabel wrapper")

@@ -227,7 +227,12 @@ extension BasicChoicePromptPresentation {
         if let cost = presentation.payCost {
             parts.append("Cost: \(semanticCostSummary(cost, in: projection))")
         }
-        if let cardCode = presentation.cardCode {
+        if let labelCards = presentation.labelCards {
+            let cardNames = labelCards.compactMap { semanticCardName($0, in: projection) }
+            if !cardNames.isEmpty {
+                parts.append(cardNames.joined(separator: ", "))
+            }
+        } else if let cardCode = presentation.cardCode {
             if let cardName = semanticCardName(cardCode, in: projection) {
                 parts.append(cardName)
             }

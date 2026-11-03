@@ -23,6 +23,9 @@ struct QuestionPresentation: Sendable, Equatable, Hashable {
     let confirmLabel: Label?
     let backLabel: Label?
     let cardCode: String?
+    /// Every card a `QuestionLabel` is about, present only when there are two or more
+    /// (schema 0.1.57+); `cardCode` is always the first of them.
+    let labelCards: [String]?
     let payCost: Cost?
     let questionSource: Source?
     let tooltip: String?
@@ -62,6 +65,7 @@ struct QuestionPresentation: Sendable, Equatable, Hashable {
         confirmLabel: Label? = nil,
         backLabel: Label? = nil,
         cardCode: String? = nil,
+        labelCards: [String]? = nil,
         payCost: Cost? = nil,
         questionSource: Source? = nil,
         tooltip: String? = nil,
@@ -100,6 +104,7 @@ struct QuestionPresentation: Sendable, Equatable, Hashable {
         self.confirmLabel = confirmLabel
         self.backLabel = backLabel
         self.cardCode = cardCode
+        self.labelCards = labelCards
         self.payCost = payCost
         self.questionSource = questionSource
         self.tooltip = tooltip
