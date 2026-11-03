@@ -19,7 +19,11 @@ extension ArkhamDBViewModel {
 
     /// Applies authoritative rows. Resolutions complete asynchronously on the server, so
     /// saved decks are reloaded once when a tracked keep-remote/save-as-new leaves
-    /// pending/running, or when a known row's `resultingLocalDeckId` appears or changes.
+    /// pending/running, when a known row's `resultingLocalDeckId` appears or changes, or
+    /// when a row appears for a local deck no earlier row named (a save-as-new clone split
+    /// off while the original row stays pending for another campaign). The first snapshot
+    /// never reloads: a clone always derives from an existing row, so it can only appear
+    /// after a non-empty snapshot.
     func applyWriteBack(_ rows: [ArkhamDBWriteBackStatus]) async {
         guard supportsWriteBack else {
             writeBackStatuses = [:]
@@ -29,7 +33,10 @@ extension ArkhamDBViewModel {
         let previous = writeBackStatuses
         writeBackStatuses = Dictionary(rows.map { ($0.localDeckId, $0) }) { _, last in last }
         awaitingResolutionDeckIDs.formIntersection(writeBackStatuses.keys)
-        var reload = false
+        let knownDeckIDs = Set(previous.keys)
+            .union(previous.values.compactMap(\.resultingLocalDeckId))
+        var reload = !previous.isEmpty
+            && writeBackStatuses.keys.contains { !knownDeckIDs.contains($0) }
         for (deckID, row) in writeBackStatuses {
             let resultChanged = previous[deckID].map {
                 row.resultingLocalDeckId != nil
@@ -176,7 +183,16 @@ extension ArkhamDBViewModel {
             } catch {
                 guard Self.refreshesAfter(error) else { throw error }
                 outcome = .failed
-                try? await self.updateStatus(context)
+                do {
+                    try await self.updateStatus(context)
+                } catch let refreshError where !Self.refreshesAfter(refreshError) {
+                    // Session expiry, cancellation or a stale session during recovery
+                    // outranks the write-back error, so perform handles it.
+                    outcome = .skipped
+                    throw refreshError
+                } catch {
+                    // An ordinary refresh failure keeps the write-back error below.
+                }
                 throw error
             }
         }
