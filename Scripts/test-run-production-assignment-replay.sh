@@ -8,6 +8,11 @@ readonly selftest_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorS
 readonly expected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator()'
 readonly injected_driver_identifier='ArkhamHorrorSharedTests.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinatorInjected()'
 readonly current_contract_revision="0.1.48"
+readonly xcode_application="/Applications/Xcode.app"
+readonly expected_xcode_signature_requirement='(anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9])) and identifier "com.apple.dt.Xcode"'
+readonly xcode_signature_requirement_prefix="readonly xcode_signature_requirement='"
+readonly xcode_identifier_clause=' and identifier "com.apple.dt.Xcode"'
+readonly apple_platform_application="/System/Applications/Calculator.app"
 
 fail() {
   printf 'FAIL: %s\n' "$*" >&2
@@ -37,6 +42,8 @@ readonly override_log="$harness_root/override.log"
 readonly revision_log="$harness_root/revision.log"
 readonly scenario_log="$harness_root/scenario.log"
 readonly production_log="$harness_root/production-launch.log"
+readonly signature_log="$harness_root/signature.log"
+readonly adhoc_xcode_fixture="$harness_root/signature-fixture/Xcode.app"
 readonly fake_package_root="$harness_root/fake-package"
 readonly fake_package_launcher="$fake_package_root/Scripts/run-production-assignment-replay.sh"
 readonly fake_package_launcher_hop="$fake_package_root/launcher-hop"
@@ -84,6 +91,71 @@ report_production_log() {
     -e "s#$sensitive_output#<output>#g" \
     -e "s#$sensitive_token#<token>#g" \
     "$production_log" >&2
+}
+
+# codesign exits 0 when the requirement holds, 3 when a valid signature does
+# not satisfy it, and 1 when the signature itself is invalid.
+expect_signature_verdict() {
+  local expected_status="$1"
+  local requirement="$2"
+  local code_path="$3"
+  local description="$4"
+  local status=0
+  /usr/bin/codesign --verify --deep --strict \
+    -R="$requirement" \
+    "$code_path" \
+    >"$signature_log" 2>&1 || status=$?
+  if [[ "$status" != "$expected_status" ]]; then
+    /bin/cat "$signature_log" >&2
+    fail "$description (codesign exit $status, expected $expected_status)"
+  fi
+}
+
+leaf_signing_authority() {
+  local details
+  details="$(/usr/bin/codesign -d --verbose=2 "$1" 2>&1)" || return 1
+  /usr/bin/sed -n '/^Authority=/{s/^Authority=//p;q;}' <<<"$details"
+}
+
+# Sets selected_application to the first candidate of the given kind
+# (app-store or developer-id) that is not signed as Xcode and whose signature
+# verifies on its own, or to "" when none qualifies. Cheap signature metadata
+# is checked first; only remaining candidates are verified.
+selected_application=""
+select_signed_application() {
+  local kind="$1"
+  shift
+  local candidate details identifier leaf status
+  selected_application=""
+  for candidate in "$@"; do
+    [[ -d "$candidate" ]] || continue
+    if [[ "$kind" == app-store && ! -e "$candidate/Contents/_MASReceipt" ]]; then
+      continue
+    fi
+    details="$(/usr/bin/codesign -d --verbose=2 "$candidate" 2>&1)" || continue
+    leaf="$(/usr/bin/sed -n '/^Authority=/{s/^Authority=//p;q;}' <<<"$details")"
+    case "$kind:$leaf" in
+      "app-store:Apple Mac OS Application Signing") ;;
+      "developer-id:Developer ID Application: "*) ;;
+      *) continue ;;
+    esac
+    identifier="$(/usr/bin/sed -n 's/^Identifier=//p' <<<"$details")"
+    if [[ "$identifier" == com.apple.dt.Xcode ]]; then
+      printf 'note: skipping %s: signed as com.apple.dt.Xcode\n' "$candidate"
+      continue
+    fi
+    status=0
+    /usr/bin/codesign --verify --deep --strict "$candidate" \
+      >"$signature_log" 2>&1 || status=$?
+    if [[ "$status" != 0 ]]; then
+      printf 'note: skipping %s: its signature does not verify (codesign exit %s)\n' \
+        "$candidate" \
+        "$status"
+      continue
+    fi
+    selected_application="$candidate"
+    return 0
+  done
 }
 
 cleanup() {
@@ -192,6 +264,120 @@ fi
 [[ ! -e "$marker" ]] ||
   fail "production launcher executed a caller-selected Swift binary"
 printf 'PASS: production rejects caller-selected executables\n'
+
+# Xcode code-signature requirement. Fixtures are tiny or already installed;
+# nothing copies Xcode.
+launcher_requirement=""
+requirement_definitions=0
+requirement_uses=0
+codesign_requirements=0
+while IFS= read -r launcher_line; do
+  if [[ "$launcher_line" == "$xcode_signature_requirement_prefix"* ]]; then
+    requirement_definitions=$((requirement_definitions + 1))
+    launcher_requirement="${launcher_line#"$xcode_signature_requirement_prefix"}"
+    launcher_requirement="${launcher_requirement%\'}"
+  fi
+  if [[ "$launcher_line" == *"-R="* ]]; then
+    codesign_requirements=$((codesign_requirements + 1))
+  fi
+  # shellcheck disable=SC2016 # Match the launcher's literal source text.
+  if [[ "$launcher_line" == *'-R="$xcode_signature_requirement"'* ]]; then
+    requirement_uses=$((requirement_uses + 1))
+  fi
+done <"$production_launcher"
+readonly launcher_requirement
+[[ "$requirement_definitions" == 1 ]] ||
+  fail "launcher must define xcode_signature_requirement exactly once"
+[[ "$launcher_requirement" == "$expected_xcode_signature_requirement" ]] ||
+  fail "launcher Xcode signature requirement is not the audited requirement: $launcher_requirement"
+[[ "$codesign_requirements" == 1 && "$requirement_uses" == 1 ]] ||
+  fail "launcher must verify Xcode against xcode_signature_requirement only"
+[[ "$launcher_requirement" == *"$xcode_identifier_clause" ]] ||
+  fail "launcher Xcode signature requirement does not end with the Xcode identifier"
+readonly anchor_requirement="${launcher_requirement%"$xcode_identifier_clause"}"
+printf 'PASS: launcher pins the audited Xcode signature requirement\n'
+
+xcode_channel="Apple direct"
+if [[ -e "$xcode_application/Contents/_MASReceipt" ]]; then
+  xcode_channel="Mac App Store"
+fi
+expect_signature_verdict 0 "$launcher_requirement" "$xcode_application" \
+  "launcher signature requirement rejected the installed $xcode_channel Xcode"
+printf 'PASS: launcher signature requirement accepts the installed Xcode (%s channel, leaf %s)\n' \
+  "$xcode_channel" \
+  "$(leaf_signing_authority "$xcode_application")"
+
+/bin/mkdir -p "$adhoc_xcode_fixture/Contents/MacOS"
+/bin/cp -X /usr/bin/true "$adhoc_xcode_fixture/Contents/MacOS/Xcode"
+/bin/cat >"$adhoc_xcode_fixture/Contents/Info.plist" <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>Xcode</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.apple.dt.Xcode</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+</dict>
+</plist>
+EOF
+if ! /usr/bin/codesign --force --sign - --identifier com.apple.dt.Xcode \
+  "$adhoc_xcode_fixture" >"$signature_log" 2>&1
+then
+  /bin/cat "$signature_log" >&2
+  fail "ad-hoc Xcode fixture could not be signed"
+fi
+adhoc_details="$(
+  /usr/bin/codesign -d --verbose=2 "$adhoc_xcode_fixture" 2>&1
+)" || fail "ad-hoc Xcode fixture signature is unreadable"
+readonly adhoc_details
+if ! /usr/bin/grep -Fqx 'Identifier=com.apple.dt.Xcode' <<<"$adhoc_details" ||
+  ! /usr/bin/grep -Fqx 'Signature=adhoc' <<<"$adhoc_details"
+then
+  fail "ad-hoc Xcode fixture is not an ad-hoc com.apple.dt.Xcode signature"
+fi
+expect_signature_verdict 3 "$launcher_requirement" "$adhoc_xcode_fixture" \
+  "launcher signature requirement accepted an ad-hoc com.apple.dt.Xcode copy"
+expect_signature_verdict 3 "$anchor_requirement" "$adhoc_xcode_fixture" \
+  "launcher anchor clause accepted an ad-hoc signature"
+printf 'PASS: launcher signature requirement rejects an ad-hoc re-signed com.apple.dt.Xcode copy\n'
+
+[[ -d "$apple_platform_application" ]] ||
+  fail "Apple platform application fixture is missing: $apple_platform_application"
+expect_signature_verdict 0 "$anchor_requirement" "$apple_platform_application" \
+  "launcher anchor clause rejected Apple-signed $apple_platform_application"
+expect_signature_verdict 3 "$launcher_requirement" "$apple_platform_application" \
+  "launcher signature requirement accepted a non-Xcode Apple application"
+printf 'PASS: Apple-signed %s satisfies the anchor clause but not the Xcode identifier\n' \
+  "$apple_platform_application"
+
+select_signed_application app-store /Applications/*.app
+readonly mas_application="$selected_application"
+if [[ -n "$mas_application" ]]; then
+  expect_signature_verdict 0 "$anchor_requirement" "$mas_application" \
+    "launcher anchor clause rejected Mac App Store application $mas_application"
+  expect_signature_verdict 3 "$launcher_requirement" "$mas_application" \
+    "launcher signature requirement accepted non-Xcode Mac App Store application $mas_application"
+  printf 'PASS: Mac App Store %s satisfies the anchor clause but not the Xcode identifier\n' \
+    "$mas_application"
+else
+  printf 'SKIP: no verifiable Mac App Store application not signed as com.apple.dt.Xcode under /Applications\n'
+fi
+
+select_signed_application developer-id /Applications/*.app
+readonly developer_id_application="$selected_application"
+if [[ -n "$developer_id_application" ]]; then
+  expect_signature_verdict 3 "$anchor_requirement" "$developer_id_application" \
+    "launcher anchor clause accepted Developer ID application $developer_id_application"
+  expect_signature_verdict 3 "$launcher_requirement" "$developer_id_application" \
+    "launcher signature requirement accepted Developer ID application $developer_id_application"
+  printf 'PASS: launcher anchor clause rejects Developer ID %s\n' \
+    "$developer_id_application"
+else
+  printf 'SKIP: no verifiable Developer ID application not signed as com.apple.dt.Xcode under /Applications\n'
+fi
 
 for replay_scenario in \
   gathering-act-advance \
