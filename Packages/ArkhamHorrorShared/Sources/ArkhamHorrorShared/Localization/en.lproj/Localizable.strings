@@ -460,7 +460,7 @@
 "arkhamdb.writeBack.state.succeeded" = "Last push to ArkhamDB succeeded.";
 "arkhamdb.writeBack.state.cancelled" = "The last push was cancelled.";
 "arkhamdb.writeBack.state.unknown" = "Unknown write-back state. Refresh status or update the app.";
-"arkhamdb.writeBack.reason.remoteChanged" = "This deck changed on ArkhamDB since the last sync. Nothing was sent.";
+"arkhamdb.writeBack.reason.remoteChanged" = "The ArkhamDB deck no longer matches the last sync. Compare it with your saved deck before choosing.";
 "arkhamdb.writeBack.reason.campaignChanged" = "This ArkhamDB deck belongs to another campaign. Nothing was sent.";
 "arkhamdb.writeBack.reason.pushUncertain" = "ArkhamDB may already have a new version from the last push, so it can't be overwritten safely.";
 "arkhamdb.writeBack.reason.targetAlreadyLinked" = "The resulting ArkhamDB deck is already linked to another saved deck. Save as new to continue.";
