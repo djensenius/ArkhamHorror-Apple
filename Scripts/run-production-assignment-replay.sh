@@ -4,6 +4,15 @@ set +x
 
 readonly xcode_developer_dir="/Applications/Xcode.app/Contents/Developer"
 readonly xcode_application="/Applications/Xcode.app"
+# Accept only Xcode signed by Apple itself, from either distribution channel:
+# - `anchor apple`: Apple's own Software Signing chain (the developer.apple.com
+#   xip install, as on the GitHub macos-26 runner).
+# - Apple-rooted leaf with OID 1.2.840.113635.100.6.1.9: Apple's Mac App Store
+#   signing certificate ("Apple Mac OS Application Signing"; a local App Store
+#   install carries Contents/_MASReceipt).
+# Developer ID chains stay rejected: neither channel uses them, and a Developer
+# ID certificate could re-sign a modified copy of Xcode.
+readonly xcode_signature_requirement='(anchor apple or (anchor apple generic and certificate leaf[field.1.2.840.113635.100.6.1.9])) and identifier "com.apple.dt.Xcode"'
 readonly toolchain_bin="$xcode_developer_dir/Toolchains/XcodeDefault.xctoolchain/usr/bin"
 readonly swift_bin="$toolchain_bin/swift"
 readonly swift_target="$toolchain_bin/swift-frontend"
@@ -11,8 +20,8 @@ readonly driver_identifier_prefix='ArkhamHorrorSharedTests.AssignmentReplayCoord
 readonly expected_driver_identifier="${driver_identifier_prefix}()"
 readonly driver_filter='^ArkhamHorrorSharedTests\.AssignmentReplayCoordinatorDriverSuite/runConfiguredProductionAssignmentReplayCoordinator\(\)(/[^/]+)?$'
 readonly launcher_relative_path="Scripts/run-production-assignment-replay.sh"
-readonly trusted_base_revision="02558e4b11610cb75873287f1f5ecca8a76aec74"
-readonly expected_package_tree="b09ef2bbf2d52dfb11138eb3ae9b0be428f2ac54"
+readonly trusted_base_revision="5de07bd189b60defcdcd036e65ddaa12a119fdf4"
+readonly expected_package_tree="d7861a8018b8a51ca6171adc9698df8672aac224"
 readonly trusted_scratch_parent="/private/tmp"
 readonly git_bin="/usr/bin/git"
 
@@ -147,7 +156,7 @@ validate_toolchain() {
     require_trusted_toolchain_path "$path"
   done
   /usr/bin/codesign --verify --deep --strict \
-    -R='anchor apple and identifier "com.apple.dt.Xcode"' \
+    -R="$xcode_signature_requirement" \
     "$xcode_application" ||
     fail "pinned Xcode application failed Apple code-signature validation"
   [[ -L "$swift_bin" ]] ||

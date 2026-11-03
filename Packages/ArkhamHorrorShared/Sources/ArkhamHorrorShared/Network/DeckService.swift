@@ -285,6 +285,14 @@ extension DeckServiceError {
         return false
     }
 
+    /// An ArkhamDB failure (notLinked or tokenExpired) that needs the account relinked.
+    var isArkhamDBRelinkRequired: Bool {
+        if case let .arkhamDB(remote) = self {
+            return remote?.requiresRelinking == true
+        }
+        return false
+    }
+
     var message: String {
         switch self {
         case .invalidPathSegment:
