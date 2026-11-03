@@ -160,7 +160,7 @@ extension ArkhamDBViewModel {
         /// Busy, session expired, cancelled or stale: nothing to refresh.
         case skipped
         case succeeded
-        /// The request may or may not have been applied; status was refreshed.
+        /// The request may or may not have been applied; a status refresh was attempted.
         case failed
     }
 
@@ -180,8 +180,8 @@ extension ArkhamDBViewModel {
                 try self.validate(context)
                 self.skippedWriteBackCount = 0
                 outcome = .succeeded
-            } catch {
-                guard Self.refreshesAfter(error) else { throw error }
+            } catch let writeBackError {
+                guard Self.refreshesAfter(writeBackError) else { throw writeBackError }
                 outcome = .failed
                 do {
                     try await self.updateStatus(context)
@@ -191,9 +191,13 @@ extension ArkhamDBViewModel {
                     outcome = .skipped
                     throw refreshError
                 } catch {
-                    // An ordinary refresh failure keeps the write-back error below.
+                    // An ordinary refresh failure keeps the write-back error below, but a
+                    // conflict must not claim that the status was refreshed.
+                    if (writeBackError as? DeckServiceError)?.isArkhamDBConflict == true {
+                        throw DeckServiceError.writeBackConflictStatusUnavailable
+                    }
                 }
-                throw error
+                throw writeBackError
             }
         }
         return outcome

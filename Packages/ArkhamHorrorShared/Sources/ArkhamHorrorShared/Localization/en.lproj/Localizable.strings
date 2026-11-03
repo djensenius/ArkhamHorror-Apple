@@ -487,6 +487,7 @@
 "arkhamdb.writeBack.skippedOne" = "Could not read %lld ArkhamDB write-back entry.";
 "arkhamdb.writeBack.error.disabled" = "Write-back is off for this deck. Turn it on first.";
 "arkhamdb.writeBack.error.conflict" = "ArkhamDB can't apply that choice to this deck now. Status was refreshed.";
+"arkhamdb.writeBack.error.conflictRefreshFailed" = "ArkhamDB can't apply that choice to this deck now, and the latest status couldn't be loaded. Refresh status and try again.";
 "arkhamdb.writeBack.error.pushUncertain" = "ArkhamDB may have received the last push. Retry to check before choosing again.";
 "arkhamdb.writeBack.error.validationFailed" = "The request or deck was rejected. Refresh status and check the deck.";
 "arkhamdb.writeBack.error.confirmationRequired" = "Overwrite and Save as New need your confirmation. Nothing was sent.";
