@@ -209,7 +209,12 @@ extension ArkhamDBViewModel {
                     // outranks the write-back error, so perform handles it.
                     outcome = .skipped
                     throw refreshError
-                } catch {
+                } catch let refreshError {
+                    // A refresh saying ArkhamDB needs relinking outranks the write-back
+                    // error, so perform sets needsRelinking and shows the relink message.
+                    if (refreshError as? DeckServiceError)?.isArkhamDBRelinkRequired == true {
+                        throw refreshError
+                    }
                     // An ordinary refresh failure keeps the write-back error below, but a
                     // conflict must not claim that the status was refreshed.
                     if (writeBackError as? DeckServiceError)?.isArkhamDBConflict == true {
