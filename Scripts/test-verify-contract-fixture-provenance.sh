@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.55",'
+    echo '  "schemaRevision": "0.1.57",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
