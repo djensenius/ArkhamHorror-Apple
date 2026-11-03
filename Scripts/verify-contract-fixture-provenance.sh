@@ -113,7 +113,10 @@ client-answer.schema.json:contracts/schemas/client-answer.schema.json
 decks.json:contracts/fixtures/decks.json
 game-lifecycle.json:contracts/fixtures/game-lifecycle.json
 game-list.json:contracts/fixtures/game-list.json
+game-unarchive-failed.json:contracts/fixtures/game-unarchive-failed.json
+game-unarchived.json:contracts/fixtures/game-unarchived.json
 game-update.json:contracts/fixtures/game-update.json
+game-watcher-count.json:contracts/fixtures/game-watcher-count.json
 get-game.json:contracts/fixtures/get-game.json
 investigator-unhealed-horror-negative.json:contracts/fixtures/investigator-unhealed-horror-negative.json
 location-enemy-view.json:contracts/fixtures/location-enemy-view.json

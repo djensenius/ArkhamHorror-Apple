@@ -3,8 +3,8 @@ import Foundation
 import Testing
 
 /// Schema 0.1.57 replaced the `QuestionLabel` wrapper's single nullable `card` with a
-/// `labelCards` array. These tests decode the captured 0.1.57 bytes in
-/// `Fixtures/Schema157Drift` (see its PROVENANCE.md) next to the pre-0.1.57 bytes in
+/// `labelCards` array. These tests decode the governed 0.1.57 bytes in
+/// `Fixtures/Contract` (vendored from the pinned backend commit) next to the pre-0.1.57 bytes in
 /// `Fixtures/LegacyContract`, so one build accepts either server shape and rejects a mix.
 @Suite("Schema 0.1.57 QuestionLabel labelCards")
 struct Schema157LabelCardsTests {
@@ -290,18 +290,22 @@ enum Schema157Fixtures {
         case missingRepresentative(String)
     }
 
+    /// Governed 0.1.57 bytes. The pre-repin drift copies in `Fixtures/Schema157Drift` were
+    /// byte-identical to these and were removed when `Fixtures/Contract` was re-vendored.
     static func data(_ name: String) throws -> Data {
-        try load(name, subdirectory: "Fixtures/Schema157Drift")
+        try contractData(name)
     }
 
     static func value(_ name: String) throws -> JSONValue {
         try LosslessJSONParser.parse(data(name))
     }
 
+    static func legacyData(_ name: String) throws -> Data {
+        try load("\(name)-pre-0.1.57", subdirectory: "Fixtures/LegacyContract")
+    }
+
     static func legacyValue(_ name: String) throws -> JSONValue {
-        try LosslessJSONParser.parse(
-            load("\(name)-pre-0.1.57", subdirectory: "Fixtures/LegacyContract")
-        )
+        try LosslessJSONParser.parse(legacyData(name))
     }
 
     static func contractData(_ name: String) throws -> Data {

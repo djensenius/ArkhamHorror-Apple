@@ -140,7 +140,10 @@ struct ContractFixtureDigestTests {
             "decks",
             "game-lifecycle",
             "game-list",
+            "game-unarchive-failed",
+            "game-unarchived",
             "game-update",
+            "game-watcher-count",
             "get-game",
             "investigator-unhealed-horror-negative",
             "location-enemy-view",
@@ -296,7 +299,7 @@ struct ContractFixtureDigestTests {
     @Test("ContractPin.current is pinned to the documented backend commit")
     func pinnedToDocumentedCommit() {
         #expect(
-            ContractPin.current.backendCommit == "9c75088611ca15ee3bbfe0c54b2fa4989b80ed50"
+            ContractPin.current.backendCommit == "4db9946179ef8b7a242bd7e40c0a2d74990cf3e9"
         )
     }
 

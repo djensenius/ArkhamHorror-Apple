@@ -2,8 +2,8 @@
 import Foundation
 import Testing
 
-/// Schema 0.1.57 WebSocket additions. The three captured messages in
-/// `Fixtures/Schema157Drift` must stay non-fatal unsupported frames, and the new
+/// Schema 0.1.57 WebSocket additions. The three captured messages in the governed
+/// `Fixtures/Contract` must stay non-fatal unsupported frames, and the new
 /// `RoomClosed` reasons end the room without treating the still-existing game as deleted.
 @MainActor
 @Suite("Schema 0.1.57 WebSocket messages")

@@ -25,7 +25,7 @@ fixture_names="
 arkhamdb.json arkhamdb-write-back.json capabilities-arkhamdb.json act-no-advance-cost.json answer-amounts.json answer-rejected.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json answer-enemy-attack.json answer-exchange-amounts.json answer-payment-amounts.json answer-question.json capabilities-locale-catalog.json \
 capabilities.json campaign-catalog.json card-code-entity-map.json catalog.json decks.json \
-game-lifecycle.json game-list.json game-update.json get-game.json \
+game-lifecycle.json game-list.json game-unarchive-failed.json game-unarchived.json game-update.json game-watcher-count.json get-game.json \
 investigator-unhealed-horror-negative.json location-enemy-view.json mode-campaign-only.json mode-campaign-scenario.json \
 mode-turn-zero.json movement.json question-agenda-advance.json question-agenda-consequence.json \
 question-agenda-horror-assignment.json question-choose-one-location-multiple.json question-choose-one-location.json question-choose-one.json \
@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.55",'
+    echo '  "schemaRevision": "0.1.57",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do

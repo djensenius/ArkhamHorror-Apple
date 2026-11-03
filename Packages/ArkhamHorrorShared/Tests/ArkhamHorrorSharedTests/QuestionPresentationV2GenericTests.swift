@@ -51,7 +51,7 @@ struct QuestionPresentationV2GenericTests {
             Representatives.self,
             from: fixture("question-presentation-representatives")
         )
-        #expect(representatives.presentations.count == 37)
+        #expect(representatives.presentations.count == 39)
         for entry in representatives.presentations {
             #expect(entry.presentation.protocolVersion == 2, "\(entry.name)")
             #expect(

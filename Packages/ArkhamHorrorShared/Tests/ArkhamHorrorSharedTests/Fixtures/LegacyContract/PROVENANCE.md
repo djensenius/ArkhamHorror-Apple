@@ -16,3 +16,20 @@ These fixtures are byte-for-byte copies of the governed Apple contract fixtures 
 - `question-gathering-attic-horror-assignment-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-gathering-attic-horror-assignment.json`
 - `question-gathering-cellar-damage-assignment-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-gathering-cellar-damage-assignment.json`
 - `question-generic-wrapped-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-generic-wrapped.json`
+
+## Pre-0.1.57 board fixtures
+
+Byte-for-byte copies of the governed Apple contract fixtures at the same base commit `aee8908c0758b0267b57347ddfca327a6fac020b` (contract pin backend `9c75088611ca15ee3bbfe0c54b2fa4989b80ed50`, schema `0.1.55`; each is also byte-identical to that backend commit's `contracts/fixtures/<name>.json`). They have none of the optional board fields schema 0.1.57 added (`outcome`, `settingsCustomRandomWeaknessPools`, the investigator prohibitions and clue flags, `debugRevealedChaosTokens`, `sealedChaosTokens`), so the absent-field decoding stays proven after `Fixtures/Contract` moved to 0.1.57.
+
+- `get-game-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/get-game.json`
+- `game-list-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/game-list.json`
+
+## Schema 0.1.57 synthetic test shapes
+
+No files here: this section records the synthetic shapes the task-1.35 tests build inline. It keeps the "Synthetic shapes" list of the removed `Fixtures/Schema157Drift/PROVENANCE.md`. The captured 0.1.57 bytes those tests used now come from the governed `Fixtures/Contract` set at the contract pin (backend `4db9946179ef8b7a242bd7e40c0a2d74990cf3e9`). The pin has no captured bytes for the shapes below, so the tests build them from the Haskell encoders, name their source, and label them synthetic. Source paths are under `backend/arkham-api/library/` at that backend commit.
+
+- `Schema157BoardFieldsTests` populated and malformed values (synthetic): inline edits of the governed `Fixtures/Contract/get-game.json`, shaped from `contracts/schemas/{public-game,investigator,chaos-bag,mode,game-list}.schema.json`. The captured bytes carry only empty or null values for these fields.
+- `Schema157QuestionFallbackTests.chooseFromCollection` (synthetic): the raw `ChooseFromCollection` question, the defaultOptions record encoding of `Arkham/Question.hs:188` (`{tag, investigatorId, source, cardCodes}`), with card codes matching the captured `chooseFromCollection` representative. The answer index picks `cardCodes` (`Entity/Answer.hs:935`).
+- `Schema157QuestionFallbackTests.turnPlayerQuestion` and `turnPlayerPresentation` (synthetic): the `ChooseTurnPlayer` prompt from `Arkham/Game/Runner.hs` (`questionLabel "$label.choosePlayerToTakeTurn"` over `ChooseOne [PortraitLabel iid [ChoosePlayer iid SetTurnPlayer|ResumeTurnPlayer]]`), and its presentation per `Arkham/Question/Presentation.hs` (`PortraitLabel` is a `chooseTarget` on the investigator).
+- `Schema157SocketMessageTests` `RoomClosed` frames (synthetic): `{"tag":"RoomClosed","contents":"abandoned"|"maintenance"}`, from `Api/Arkham/Helpers.hs` (`closeAbandonedRoom`, `applyMaintenance`), encoded like the governed Contract `room-closed.json`.
+- `Schema157MaintenanceTests` 503 responses (synthetic): `Retry-After: 120` and `{"maintenance":true,"since":<UTCTime>,"message":<Text>}` from `Foundation.hs` `maintenanceMiddleware`, with the message text of `Api/Arkham/Maintenance.hs` `defaultMaintenanceMessage`.

@@ -6,7 +6,7 @@ import Testing
 /// investigator `playProhibitions`/`commitProhibitions`/`cannotDiscoverClues`/
 /// `cannotSpendClues`, the chaos bag's `debugRevealedChaosTokens`, the scenario's
 /// `sealedChaosTokens`, and the game and game-list `outcome`. These tests decode the
-/// captured sync-candidate bytes in `Fixtures/Schema157Drift` and prove re-encoding keeps
+/// governed 0.1.57 bytes in `Fixtures/Contract` and prove re-encoding keeps
 /// every key, while pre-0.1.57 bytes (which omit them) still decode and re-encode exactly.
 @Suite("Schema 0.1.57 board fields")
 struct Schema157BoardFieldsTests {
@@ -87,7 +87,7 @@ struct Schema157BoardFieldsTests {
     @Test("Pre-0.1.57 bytes decode with every new field absent")
     func legacyBytesLeaveFieldsAbsent() throws {
         let game = try ContractJSON.decode(
-            GetGameEnvelope.self, from: Schema157Fixtures.contractData("get-game")
+            GetGameEnvelope.self, from: Schema157Fixtures.legacyData("get-game")
         ).game
         let investigator = try #require(game.investigators.values.first)
         let scenario = try #require(Schema157BoardFixtures.scenario(in: game.mode))
@@ -100,7 +100,7 @@ struct Schema157BoardFieldsTests {
         #expect(scenario.chaosBag.debugRevealedChaosTokens == nil)
         #expect(scenario.sealedChaosTokens == nil)
         let list = try ContractJSON.decode(
-            GameList.self, from: Schema157Fixtures.contractData("game-list")
+            GameList.self, from: Schema157Fixtures.legacyData("game-list")
         )
         for entry in list {
             if case let .game(summary) = entry {

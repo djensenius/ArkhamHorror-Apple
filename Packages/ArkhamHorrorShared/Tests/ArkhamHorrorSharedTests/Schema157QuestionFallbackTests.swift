@@ -8,9 +8,10 @@ import Testing
 @MainActor
 @Suite("Schema 0.1.57 question kinds")
 struct Schema157QuestionFallbackTests {
-    /// Synthetic raw `ChooseFromCollection` (see Fixtures/Schema157Drift/PROVENANCE.md): the
-    /// defaultOptions record encoding of Arkham/Question.hs:188 whose card codes match the
-    /// captured `chooseFromCollection` representative.
+    /// Synthetic raw `ChooseFromCollection` (see "Schema 0.1.57 synthetic test shapes" in
+    /// Fixtures/LegacyContract/PROVENANCE.md): the defaultOptions record encoding of
+    /// Arkham/Question.hs:188 whose card codes match the captured `chooseFromCollection`
+    /// representative.
     static func chooseFromCollection(
         cardCodes: JSONValue = .array([.string("c01001"), .string("c01002")])
     ) -> JSONValue {
@@ -127,7 +128,8 @@ struct Schema157QuestionFallbackTests {
         )
     }
 
-    /// Synthetic turn-player prompt (see PROVENANCE.md): Arkham/Game/Runner.hs
+    /// Synthetic turn-player prompt (see Fixtures/LegacyContract/PROVENANCE.md):
+    /// Arkham/Game/Runner.hs
     /// `ChooseTurnPlayer` asks `questionLabel "$label.choosePlayerToTakeTurn"` over a
     /// `ChooseOne` of `PortraitLabel`s whose message is `ChoosePlayer iid <choice>`.
     static func turnPlayerQuestion(choice: String) -> JSONValue {
