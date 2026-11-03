@@ -298,10 +298,12 @@ enum Schema157Fixtures {
         try LosslessJSONParser.parse(data(name))
     }
 
+    static func legacyData(_ name: String) throws -> Data {
+        try load("\(name)-pre-0.1.57", subdirectory: "Fixtures/LegacyContract")
+    }
+
     static func legacyValue(_ name: String) throws -> JSONValue {
-        try LosslessJSONParser.parse(
-            load("\(name)-pre-0.1.57", subdirectory: "Fixtures/LegacyContract")
-        )
+        try LosslessJSONParser.parse(legacyData(name))
     }
 
     static func contractData(_ name: String) throws -> Data {

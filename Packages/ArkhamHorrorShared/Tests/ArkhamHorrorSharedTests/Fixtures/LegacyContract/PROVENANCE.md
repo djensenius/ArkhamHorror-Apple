@@ -16,3 +16,10 @@ These fixtures are byte-for-byte copies of the governed Apple contract fixtures 
 - `question-gathering-attic-horror-assignment-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-gathering-attic-horror-assignment.json`
 - `question-gathering-cellar-damage-assignment-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-gathering-cellar-damage-assignment.json`
 - `question-generic-wrapped-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/question-generic-wrapped.json`
+
+## Pre-0.1.57 board fixtures
+
+Byte-for-byte copies of the governed Apple contract fixtures at the same base commit `aee8908c0758b0267b57347ddfca327a6fac020b` (contract pin backend `9c75088611ca15ee3bbfe0c54b2fa4989b80ed50`, schema `0.1.55`; each is also byte-identical to that backend commit's `contracts/fixtures/<name>.json`). They have none of the optional board fields schema 0.1.57 added (`outcome`, `settingsCustomRandomWeaknessPools`, the investigator prohibitions and clue flags, `debugRevealedChaosTokens`, `sealedChaosTokens`), so the absent-field decoding stays proven after `Fixtures/Contract` moved to 0.1.57.
+
+- `get-game-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/get-game.json`
+- `game-list-pre-0.1.57.json` from `aee8908c:Packages/ArkhamHorrorShared/Tests/ArkhamHorrorSharedTests/Fixtures/Contract/game-list.json`
