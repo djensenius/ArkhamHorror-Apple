@@ -84,6 +84,10 @@ extension Investigator: Codable {
         case usedAdditionalActions
         case willpower
         case experiencePoints = "xp"
+        case playProhibitions
+        case commitProhibitions
+        case cannotDiscoverClues
+        case cannotSpendClues
     }
 
     // swiftlint:disable:next function_body_length
@@ -211,6 +215,18 @@ extension Investigator: Codable {
         )
         willpower = try container.decode(Int.self, forKey: .willpower)
         experiencePoints = try container.decode(Int.self, forKey: .experiencePoints)
+        playProhibitions = try container.decodePresentIfContained(
+            [CardProhibition].self, forKey: .playProhibitions
+        )
+        commitProhibitions = try container.decodePresentIfContained(
+            [CardProhibition].self, forKey: .commitProhibitions
+        )
+        cannotDiscoverClues = try decodeOptionalNullable(
+            [GameLogRef].self, from: container, forKey: .cannotDiscoverClues
+        )
+        cannotSpendClues = try decodeOptionalNullable(
+            [GameLogRef].self, from: container, forKey: .cannotSpendClues
+        )
     }
 
     private static func decodeHandSize(
@@ -340,5 +356,9 @@ extension Investigator: Codable {
         try container.encode(usedAdditionalActions, forKey: .usedAdditionalActions)
         try container.encode(willpower, forKey: .willpower)
         try container.encode(experiencePoints, forKey: .experiencePoints)
+        try container.encodeIfPresent(playProhibitions, forKey: .playProhibitions)
+        try container.encodeIfPresent(commitProhibitions, forKey: .commitProhibitions)
+        try container.encodeOptionalNullable(cannotDiscoverClues, forKey: .cannotDiscoverClues)
+        try container.encodeOptionalNullable(cannotSpendClues, forKey: .cannotSpendClues)
     }
 }

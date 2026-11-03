@@ -15,6 +15,12 @@ rewritten before it merges, so the merge commit, not this SHA, is what the repin
 
 | File | Source path in the fork contracts tree | SHA-256 |
 | --- | --- | --- |
+| `game-list.json` | `contracts/fixtures/game-list.json` | `15a68bfc25bdb5e73b4876ef4e7bbf97c66666bf2e185a6fbbb117ab6fe6ca80` |
+| `game-update.json` | `contracts/fixtures/game-update.json` | `d53eb5492e82698f393921d3d8d033f13f5d54df50453d0b2095bec043a6757e` |
+| `get-game.json` | `contracts/fixtures/get-game.json` | `21ede54dd82f648d1487b8aae3299f9f37e5b4e2085f6c269d5cb9f5a7062892` |
+| `investigator-unhealed-horror-negative.json` | `contracts/fixtures/investigator-unhealed-horror-negative.json` | `56f3d6439b9d4572d801dbe69218210311a0d11082cda915673fd4f5b69dfe25` |
+| `mode-campaign-scenario.json` | `contracts/fixtures/mode-campaign-scenario.json` | `a050c83368de1269c2292955963a15e6980de606b17f2d794645a21a04ec6c77` |
+| `mode-turn-zero.json` | `contracts/fixtures/mode-turn-zero.json` | `e8405055d4ebf675f9a30c6e2f5d89cd45cc87586fe1885f5bcc5a51e44fc209` |
 | `question-agenda-horror-assignment.json` | `contracts/fixtures/question-agenda-horror-assignment.json` | `150e5f06f25aeccbe05599e24172958918740512dbdfe8912dfc90c8c7ebbbc0` |
 | `question-enemy-attack-damage-assignment.json` | `contracts/fixtures/question-enemy-attack-damage-assignment.json` | `8a679a5b699a656acf23e258e0025e3f84c6f947bfdb9ed74bfcb503ec031ed1` |
 | `question-enemy-attack-remaining-damage-assignment.json` | `contracts/fixtures/question-enemy-attack-remaining-damage-assignment.json` | `f8ba119a887d50a1401d6297e68a4b785d5fcaa0fb1dd4d93e432a27dc22f651` |
@@ -28,3 +34,8 @@ rewritten before it merges, so the merge commit, not this SHA, is what the repin
 
 Shapes the sync candidate has no captured bytes for are built inline in the tests from the
 Haskell encoders, and each test names its source. They are labelled synthetic there.
+
+- `Schema157BoardFieldsTests` populated and malformed values (synthetic): inline edits of
+  the captured `get-game.json`, shaped from the sync candidate's
+  `contracts/schemas/{public-game,investigator,chaos-bag,mode,game-list}.schema.json`.
+  The captured bytes carry only empty or null values for these fields.

@@ -106,6 +106,9 @@ struct PublicGameSnapshot: Sendable {
     let phaseHistory: CardCodeEntityMap
     let turnHistory: CardCodeEntityMap
     let enemyAttackTargets: [EnemyAttackTarget]
+    /// Schema 0.1.57 `outcome`: `nil` when an older server omits the key, `.some(nil)`
+    /// while the game is unfinished or no verdict was recorded, else how it ended.
+    var outcome: GameOutcome??
 }
 
 extension PublicGameSnapshot: Equatable, Hashable {}

@@ -95,9 +95,52 @@ struct ChaosBag: Sendable {
     /// `[source, chaosTokens]` pairs because `Source` is not a plain string key. Broad
     /// and out of scope for this contract slice.
     let pendingRequests: [JSONValue]
+    /// Schema 0.1.57 `debugRevealedChaosTokens`. `nil` when an older server omits the key,
+    /// so re-encoding never invents it.
+    var debugRevealedChaosTokens: [DebugRevealedChaosToken]?
 }
 
 extension ChaosBag: Equatable, Hashable {}
+
+/// A token revealed through the debug/test chaos-bag override, with its value and
+/// auto-fail/auto-success outcome forced (`Arkham.ChaosBag.Base.DebugRevealedChaosToken`).
+/// Empty in ordinary play.
+struct DebugRevealedChaosToken: Sendable, Equatable, Hashable {
+    let token: ChaosToken
+    let value: Int?
+    let autoFail: Bool
+    let autoSuccess: Bool
+}
+
+extension DebugRevealedChaosToken: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case token
+        case value
+        case autoFail
+        case autoSuccess
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        token = try container.decode(ChaosToken.self, forKey: .token)
+        value = try decodeRequiredNullable(
+            Int.self,
+            from: container,
+            forKey: .value,
+            codingPath: decoder.codingPath + [CodingKeys.value]
+        )
+        autoFail = try container.decode(Bool.self, forKey: .autoFail)
+        autoSuccess = try container.decode(Bool.self, forKey: .autoSuccess)
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(token, forKey: .token)
+        try container.encode(value, forKey: .value)
+        try container.encode(autoFail, forKey: .autoFail)
+        try container.encode(autoSuccess, forKey: .autoSuccess)
+    }
+}
 
 extension ChaosBag: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -109,6 +152,7 @@ extension ChaosBag: Codable {
         case tokenPool
         case totalRevealedChaosTokens
         case pendingRequests
+        case debugRevealedChaosTokens
     }
 
     init(from decoder: any Decoder) throws {
@@ -136,6 +180,10 @@ extension ChaosBag: Codable {
             forKey: .totalRevealedChaosTokens
         )
         pendingRequests = try container.decode([JSONValue].self, forKey: .pendingRequests)
+        debugRevealedChaosTokens = try container.decodePresentIfContained(
+            [DebugRevealedChaosToken].self,
+            forKey: .debugRevealedChaosTokens
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -150,6 +198,7 @@ extension ChaosBag: Codable {
         try container.encode(tokenPool, forKey: .tokenPool)
         try container.encode(totalRevealedChaosTokens, forKey: .totalRevealedChaosTokens)
         try container.encode(pendingRequests, forKey: .pendingRequests)
+        try container.encodeIfPresent(debugRevealedChaosTokens, forKey: .debugRevealedChaosTokens)
     }
 
     private static func decodeForceDraw(

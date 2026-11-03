@@ -111,6 +111,8 @@ struct Scenario: Sendable {
     let victoryDisplay: [JSONValue]
     /// Experience-point breakdown shown at scenario resolution. Broad, out of scope.
     let xpBreakdown: JSONValue
+    /// Schema 0.1.57 scenario-sealed tokens; `nil` when an older server omits the key.
+    var sealedChaosTokens: [ChaosToken]?
 }
 
 extension Scenario: Equatable, Hashable {}
@@ -176,6 +178,7 @@ extension Scenario: Codable {
         case usesGrid
         case victoryDisplay
         case xpBreakdown
+        case sealedChaosTokens
     }
 
     // swiftlint:disable:next function_body_length
@@ -261,6 +264,8 @@ extension Scenario: Codable {
         usesGrid = try container.decode(Bool.self, forKey: .usesGrid)
         victoryDisplay = try container.decode([JSONValue].self, forKey: .victoryDisplay)
         xpBreakdown = try container.decode(JSONValue.self, forKey: .xpBreakdown)
+        sealedChaosTokens = try container
+            .decodePresentIfContained([ChaosToken].self, forKey: .sealedChaosTokens)
     }
 
     // swiftlint:disable:next function_body_length
@@ -327,6 +332,7 @@ extension Scenario: Codable {
         try container.encode(usesGrid, forKey: .usesGrid)
         try container.encode(victoryDisplay, forKey: .victoryDisplay)
         try container.encode(xpBreakdown, forKey: .xpBreakdown)
+        try container.encodeIfPresent(sealedChaosTokens, forKey: .sealedChaosTokens)
     }
 }
 
