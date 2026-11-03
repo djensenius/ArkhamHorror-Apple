@@ -267,6 +267,7 @@
 "games.live.roomClosed.message" = "Dieses Spiel wurde auf dem Server geschlossen.";
 "games.live.roomClosed.message.abandoned" = "Alle Spieler haben dieses Spiel verlassen, daher hat der Server den Raum geschlossen.";
 "games.live.roomClosed.message.maintenance" = "Der Server wird gerade gewartet. Öffne das Spiel erneut, sobald er wieder erreichbar ist.";
+"games.live.roomClosed.message.reopen" = "Der Server hat den Raum dieses Spiels geschlossen. Öffne es erneut, um weiterzuspielen.";
 "games.live.roomClosed.title" = "Spiel geschlossen";
 "games.joinInvite.title" = "Spiel beitreten";
 "games.joinInvite.section" = "Einladung";

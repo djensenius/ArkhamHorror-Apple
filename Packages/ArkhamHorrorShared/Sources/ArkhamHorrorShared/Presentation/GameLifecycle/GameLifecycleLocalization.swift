@@ -46,10 +46,17 @@ func liveGameRoomClosedMessage(reason: String? = nil) -> String {
             "games.live.roomClosed.message.maintenance",
             "The server is down for maintenance. Open the game again once it is back."
         )
-    default:
+    case nil, "deleted":
         gameLifecycleLocalized(
             "games.live.roomClosed.message",
             "This game was closed on the server."
+        )
+    default:
+        // `swept` (an admin closed an idle room) and reasons this client doesn't know: the
+        // game still exists.
+        gameLifecycleLocalized(
+            "games.live.roomClosed.message.reopen",
+            "The server closed this game's room. Reopen it to continue."
         )
     }
 }

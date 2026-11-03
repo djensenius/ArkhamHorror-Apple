@@ -264,8 +264,8 @@ extension AppModel {
             )
         case let .roomClosed(reason):
             // Schema 0.1.57 also closes rooms whose game still exists (`abandoned`,
-            // `maintenance`): end the room, but keep the game listed.
-            if !RoomClosedNotice.keepsGame(reason: reason) {
+            // `maintenance`, `swept`): end the room, but only drop the game for `deleted`.
+            if RoomClosedNotice.deletesGame(reason: reason) {
                 roomClosedNotice = RoomClosedNotice(gameID: attempt.gameID, reason: reason)
                 confirmedDeletedGameIDs.insert(attempt.gameID)
             }

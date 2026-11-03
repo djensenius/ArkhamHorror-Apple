@@ -56,46 +56,79 @@ struct Schema157SocketMessageTests {
         #expect(!model.confirmedDeletedGameIDs.contains(gameID))
     }
 
-    @Test("RoomClosed abandoned and maintenance end the room but keep the game listed")
-    func newRoomClosedReasonsEndTheRoom() async throws {
+    /// Only `deleted` deletes the game. The sync candidate also closes rooms whose game
+    /// still exists: `abandoned` and `maintenance` (Api/Arkham/Helpers.hs:972, :1018) and an
+    /// admin `swept` (Api/Handler/Arkham/Games/Admin.hs:442). Unknown reasons are treated
+    /// the same way, as the conservative choice.
+    @Test("RoomClosed reasons other than deleted end the room but keep the game listed")
+    func nonDeletingRoomClosedReasonsKeepTheGame() async throws {
+        let reopen = "The server closed this game's room. Reopen it to continue."
         let cases = [
             ("abandoned", "Every player left this game, so the server closed its room."),
             (
                 "maintenance",
                 "The server is down for maintenance. Open the game again once it is back."
             ),
+            ("swept", reopen),
+            ("some-future-reason", reopen),
         ]
         for (reason, message) in cases {
-            // Synthetic: Api/Arkham/Helpers.hs `RoomClosed "abandoned"` / `"maintenance"`,
-            // encoded like the captured Contract room-closed.json.
-            let bytes = Data(#"{"tag":"RoomClosed","contents":"\#(reason)"}"#.utf8)
-            let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
-            #expect(update == .roomClosed(reason: reason))
-
-            let harness = AppModelLiveGameTests()
-            let (model, _) = harness.makeSignedInModel()
-            await model.flowTask?.value
-            let gameID = GameID(UUID())
-            let attempt = harness.installCurrentAttempt(for: gameID, on: model)
-            let projection = try Self.projection()
-            let connection = FakeGameSocketConnection()
-            await connection.enqueue(.event(.message(bytes)))
-
-            let outcome = await model.consumeLiveGameSocket(
-                attempt, connection: connection, projection: projection
-            )
-            #expect(outcome == .stopped, "\(reason)")
-            #expect(model.liveGameState(for: gameID) == .roomClosed(
-                reason: reason, lastKnown: projection
+            let closed = try await Self.closeRoom(reason: reason)
+            let model = closed.model
+            #expect(closed.outcome == .stopped, "\(reason)")
+            #expect(model.liveGameState(for: closed.gameID) == .roomClosed(
+                reason: reason, lastKnown: closed.projection
             ))
-            #expect(!model.liveGameState(for: gameID).isRetryable, "\(reason)")
-            #expect(!model.confirmedDeletedGameIDs.contains(gameID), "\(reason)")
+            #expect(!model.liveGameState(for: closed.gameID).isRetryable, "\(reason)")
+            #expect(!model.confirmedDeletedGameIDs.contains(closed.gameID), "\(reason)")
             #expect(model.roomClosedNotice == nil, "\(reason)")
-            #expect(liveGameRoomClosedMessage(reason: reason) == message)
-            await connection.waitUntilClosed()
+            #expect(liveGameRoomClosedMessage(reason: reason) == message, "\(reason)")
         }
+    }
+
+    @Test("RoomClosed deleted still removes the game and leaves a list notice")
+    func deletedRoomClosedRemovesTheGame() async throws {
+        let closed = try await Self.closeRoom(reason: "deleted")
+        let model = closed.model
+        #expect(closed.outcome == .stopped)
+        #expect(model.confirmedDeletedGameIDs.contains(closed.gameID))
+        #expect(model.roomClosedNotice == RoomClosedNotice(
+            gameID: closed.gameID, reason: "deleted"
+        ))
+        #expect(model.liveGameState(for: closed.gameID) == .roomClosed(
+            reason: "deleted", lastKnown: closed.projection
+        ))
         #expect(liveGameRoomClosedMessage(reason: "deleted") == liveGameRoomClosedMessage())
-        #expect(RoomClosedNotice.keepsGame(reason: "deleted") == false)
+        #expect(liveGameRoomClosedMessage() == "This game was closed on the server.")
+    }
+
+    private struct ClosedRoom {
+        let model: AppModel
+        let gameID: GameID
+        let projection: BoardProjection
+        let outcome: LiveGameSocketConsumeOutcome
+    }
+
+    /// Feeds one synthetic `{"tag":"RoomClosed","contents":<reason>}` frame, encoded like
+    /// the captured Contract room-closed.json, to a live socket.
+    private static func closeRoom(reason: String) async throws -> ClosedRoom {
+        let bytes = Data(#"{"tag":"RoomClosed","contents":"\#(reason)"}"#.utf8)
+        let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: bytes)
+        #expect(update == .roomClosed(reason: reason))
+
+        let harness = AppModelLiveGameTests()
+        let (model, _) = harness.makeSignedInModel()
+        await model.flowTask?.value
+        let gameID = GameID(UUID())
+        let attempt = harness.installCurrentAttempt(for: gameID, on: model)
+        let projection = try projection()
+        let connection = FakeGameSocketConnection()
+        await connection.enqueue(.event(.message(bytes)))
+        let outcome = await model.consumeLiveGameSocket(
+            attempt, connection: connection, projection: projection
+        )
+        await connection.waitUntilClosed()
+        return ClosedRoom(model: model, gameID: gameID, projection: projection, outcome: outcome)
     }
 
     private static func projection() throws -> BoardProjection {

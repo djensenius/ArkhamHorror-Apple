@@ -13,6 +13,8 @@ struct GameLifecycleLocalizationTests {
                 "Every player left this game, so the server closed its room.",
             "games.live.roomClosed.message.maintenance":
                 "The server is down for maintenance. Open the game again once it is back.",
+            "games.live.roomClosed.message.reopen":
+                "The server closed this game's room. Reopen it to continue.",
             "games.live.roomClosed.title": "Game closed",
         ],
         "de": [
@@ -25,6 +27,9 @@ struct GameLifecycleLocalizationTests {
             "games.live.roomClosed.message.maintenance":
                 "Der Server wird gerade gewartet. "
                 + "Öffne das Spiel erneut, sobald er wieder erreichbar ist.",
+            "games.live.roomClosed.message.reopen":
+                "Der Server hat den Raum dieses Spiels geschlossen. "
+                + "Öffne es erneut, um weiterzuspielen.",
             "games.live.roomClosed.title": "Spiel geschlossen",
         ],
     ]
