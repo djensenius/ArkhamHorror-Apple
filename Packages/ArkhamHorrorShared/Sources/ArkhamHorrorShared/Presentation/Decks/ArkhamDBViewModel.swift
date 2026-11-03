@@ -7,12 +7,14 @@ final class ArkhamDBViewModel {
     let profile: ServerProfile
     let service: ArkhamDBService
     private let authentication: (any ArkhamDBAuthenticating)?
-    private let tokenProvider: DecksViewModel.TokenProvider
-    private let contextValidator: DecksViewModel.ContextValidator
+    let tokenProvider: DecksViewModel.TokenProvider
+    let contextValidator: DecksViewModel.ContextValidator
     private let sessionExpiredHandler: DecksViewModel.SessionExpiredHandler
     /// `arkhamdb.write-back.v1`; without it no write-back state or control is exposed.
     let supportsWriteBack: Bool
     let savedDecksChanged: @MainActor () async -> Void
+    /// Sleeps between background write-back status polls.
+    let clock: any LiveGameClock
 
     var status: ArkhamDBLinkStatus?
     var decks: [ArkhamDBRemoteDeckSummary] = []
@@ -32,6 +34,13 @@ final class ArkhamDBViewModel {
     /// Decks with a submitted keep-remote or save-as-new whose asynchronous completion
     /// (which re-syncs or clones a saved deck) has not yet been observed in status.
     var awaitingResolutionDeckIDs: Set<DeckID> = []
+    /// Bumped when a submitted resolution or retry starts awaiting completion. The view
+    /// keys its polling `.task` on it, so each new submission restarts polling with a
+    /// fresh attempt budget.
+    var writeBackPollEpisode = 0
+    /// A background status poll request is in flight (it never sets `isBusy`).
+    @ObservationIgnored var isPollingStatus = false
+    @ObservationIgnored var statusPollWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         profile: ServerProfile,
@@ -41,7 +50,8 @@ final class ArkhamDBViewModel {
         contextValidator: @escaping DecksViewModel.ContextValidator = { _ in true },
         sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in },
         supportsWriteBack: Bool = false,
-        savedDecksChanged: @escaping @MainActor () async -> Void = {}
+        savedDecksChanged: @escaping @MainActor () async -> Void = {},
+        clock: any LiveGameClock = SystemLiveGameClock()
     ) {
         self.profile = profile
         self.service = service
@@ -51,6 +61,7 @@ final class ArkhamDBViewModel {
         self.sessionExpiredHandler = sessionExpiredHandler
         self.supportsWriteBack = supportsWriteBack
         self.savedDecksChanged = savedDecksChanged
+        self.clock = clock
     }
 
     var statusText: String {
@@ -160,6 +171,9 @@ final class ArkhamDBViewModel {
         isBusy = true
         message = nil
         defer { isBusy = false }
+        // Never overlap a background status poll: wait for its request to finish. Polls
+        // skip their tick while `isBusy`, so no new one starts meanwhile.
+        await waitForStatusPoll()
         var context: DeckRequestContext?
         do {
             let current = try await tokenProvider()

@@ -76,6 +76,7 @@ extension ArkhamDBViewModel {
         if outcome == .skipped, inserted {
             awaitingResolutionDeckIDs.remove(deckID)
         }
+        startPollingIfAwaiting(deckID, after: outcome)
     }
 
     /// Opens the resolution sheet for a conflict or a resolvable failed push. Any
@@ -153,6 +154,14 @@ extension ArkhamDBViewModel {
             if resolution == .saveAsNew, awaitingResolutionDeckIDs.contains(deckID) {
                 await savedDecksChanged()
             }
+        }
+        startPollingIfAwaiting(deckID, after: outcome)
+    }
+
+    /// A sent request whose completion is still awaited starts a new polling episode.
+    private func startPollingIfAwaiting(_ deckID: DeckID, after outcome: WriteBackOutcome) {
+        if outcome != .skipped, awaitingResolutionDeckIDs.contains(deckID) {
+            writeBackPollEpisode += 1
         }
     }
 

@@ -119,6 +119,10 @@ struct DecksView: View {
                 await viewModel.load()
             }
         }
+        // Dismissal cancels polling; a new submitted resolution restarts it.
+        .task(id: arkhamDB?.writeBackPollEpisode) {
+            await arkhamDB?.pollWriteBackStatus()
+        }
         .confirmationDialog(
             "Delete this deck?",
             isPresented: Binding(
