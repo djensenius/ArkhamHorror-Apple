@@ -7,9 +7,13 @@ import Foundation
 /// Known limits:
 /// - Status reports only each linked deck's oldest unfinished push, so a resolved push
 ///   can stay "pending" behind another campaign's push. The attempt cap bounds that.
-/// - A poll never overlaps another request of this view model, but there is no app-wide
-///   ArkhamDB gate: `DecksViewModel` and `AppModel` deck sync may still reach ArkhamDB
-///   at the same time.
+/// - Every ArkhamDB request goes through `ArkhamDBService`'s app-wide gate. A poll asks
+///   it at background priority and never waits: while any request (including a deck sync
+///   from `DecksViewModel` or `AppModel`) is in flight or a user request is waiting, the
+///   tick is deferred like a busy tick.
+/// - The gate covers only the request, so this view model still keeps its own user
+///   requests behind a whole poll (`waitForStatusPoll`): a poll applying its response
+///   after a write-back's `beforeSend` could clear the new completion tracker.
 /// - A poll that finds the app session expired stops quietly; the next user request
 ///   reports the expiry.
 extension ArkhamDBViewModel {
@@ -25,8 +29,8 @@ extension ArkhamDBViewModel {
     /// Runs one polling episode; drive it from a view `.task` so dismissal cancels it.
     /// Stops when nothing is awaited (completion, unlink), after the last attempt, when
     /// the app session or profile changed, or when write-back is no longer available.
-    /// A tick that finds a user request in flight is deferred by the same delay and does
-    /// not use an attempt.
+    /// A tick that finds a user request in flight, or the app-wide ArkhamDB gate in use,
+    /// is deferred by the same delay and does not use an attempt.
     func pollWriteBackStatus() async {
         var attempt = 0
         var lastContext = writeBackPollContext
@@ -41,9 +45,15 @@ extension ArkhamDBViewModel {
                 return
             }
             guard !isBusy, !isPollingStatus else { continue }
-            attempt += 1
-            guard let context = await pollStatusOnce() else { return }
-            lastContext = context
+            switch await pollStatusOnce() {
+            case .deferred:
+                continue
+            case .stop:
+                return
+            case let .sent(context):
+                attempt += 1
+                lastContext = context
+            }
         }
     }
 
@@ -54,9 +64,16 @@ extension ArkhamDBViewModel {
         }
     }
 
-    /// Refreshes status without `isBusy`, so user controls stay enabled. Returns the
-    /// request context to keep polling, or nil to stop.
-    private func pollStatusOnce() async -> DeckRequestContext? {
+    private enum PollResult {
+        /// The gate refused the request; nothing was sent.
+        case deferred
+        case stop
+        /// Keep polling from this context.
+        case sent(DeckRequestContext)
+    }
+
+    /// Refreshes status without `isBusy`, so user controls stay enabled.
+    private func pollStatusOnce() async -> PollResult {
         isPollingStatus = true
         defer {
             isPollingStatus = false
@@ -69,15 +86,20 @@ extension ArkhamDBViewModel {
             let current = try await tokenProvider()
             context = current
             try validate(current)
-            try await updateStatus(current)
+            // Never inherit another caller's check (see `ArkhamDBService.sendCheck`).
+            try await ArkhamDBService.$sendCheck.withValue(nil) {
+                try await updateStatus(current, priority: .background)
+            }
             // Every awaited deck opted out: nothing more will run for it.
             let stillEnabled = awaitingResolutionDeckIDs.contains {
                 writeBackStatuses[$0]?.enabled == true
             }
-            return stillEnabled ? current : nil
+            return stillEnabled ? .sent(current) : .stop
+        } catch is ArkhamDBRequestGate.Busy {
+            return .deferred
         } catch {
-            guard !Self.stopsStatusPolling(error) else { return nil }
-            return context
+            guard !Self.stopsStatusPolling(error), let context else { return .stop }
+            return .sent(context)
         }
     }
 

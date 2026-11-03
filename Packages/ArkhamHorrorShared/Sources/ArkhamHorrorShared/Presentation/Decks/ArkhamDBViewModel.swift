@@ -144,8 +144,13 @@ final class ArkhamDBViewModel {
         guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
     }
 
-    func updateStatus(_ context: DeckRequestContext) async throws {
-        let status = try await service.status(on: profile, token: context.token)
+    func updateStatus(
+        _ context: DeckRequestContext,
+        priority: ArkhamDBRequestGate.Priority = .user
+    ) async throws {
+        let status = try await service.status(
+            on: profile, token: context.token, priority: priority
+        )
         try validate(context)
         self.status = status
         needsRelinking = false
@@ -184,7 +189,13 @@ final class ArkhamDBViewModel {
             // Polls skip their tick while `isBusy`, so no new one starts meanwhile.
             await waitForStatusPoll()
             try validate(current)
-            try await operation(current)
+            // Requests may also wait at the app-wide gate; re-check before each send.
+            let check: @Sendable () async throws -> Void = { @MainActor in
+                try self.validate(current)
+            }
+            try await ArkhamDBService.$sendCheck.withValue(check) {
+                try await operation(current)
+            }
         } catch is CancellationError {
             // Cancelling the browser is not a failed link or a sign-out.
         } catch GameLifecycleTokenAccessError.stale {
