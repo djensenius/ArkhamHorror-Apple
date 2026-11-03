@@ -11,7 +11,7 @@ private let replayGameRevision = String(repeating: "c", count: 40)
 private let replayCheckpointArtifactSHA256 = String(repeating: "d", count: 64)
 private let replayCheckpointEnvelopeSHA256 = String(repeating: "e", count: 64)
 private let replayBackendPromptSHA256 =
-    "ffba40384536b2ed6ba5c3af3f765806c15c957fc8165754fc198c5cafe47c0a"
+    "be851edc534b93f40a3eae283ab8c1b0ba88f838f6fe9eb432a2cd3fc25e414d"
 
 @Suite("Production assignment replay coordinator configuration")
 // swiftlint:disable:next type_name
