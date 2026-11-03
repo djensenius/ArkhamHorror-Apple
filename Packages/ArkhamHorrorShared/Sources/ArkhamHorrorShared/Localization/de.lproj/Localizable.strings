@@ -460,7 +460,7 @@
 "arkhamdb.writeBack.state.succeeded" = "Das letzte Senden an ArkhamDB war erfolgreich.";
 "arkhamdb.writeBack.state.cancelled" = "Das letzte Senden wurde abgebrochen.";
 "arkhamdb.writeBack.state.unknown" = "Unbekannter Status des Zurückschreibens. Aktualisiere den Status oder die App.";
-"arkhamdb.writeBack.reason.remoteChanged" = "Dieses Deck wurde seit dem letzten Abgleich auf ArkhamDB geändert. Es wurde nichts gesendet.";
+"arkhamdb.writeBack.reason.remoteChanged" = "Das ArkhamDB-Deck stimmt nicht mehr mit dem letzten Abgleich überein. Vergleiche es vor der Auswahl mit deinem gespeicherten Deck.";
 "arkhamdb.writeBack.reason.campaignChanged" = "Dieses ArkhamDB-Deck gehört zu einer anderen Kampagne. Es wurde nichts gesendet.";
 "arkhamdb.writeBack.reason.pushUncertain" = "ArkhamDB hat vom letzten Senden eventuell schon eine neue Version, daher kann sie nicht sicher überschrieben werden.";
 "arkhamdb.writeBack.reason.targetAlreadyLinked" = "Das entstandene ArkhamDB-Deck ist bereits mit einem anderen gespeicherten Deck verknüpft. Speichere es als neues Deck, um fortzufahren.";
@@ -487,6 +487,7 @@
 "arkhamdb.writeBack.skippedOne" = "%lld ArkhamDB-Eintrag zum Zurückschreiben konnte nicht gelesen werden.";
 "arkhamdb.writeBack.error.disabled" = "Zurückschreiben ist für dieses Deck aus. Schalte es zuerst ein.";
 "arkhamdb.writeBack.error.conflict" = "ArkhamDB kann diese Auswahl gerade nicht auf dieses Deck anwenden. Der Status wurde aktualisiert.";
+"arkhamdb.writeBack.error.conflictRefreshFailed" = "ArkhamDB kann diese Auswahl gerade nicht auf dieses Deck anwenden, und der aktuelle Status konnte nicht geladen werden. Aktualisiere den Status und versuche es erneut.";
 "arkhamdb.writeBack.error.pushUncertain" = "ArkhamDB hat das letzte Senden eventuell erhalten. Versuche es erneut, um das vor einer neuen Auswahl zu prüfen.";
 "arkhamdb.writeBack.error.validationFailed" = "Die Anfrage oder das Deck wurde abgelehnt. Aktualisiere den Status und prüfe das Deck.";
 "arkhamdb.writeBack.error.confirmationRequired" = "Überschreiben und Als neu speichern müssen bestätigt werden. Es wurde nichts gesendet.";

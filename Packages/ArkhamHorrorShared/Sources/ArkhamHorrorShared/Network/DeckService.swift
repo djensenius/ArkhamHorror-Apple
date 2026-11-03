@@ -273,9 +273,18 @@ enum DeckServiceError: Error, Equatable, Sendable {
     case operationFailed(DeckOperationError)
     case validationFailed(DeckValidationErrors)
     case arkhamDB(ArkhamDBError?)
+    /// A write-back conflict whose recovery status refresh also failed.
+    case writeBackConflictStatusUnavailable
 }
 
 extension DeckServiceError {
+    var isArkhamDBConflict: Bool {
+        if case let .arkhamDB(remote) = self {
+            return remote?.code == .conflict
+        }
+        return false
+    }
+
     var message: String {
         switch self {
         case .invalidPathSegment:
@@ -300,6 +309,8 @@ extension DeckServiceError {
             error.errorMsg
         case let .arkhamDB(error):
             arkhamDBErrorMessage(error)
+        case .writeBackConflictStatusUnavailable:
+            arkhamDBLocalized("writeBack.error.conflictRefreshFailed")
         case let .validationFailed(errors):
             Self.validationMessage(errors)
         }

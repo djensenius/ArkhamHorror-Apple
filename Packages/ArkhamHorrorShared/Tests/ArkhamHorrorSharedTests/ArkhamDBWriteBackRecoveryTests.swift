@@ -42,6 +42,7 @@ struct ArkhamDBWriteBackRecoveryTests {
     private let deckC = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!)
     private let deckD = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000D4")!)
     private let disabled = Data(#"{"code":"writeBackDisabled","error":"disabled"}"#.utf8)
+    private let conflict = Data(#"{"code":"conflict","error":"conflict"}"#.utf8)
     private let session = Session()
 
     /// Loads `rows`, then queues `responses`; `hooks` index the requests after the load.
@@ -66,13 +67,15 @@ struct ArkhamDBWriteBackRecoveryTests {
         return (model, transport)
     }
 
-    /// A failed push whose Retry gets a 409 and then the given recovery refresh.
+    /// A failed push whose Retry gets a 409 (`writeBackDisabled` unless `rejection` is
+    /// given) and then the given recovery refresh.
     private func retried(
+        rejection: Data? = nil,
         refresh: [(Int, Data)], hook: (@Sendable () async throws -> Void)? = nil
     ) async throws -> (ArkhamDBViewModel, HookedTransport) {
         let (model, transport) = try await loaded(
             [writeBackRow(deckA, state: .failed, error: "remoteUnavailable")],
-            then: [(409, disabled)] + refresh,
+            then: [(409, rejection ?? disabled)] + refresh,
             hooks: hook.map { [1: $0] } ?? [:]
         )
         await model.retryWriteBack(deckA)
@@ -114,6 +117,32 @@ struct ArkhamDBWriteBackRecoveryTests {
         #expect(model.message == arkhamDBLocalized("writeBack.error.disabled"))
         #expect(session.expiries == 0)
         #expect(model.awaitingResolutionDeckIDs == [deckA])
+    }
+
+    @Test("A conflict whose recovery refresh fails does not claim status was refreshed")
+    func conflictWithFailedRefresh() async throws {
+        // A 500, and a transport error (no scripted response), on the recovery refresh.
+        for refresh in [[(500, Data())], []] {
+            let (model, _) = try await retried(rejection: conflict, refresh: refresh)
+            #expect(model.message == arkhamDBLocalized("writeBack.error.conflictRefreshFailed"))
+            #expect(model.message == "ArkhamDB can't apply that choice to this deck now, "
+                + "and the latest status couldn't be loaded. Refresh status and try again.")
+            #expect(model.message != arkhamDBLocalized("writeBack.error.conflict"))
+            #expect(model.awaitingResolutionDeckIDs == [deckA])
+        }
+        #expect(session.expiries == 0)
+    }
+
+    @Test("A conflict whose recovery refresh succeeds says status was refreshed")
+    func conflictWithRefresh() async throws {
+        let (model, _) = try await retried(
+            rejection: conflict,
+            refresh: [(200, writeBackStatusData([writeBackRow(deckA, state: .cancelled)]))]
+        )
+        #expect(model.message == arkhamDBLocalized("writeBack.error.conflict"))
+        #expect(model.message
+            == "ArkhamDB can't apply that choice to this deck now. Status was refreshed.")
+        #expect(model.writeBackStatus(for: deckA)?.state == .cancelled)
     }
 
     @Test("A save-as-new clone that appears as a new row reloads saved decks once")

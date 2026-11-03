@@ -63,9 +63,10 @@ struct ArkhamDBLocalizationTests {
                 "state.succeeded", "state.cancelled", "state.unknown", "blocked", "spentXp",
                 "retry", "retryAccessibility", "resolve", "details", "resolveAccessibility",
                 "conflictTitle", "skipped", "skippedOne", "error.disabled", "error.conflict",
-                "error.pushUncertain", "error.validationFailed", "error.confirmationRequired",
+                "error.conflictRefreshFailed", "error.pushUncertain", "error.validationFailed",
+                "error.confirmationRequired",
             ].map { "writeBack.\($0)" }
-        #expect(suffixes.count == 43)
+        #expect(suffixes.count == 44)
         let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()
             .appending(path: "ArkhamHorrorShared_ArkhamHorrorShared.bundle")
         let module = try #require(Bundle(url: moduleURL))
@@ -131,6 +132,8 @@ struct ArkhamDBLocalizationTests {
             #expect(message != arkhamDBLocalized("failed"))
         }
         #expect(arkhamDBErrorMessage(nil) == arkhamDBLocalized("failed"))
+        #expect(DeckServiceError.writeBackConflictStatusUnavailable.message
+            == arkhamDBLocalized("writeBack.error.conflictRefreshFailed"))
         #expect(arkhamDBSkippedWriteBackText(1)
             == String(format: arkhamDBLocalized("writeBack.skippedOne"), 1))
         #expect(arkhamDBSkippedWriteBackText(2)
