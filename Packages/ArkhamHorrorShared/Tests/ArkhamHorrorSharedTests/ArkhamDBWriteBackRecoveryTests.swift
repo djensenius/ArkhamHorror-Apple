@@ -141,13 +141,14 @@ struct ArkhamDBWriteBackRecoveryTests {
             : Data(#"{"code":"\#(code)","error":"\#(code)"}"#.utf8)
     }
 
-    private func expectRelinkRequired(_ model: ArkhamDBViewModel) {
+    /// `tracked` is the expected completion tracker (`[deckA]` unless given).
+    private func expectRelinkRequired(_ model: ArkhamDBViewModel, tracked: Set<DeckID>? = nil) {
         #expect(model.needsRelinking)
         #expect(model.message == arkhamDBLocalized("relinkRequired"))
         #expect(model.message == "Relink your ArkhamDB account in Decks to sync private decks. "
             + "Your app session is still signed in.")
         #expect(session.expiries == 0)
-        #expect(model.awaitingResolutionDeckIDs == [deckA])
+        #expect(model.awaitingResolutionDeckIDs == (tracked ?? [deckA]))
     }
 
     @Test(
@@ -177,6 +178,19 @@ struct ArkhamDBWriteBackRecoveryTests {
         #expect(model.message == arkhamDBLocalized("writeBack.error.\(key)"))
         #expect(session.expiries == 0)
         #expect(model.awaitingResolutionDeckIDs == [deckA])
+    }
+
+    @Test("A write-back toggle whose recovery refresh needs relinking shows relink")
+    func relinkAfterToggle() async throws {
+        let (model, transport) = try await loaded(
+            [writeBackRow(deckA)],
+            then: [(409, disabled), (409, refreshRejection("tokenExpired"))]
+        )
+        await model.setWriteBack(deckA, enabled: false)
+        #expect(await transport.requests.map(\.httpMethod) == ["GET", "PUT", "GET"])
+        expectRelinkRequired(model, tracked: [])
+        #expect(model.writeBackPollEpisode == 0)
+        #expect(model.writeBackStatus(for: deckA) == writeBackRow(deckA))
     }
 
     @Test("A resolution whose recovery refresh needs relinking shows relink")
