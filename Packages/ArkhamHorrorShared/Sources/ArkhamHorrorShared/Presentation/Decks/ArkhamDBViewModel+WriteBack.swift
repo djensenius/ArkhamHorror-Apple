@@ -67,8 +67,10 @@ extension ArkhamDBViewModel {
     /// deck is tracked until its completion shows up in status.
     func retryWriteBack(_ deckID: DeckID) async {
         guard writeBackStatus(for: deckID)?.canRetry == true else { return }
-        let inserted = awaitingResolutionDeckIDs.insert(deckID).inserted
-        let outcome = await performWriteBack { context in
+        var inserted = false
+        let outcome = await performWriteBack {
+            inserted = self.awaitingResolutionDeckIDs.insert(deckID).inserted
+        } operation: { context in
             try await self.service.retryWriteBack(
                 deckID: deckID, on: self.profile, token: context.token
             )
@@ -76,6 +78,7 @@ extension ArkhamDBViewModel {
         if outcome == .skipped, inserted {
             awaitingResolutionDeckIDs.remove(deckID)
         }
+        startPollingIfAwaiting(deckID, after: outcome)
     }
 
     /// Opens the resolution sheet for a conflict or a resolvable failed push. Any
@@ -127,8 +130,10 @@ extension ArkhamDBViewModel {
         let tracks = resolution == .keepRemote || resolution == .saveAsNew
         // Only this call's own insertion is undone if it is skipped; an earlier in-flight
         // resolution for the same deck keeps its tracker.
-        let inserted = tracks && awaitingResolutionDeckIDs.insert(deckID).inserted
-        let outcome = await performWriteBack { context in
+        var inserted = false
+        let outcome = await performWriteBack {
+            inserted = tracks && self.awaitingResolutionDeckIDs.insert(deckID).inserted
+        } operation: { context in
             try await self.service.resolveConflict(
                 deckID: deckID, resolution: resolution, confirmed: confirmed,
                 on: self.profile, token: context.token
@@ -154,6 +159,14 @@ extension ArkhamDBViewModel {
                 await savedDecksChanged()
             }
         }
+        startPollingIfAwaiting(deckID, after: outcome)
+    }
+
+    /// A sent request whose completion is still awaited starts a new polling episode.
+    private func startPollingIfAwaiting(_ deckID: DeckID, after outcome: WriteBackOutcome) {
+        if outcome != .skipped, awaitingResolutionDeckIDs.contains(deckID) {
+            writeBackPollEpisode += 1
+        }
     }
 
     enum WriteBackOutcome {
@@ -167,12 +180,18 @@ extension ArkhamDBViewModel {
     /// Applies the returned rows, or refreshes authoritative status after any failure
     /// (except session expiry, cancellation or a stale session) so the row never shows a
     /// stale state. A mutation can be applied even when its response is unreadable.
+    /// `beforeSend` runs after `perform` has waited out any status poll and validated the
+    /// context, with no suspension before the request: a completion tracker inserted
+    /// earlier could be cleared by a poll applying the deck's pre-request status.
     @discardableResult
     private func performWriteBack(
-        _ operation: @escaping (DeckRequestContext) async throws -> [ArkhamDBWriteBackStatus]
+        beforeSend: @escaping () -> Void = {},
+        operation: @escaping (DeckRequestContext) async throws -> [ArkhamDBWriteBackStatus]
     ) async -> WriteBackOutcome {
         var outcome = WriteBackOutcome.skipped
         await perform { context in
+            self.writeBackPollContext = context
+            beforeSend()
             do {
                 let rows = try await operation(context)
                 try self.validate(context)
