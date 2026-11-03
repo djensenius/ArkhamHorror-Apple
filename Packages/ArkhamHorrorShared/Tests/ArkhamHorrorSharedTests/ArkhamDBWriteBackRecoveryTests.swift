@@ -141,4 +141,21 @@ struct ArkhamDBWriteBackRecoveryTests {
         await model.refreshStatus()
         #expect(session.reloads == 1)
     }
+
+    @Test("A clone already named as a resulting deck does not reload again as its own row")
+    func knownCloneRowDoesNotReload() async throws {
+        let named = writeBackRow(deckA, state: .pending, resulting: deckC)
+        let (model, _) = try await loaded(
+            [writeBackRow(deckA, state: .pending)],
+            then: [
+                (200, writeBackStatusData([named])),
+                (200, writeBackStatusData([named, writeBackRow(deckC)])),
+            ]
+        )
+        await model.refreshStatus()
+        #expect(session.reloads == 1)
+        await model.refreshStatus()
+        #expect(model.writeBackStatus(for: deckC) == writeBackRow(deckC))
+        #expect(session.reloads == 1)
+    }
 }
