@@ -507,7 +507,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
         ))
     }
 
-    // The "golden vector" is replayBackendPromptSHA256, derived from the vendored fixture.
+    /// The "golden vector" is replayBackendPromptSHA256, derived from the vendored fixture.
     @Test("Canonical prompt digest matches the backend golden vector")
     func promptDigestMatchesBackendVector() throws {
         #expect(

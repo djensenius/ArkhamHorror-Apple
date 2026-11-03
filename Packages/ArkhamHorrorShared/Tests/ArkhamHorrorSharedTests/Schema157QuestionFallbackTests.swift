@@ -9,8 +9,9 @@ import Testing
 @Suite("Schema 0.1.57 question kinds")
 struct Schema157QuestionFallbackTests {
     /// Synthetic raw `ChooseFromCollection` (see "Schema 0.1.57 synthetic test shapes" in
-    /// Fixtures/LegacyContract/PROVENANCE.md): the defaultOptions record encoding of Arkham/Question.hs:188 whose card codes match the
-    /// captured `chooseFromCollection` representative.
+    /// Fixtures/LegacyContract/PROVENANCE.md): the defaultOptions record encoding of
+    /// Arkham/Question.hs:188 whose card codes match the captured `chooseFromCollection`
+    /// representative.
     static func chooseFromCollection(
         cardCodes: JSONValue = .array([.string("c01001"), .string("c01002")])
     ) -> JSONValue {
