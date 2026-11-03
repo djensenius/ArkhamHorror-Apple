@@ -110,7 +110,8 @@ struct ArkhamDBWriteBackConflictSheet: View {
                             arkhamDBLocalized(resolution.titleKey),
                             role: resolution == .overwrite ? .destructive : nil
                         ) {
-                            Task { await model.chooseResolution(resolution, for: status.localDeckId) }
+                            let deckID = status.localDeckId
+                            Task { await model.chooseResolution(resolution, for: deckID) }
                         }
                         .disabled(model.isBusy)
                         .accessibilityIdentifier("arkhamdb.writeBack.\(resolution.rawValue)")

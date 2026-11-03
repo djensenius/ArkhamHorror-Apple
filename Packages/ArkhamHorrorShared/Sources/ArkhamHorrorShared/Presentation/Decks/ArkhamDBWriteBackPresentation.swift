@@ -63,6 +63,7 @@ extension ArkhamDBWriteBackStatus {
         enabled && state == .failed
     }
 
+    /// Unknown future states offer nothing, even when they carry a conflict object.
     var allowedResolutions: [ArkhamDBWriteBackResolution] {
         guard enabled, state == .conflict else { return [] }
         return conflict?.reason.allowedResolutions ?? []
@@ -90,9 +91,10 @@ extension ArkhamDBWriteBackStatus {
         }
     }
 
-    /// Spent XP is never synchronized; say so whenever this deck can be pushed.
+    /// Spent XP is never synchronized; say so whenever this deck can be pushed. The
+    /// contract fixes `spentXpSynced` to false, so a true value is not trusted to hide it.
     var showsSpentXpNote: Bool {
-        enabled && !spentXpSynced
+        enabled
     }
 }
 

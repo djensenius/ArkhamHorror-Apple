@@ -62,9 +62,9 @@ struct ArkhamDBLocalizationTests {
                 "state.succeeded", "state.cancelled", "state.unknown", "blocked", "spentXp",
                 "retry", "retryAccessibility", "resolve", "details", "resolveAccessibility",
                 "conflictTitle", "skipped", "skippedOne", "error.disabled", "error.conflict",
-                "error.pushUncertain", "error.validationFailed",
+                "error.pushUncertain", "error.validationFailed", "error.confirmationRequired",
             ].map { "writeBack.\($0)" }
-        #expect(suffixes.count == 41)
+        #expect(suffixes.count == 42)
         let moduleURL = Bundle.module.bundleURL.deletingLastPathComponent()
             .appending(path: "ArkhamHorrorShared_ArkhamHorrorShared.bundle")
         let module = try #require(Bundle(url: moduleURL))

@@ -178,6 +178,9 @@ final class ArkhamDBViewModel {
                 if serviceError == .sessionExpired {
                     await sessionExpiredHandler(context)
                 }
+            } else if error is ArkhamDBResolveConflictRequest.ValidationError {
+                // Unreachable through the UI, which confirms first; never show "failed".
+                message = arkhamDBLocalized("writeBack.error.confirmationRequired")
             } else {
                 message = arkhamDBLinkErrorMessage(error as? ArkhamDBLinkFlowError)
             }

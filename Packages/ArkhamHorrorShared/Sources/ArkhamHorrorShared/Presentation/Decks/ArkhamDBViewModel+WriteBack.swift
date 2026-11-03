@@ -75,41 +75,63 @@ extension ArkhamDBViewModel {
     private func resolve(
         _ deckID: DeckID, _ resolution: ArkhamDBWriteBackResolution, confirmed: Bool
     ) async {
-        let succeeded = await performWriteBack { context in
+        let outcome = await performWriteBack { context in
             try await self.service.resolveConflict(
                 deckID: deckID, resolution: resolution, confirmed: confirmed,
                 on: self.profile, token: context.token
             )
         }
-        guard succeeded else { return }
-        if resolvingDeckID == deckID {
+        if outcome == .succeeded, resolvingDeckID == deckID {
             resolvingDeckID = nil
         }
-        // Save-as-new may add a campaign copy (`resultingLocalDeckId`) to saved decks.
-        if resolution == .saveAsNew {
+        // Save-as-new may add a campaign copy (`resultingLocalDeckId`) to saved decks. A
+        // failed response may still have been applied (fail-closed decoding), so refresh
+        // after any attempt that reached a refreshable failure too.
+        if resolution == .saveAsNew, outcome != .skipped {
             await savedDecksChanged()
         }
     }
 
+    enum WriteBackOutcome {
+        /// Busy, session expired, cancelled or stale: nothing to refresh.
+        case skipped
+        case succeeded
+        /// The request may or may not have been applied; status was refreshed.
+        case failed
+    }
+
     /// Applies the returned rows, or refreshes authoritative status after any failure
-    /// (except session expiry) so the row never shows a stale state.
+    /// (except session expiry, cancellation or a stale session) so the row never shows a
+    /// stale state. A mutation can be applied even when its response is unreadable.
     @discardableResult
     private func performWriteBack(
         _ operation: @escaping (DeckRequestContext) async throws -> [ArkhamDBWriteBackStatus]
-    ) async -> Bool {
-        var succeeded = false
+    ) async -> WriteBackOutcome {
+        var outcome = WriteBackOutcome.skipped
         await perform { context in
             do {
                 let rows = try await operation(context)
                 try self.validate(context)
                 self.applyWriteBack(rows)
                 self.skippedWriteBackCount = 0
-                succeeded = true
-            } catch let error as DeckServiceError where error != .sessionExpired {
+                outcome = .succeeded
+            } catch {
+                guard Self.refreshesAfter(error) else { throw error }
+                outcome = .failed
                 try? await self.updateStatus(context)
                 throw error
             }
         }
-        return succeeded
+        return outcome
+    }
+
+    private static func refreshesAfter(_ error: any Error) -> Bool {
+        switch error {
+        case is CancellationError, GameLifecycleTokenAccessError.stale,
+             DeckServiceError.sessionExpired:
+            false
+        default:
+            true
+        }
     }
 }

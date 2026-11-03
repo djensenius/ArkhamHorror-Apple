@@ -2,46 +2,47 @@
 import Foundation
 import Testing
 
+private func row(
+    _ id: DeckID,
+    enabled: Bool = true,
+    state: ArkhamDBWriteBackState = .idle,
+    reason: ArkhamDBWriteBackConflictReason? = nil,
+    error: String? = nil,
+    resulting: DeckID? = nil,
+    spentXpSynced: Bool = false
+) -> ArkhamDBWriteBackStatus {
+    ArkhamDBWriteBackStatus(
+        localDeckId: id, remoteDeckId: "123", enabled: enabled, state: state,
+        pushId: nil, campaignKey: nil, error: error,
+        conflict: reason.map {
+            ArkhamDBWriteBackConflict(
+                reason: $0, lastSyncedDateUpdate: nil, lastSyncedVersion: nil,
+                remoteDateUpdate: nil, remoteVersion: nil
+            )
+        },
+        resultingLocalDeckId: resulting, spentXpSynced: spentXpSynced
+    )
+}
+
+private func statusData(_ rows: [ArkhamDBWriteBackStatus]) throws -> Data {
+    try ContractJSON.encode(ArkhamDBLinkStatus(
+        linked: true, remoteAccountId: "7", remoteAccountName: "Agnes",
+        tokenExpiry: nil, linkedAt: nil,
+        writeBackEnabledDeckCount: rows.count { $0.enabled },
+        deckLinks: rows, skippedDeckLinkCount: 0
+    ))
+}
+
+private func body(_ request: URLRequest) throws -> JSONValue {
+    try ContractJSON.decode(JSONValue.self, from: #require(request.httpBody))
+}
+
 @Suite("ArkhamDB write-back view model")
 @MainActor
 struct ArkhamDBWriteBackViewModelTests {
     private let deckA = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!)
     private let deckB = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!)
     private let base = "/api/v1/arkham/arkhamdb/decks/00000000-0000-0000-0000-0000000000a1"
-
-    private func row(
-        _ id: DeckID,
-        enabled: Bool = true,
-        state: ArkhamDBWriteBackState = .idle,
-        reason: ArkhamDBWriteBackConflictReason? = nil,
-        error: String? = nil,
-        resulting: DeckID? = nil
-    ) -> ArkhamDBWriteBackStatus {
-        ArkhamDBWriteBackStatus(
-            localDeckId: id, remoteDeckId: "123", enabled: enabled, state: state,
-            pushId: nil, campaignKey: nil, error: error,
-            conflict: reason.map {
-                ArkhamDBWriteBackConflict(
-                    reason: $0, lastSyncedDateUpdate: nil, lastSyncedVersion: nil,
-                    remoteDateUpdate: nil, remoteVersion: nil
-                )
-            },
-            resultingLocalDeckId: resulting, spentXpSynced: false
-        )
-    }
-
-    private func statusData(_ rows: [ArkhamDBWriteBackStatus]) throws -> Data {
-        try ContractJSON.encode(ArkhamDBLinkStatus(
-            linked: true, remoteAccountId: "7", remoteAccountName: "Agnes",
-            tokenExpiry: nil, linkedAt: nil,
-            writeBackEnabledDeckCount: rows.count { $0.enabled },
-            deckLinks: rows, skippedDeckLinkCount: 0
-        ))
-    }
-
-    private func body(_ request: URLRequest) throws -> JSONValue {
-        try ContractJSON.decode(JSONValue.self, from: #require(request.httpBody))
-    }
 
     private func model(
         _ transport: ArkhamDBScriptedTransport,
@@ -111,6 +112,14 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(!row(deckA, state: .pending).canRetry)
         #expect(row(deckA, state: .failed, error: "pushUncertain").statusText
             == arkhamDBLocalized("writeBack.state.failedUncertain"))
+        // An unknown future state is unsupported even with a resolvable-looking conflict.
+        let future = row(deckA, state: .unknown("reconciling"), reason: .remoteChanged)
+        #expect(future.allowedResolutions.isEmpty)
+        #expect(!future.canRetry)
+        #expect(future.statusText == arkhamDBLocalized("writeBack.state.unknown"))
+        // The spent-XP note never trusts a contract-violating spentXpSynced=true.
+        #expect(row(deckA, spentXpSynced: true).showsSpentXpNote)
+        #expect(!row(deckA, enabled: false, spentXpSynced: true).showsSpentXpNote)
     }
 
     @Test(
@@ -217,7 +226,7 @@ struct ArkhamDBWriteBackViewModelTests {
     func refreshAfterError() async throws {
         let refreshed = row(deckA, enabled: false, state: .cancelled)
         let (model, transport) = try await loaded([row(deckA, state: .failed)], then: [
-            (409, Data(#"{"code":"writeBackDisabled","error":"Deck write-back is disabled"}"#.utf8)),
+            (409, Data(#"{"code":"writeBackDisabled","error":"disabled"}"#.utf8)),
             (200, statusData([refreshed])),
         ])
         await model.retryWriteBack(deckA)
@@ -228,6 +237,35 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(model.writeBackStatus(for: deckA) == refreshed)
         #expect(model.message == arkhamDBLocalized("writeBack.error.disabled"))
         #expect(!model.needsRelinking)
+    }
+
+    @Test("An unreadable save-as-new response refreshes status and saved decks")
+    func refreshAfterUnreadableSaveAsNew() async throws {
+        var refreshes = 0
+        let applied = row(deckA, state: .pending)
+        let (model, transport) = try await loaded(
+            [row(deckA, state: .conflict, reason: .remoteChanged)],
+            then: [(200, Data("not json".utf8)), (200, statusData([applied]))],
+            savedDecksChanged: { refreshes += 1 }
+        )
+        model.openConflict(deckA)
+        await model.chooseResolution(.saveAsNew, for: deckA)
+        await model.confirmPendingResolution()
+        #expect(await transport.requests.map(\.httpMethod) == ["GET", "POST", "GET"])
+        #expect(model.writeBackStatus(for: deckA) == applied)
+        #expect(model.message == DeckServiceError.malformedPayload.message)
+        #expect(refreshes == 1)
+        #expect(model.resolvingDeckID == deckA)
+    }
+
+    @Test("A confirmation-required error gets its own message, never the generic failure")
+    func confirmationRequiredMessage() async {
+        let model = model(ArkhamDBScriptedTransport([]))
+        await model.perform { _ in
+            throw ArkhamDBResolveConflictRequest.ValidationError.confirmationRequired
+        }
+        #expect(model.message == arkhamDBLocalized("writeBack.error.confirmationRequired"))
+        #expect(model.message != arkhamDBLocalized("failed"))
     }
 
     @Test("Session expiry is not followed by a status refresh")
@@ -256,7 +294,11 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(model.resolvingDeckID == nil)
         #expect(await transport.requests.count == 1)
     }
+}
 
+@Suite("ArkhamDB write-back app gate")
+@MainActor
+struct ArkhamDBWriteBackAppGateTests {
     @Test("The app only enables write-back UI with linking plus its own capability")
     func appModelGate() async {
         let model = AppModel(

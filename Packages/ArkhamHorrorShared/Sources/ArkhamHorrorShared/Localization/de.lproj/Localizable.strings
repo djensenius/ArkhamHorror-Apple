@@ -488,3 +488,4 @@
 "arkhamdb.writeBack.error.conflict" = "ArkhamDB kann diese Auswahl gerade nicht auf dieses Deck anwenden. Der Status wurde aktualisiert.";
 "arkhamdb.writeBack.error.pushUncertain" = "ArkhamDB hat das letzte Senden eventuell erhalten. Versuche es erneut, um das vor einer neuen Auswahl zu prüfen.";
 "arkhamdb.writeBack.error.validationFailed" = "Die Anfrage oder das Deck wurde abgelehnt. Aktualisiere den Status und prüfe das Deck.";
+"arkhamdb.writeBack.error.confirmationRequired" = "Überschreiben und Als neu speichern müssen bestätigt werden. Es wurde nichts gesendet.";
