@@ -157,6 +157,18 @@ struct Investigator: Sendable {
     let usedAdditionalActions: [JSONValue]
     let willpower: Int
     let experiencePoints: Int
+    /// Schema 0.1.57 `playProhibitions`: hand cards this investigator may not play, with
+    /// what prohibits them. `nil` when an older server omits the key.
+    var playProhibitions: [CardProhibition]?
+    /// Schema 0.1.57 `commitProhibitions`: cards this investigator may not commit to skill
+    /// tests. `nil` when an older server omits the key.
+    var commitProhibitions: [CardProhibition]?
+    /// Schema 0.1.57 `cannotDiscoverClues`: `nil` when an older server omits the key,
+    /// `.some(nil)` when the investigator can discover clues, else what prevents it.
+    var cannotDiscoverClues: [GameLogRef]??
+    /// Schema 0.1.57 `cannotSpendClues`, with the same three states as
+    /// `cannotDiscoverClues`.
+    var cannotSpendClues: [GameLogRef]??
 }
 
 extension Investigator: Equatable, Hashable {}

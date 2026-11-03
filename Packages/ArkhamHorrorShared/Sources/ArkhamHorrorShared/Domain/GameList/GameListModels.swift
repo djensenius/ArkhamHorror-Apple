@@ -153,6 +153,9 @@ struct GameSummary: Sendable, Equatable {
     let otherInvestigators: [InvestigatorSummary]
     let multiplayerVariant: MultiplayerVariant
     let hasOpenSeats: Bool
+    /// Schema 0.1.57 `outcome`: `nil` when an older server omits the key, `.some(nil)` for
+    /// an explicit `null` (unfinished, or no verdict recorded), else how the game ended.
+    var outcome: GameOutcome??
 }
 
 extension GameSummary: Codable {
@@ -166,6 +169,7 @@ extension GameSummary: Codable {
         case otherInvestigators
         case multiplayerVariant
         case hasOpenSeats
+        case outcome
     }
 
     /// `scenario` and `campaign` are both required by the schema but nullable: a missing
@@ -198,6 +202,7 @@ extension GameSummary: Codable {
             forKey: .multiplayerVariant
         )
         hasOpenSeats = try container.decode(Bool.self, forKey: .hasOpenSeats)
+        outcome = try decodeOptionalNullable(GameOutcome.self, from: container, forKey: .outcome)
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -211,6 +216,7 @@ extension GameSummary: Codable {
         try container.encode(otherInvestigators, forKey: .otherInvestigators)
         try container.encode(multiplayerVariant, forKey: .multiplayerVariant)
         try container.encode(hasOpenSeats, forKey: .hasOpenSeats)
+        try container.encodeOptionalNullable(outcome, forKey: .outcome)
     }
 }
 

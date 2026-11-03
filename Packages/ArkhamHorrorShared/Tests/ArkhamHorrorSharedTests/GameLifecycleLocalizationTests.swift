@@ -9,12 +9,27 @@ struct GameLifecycleLocalizationTests {
             "common.dismiss": "Dismiss",
             "games.broken.title": "Broken game",
             "games.live.roomClosed.message": "This game was closed on the server.",
+            "games.live.roomClosed.message.abandoned":
+                "Every player left this game, so the server closed its room.",
+            "games.live.roomClosed.message.maintenance":
+                "The server is down for maintenance. Open the game again once it is back.",
+            "games.live.roomClosed.message.reopen":
+                "The server closed this game's room. Reopen it to continue.",
             "games.live.roomClosed.title": "Game closed",
         ],
         "de": [
             "common.dismiss": "Schließen",
             "games.broken.title": "Beschädigtes Spiel",
             "games.live.roomClosed.message": "Dieses Spiel wurde auf dem Server geschlossen.",
+            "games.live.roomClosed.message.abandoned":
+                "Alle Spieler haben dieses Spiel verlassen, "
+                + "daher hat der Server den Raum geschlossen.",
+            "games.live.roomClosed.message.maintenance":
+                "Der Server wird gerade gewartet. "
+                + "Öffne das Spiel erneut, sobald er wieder erreichbar ist.",
+            "games.live.roomClosed.message.reopen":
+                "Der Server hat den Raum dieses Spiels geschlossen. "
+                + "Öffne es erneut, um weiterzuspielen.",
             "games.live.roomClosed.title": "Spiel geschlossen",
         ],
     ]

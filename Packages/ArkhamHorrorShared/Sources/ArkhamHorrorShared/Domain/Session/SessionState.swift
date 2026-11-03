@@ -38,6 +38,8 @@ enum SessionUnavailableReason: Equatable, Sendable {
     case probeFailed(CapabilityProbeError)
     /// Restoring the selected profile's token failed.
     case tokenValidationFailed(TokenValidationFailure)
+    /// The server answered the capability probe with its maintenance 503 body.
+    case maintenance(ServerMaintenance)
 }
 
 /// Why loading or saving persisted profile/selection storage failed.
@@ -176,6 +178,8 @@ extension SessionState {
             compatibility == .legacy ? "Server ready (legacy)" : "Server ready"
         case .incompatible:
             "Server incompatible"
+        case .unavailable(_, .maintenance):
+            "Server maintenance"
         case .unavailable:
             "Server unavailable"
         case let .signedIn(_, _, user):
@@ -206,6 +210,8 @@ extension SessionState {
                 "Could not verify your session with \(profile.displayName). Try again."
             case .tokenValidationFailed(.tokenStore):
                 "Could not securely access your session for \(profile.displayName). Try again."
+            case .maintenance:
+                "\(profile.displayName) is down for maintenance. Try again later."
             }
         case let .signedIn(profile, _, _):
             "Connected to \(profile.displayName)."
@@ -262,6 +268,8 @@ extension SessionUnavailableReason {
             "Your saved session with this server could not be verified. Try again."
         case .tokenValidationFailed(.tokenStore):
             "Your saved session for this server could not be securely accessed. Try again."
+        case let .maintenance(maintenance):
+            maintenance.message
         }
     }
 }
@@ -280,6 +288,8 @@ extension CapabilityProbeError {
         case .unexpectedStatus, .malformedPayload:
             "This server responded unexpectedly. It may be temporarily unavailable " +
                 "or misconfigured. Try again."
+        case let .maintenance(maintenance):
+            maintenance.message
         }
     }
 }

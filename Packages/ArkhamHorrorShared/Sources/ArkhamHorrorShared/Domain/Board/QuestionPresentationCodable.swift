@@ -17,6 +17,7 @@ extension QuestionPresentation: Codable {
         case confirmLabel
         case backLabel
         case cardCode
+        case labelCards
         case payCost
         case questionSource
         case tooltip
@@ -89,6 +90,7 @@ extension QuestionPresentation: Codable {
             confirmLabel: container.decodePresentIfContained(Label.self, forKey: .confirmLabel),
             backLabel: container.decodePresentIfContained(Label.self, forKey: .backLabel),
             cardCode: container.decodePresentIfContained(String.self, forKey: .cardCode),
+            labelCards: container.decodePresentIfContained([String].self, forKey: .labelCards),
             payCost: container.decodePresentIfContained(Cost.self, forKey: .payCost),
             questionSource: container.decodePresentIfContained(Source.self, forKey: .questionSource),
             tooltip: container.decodePresentIfContained(String.self, forKey: .tooltip),
@@ -139,6 +141,7 @@ extension QuestionPresentation: Codable {
         try container.encodeIfPresent(confirmLabel, forKey: .confirmLabel)
         try container.encodeIfPresent(backLabel, forKey: .backLabel)
         try container.encodeIfPresent(cardCode, forKey: .cardCode)
+        try container.encodeIfPresent(labelCards, forKey: .labelCards)
         try container.encodeIfPresent(payCost, forKey: .payCost)
         try container.encodeIfPresent(questionSource, forKey: .questionSource)
         try container.encodeIfPresent(tooltip, forKey: .tooltip)
@@ -251,7 +254,8 @@ extension QuestionPresentation: Codable {
             guard case .campaignSettings = answer else { try answerMismatch(in: container) }
         case .pickScenarioSettings:
             guard case .standaloneSettings = answer else { try answerMismatch(in: container) }
-        case .chooseOne, .dropDown, .playerWindowChooseOne, .windowChooseOne:
+        case .chooseOne, .chooseFromCollection, .dropDown, .playerWindowChooseOne,
+             .windowChooseOne:
             try requireSingleChoiceAnswer(in: container)
         case .unsupported:
             break
@@ -266,6 +270,7 @@ extension QuestionPresentation: Codable {
               choices.allSatisfy(\.isValidShape),
               selection?.isValidShape != false,
               groups?.allSatisfy({ $0 >= 0 }) != false,
+              labelCards.map({ $0.count >= 2 && $0.first == cardCode }) != false,
               choices.map(\.sourceIndex).sorted() == Array(0 ..< choiceCount)
         else { return false }
         return true

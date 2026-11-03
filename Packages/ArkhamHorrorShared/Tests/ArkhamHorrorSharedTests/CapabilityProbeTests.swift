@@ -175,11 +175,28 @@ struct CapabilityProbeTests {
         }
     }
 
-    @Test("HTTP 503 throws unexpectedStatus(503)")
+    @Test("HTTP 503 without the maintenance body throws unexpectedStatus(503)")
     func http503Throws() async {
-        let transport = stub(data: Data(), status: 503)
+        for body in ["", "<html>Service Unavailable</html>", #"{"maintenance":false}"#] {
+            let transport = stub(data: Data(body.utf8), status: 503)
+            let probe = CapabilityProbe(transport: transport)
+            await #expect(throws: CapabilityProbeError.unexpectedStatus(503)) {
+                try await probe.probe(defaultProfile)
+            }
+        }
+    }
+
+    @Test("HTTP 503 with the maintenance body throws maintenance")
+    func http503MaintenanceBodyThrowsMaintenance() async {
+        let body = Data(
+            #"{"maintenance":true,"since":"2025-01-02T03:04:05Z","message":"Down"}"#.utf8
+        )
+        let transport = stub(data: body, status: 503)
         let probe = CapabilityProbe(transport: transport)
-        await #expect(throws: CapabilityProbeError.unexpectedStatus(503)) {
+        let expected = ServerMaintenance(
+            notice: ServerMaintenanceNotice(since: "2025-01-02T03:04:05Z", message: "Down")
+        )
+        await #expect(throws: CapabilityProbeError.maintenance(expected)) {
             try await probe.probe(defaultProfile)
         }
     }

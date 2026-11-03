@@ -163,6 +163,7 @@ struct ServerIssueView: View {
     private var title: String {
         switch kind {
         case .incompatible: "Server Incompatible"
+        case .unavailable(_, .maintenance): "Server Maintenance"
         case .unavailable: "Server Unavailable"
         case .storageCorrupted: "Storage Problem"
         case .credentialCleanupRegistryCorrupted: "Sign-In Cleanup Problem"

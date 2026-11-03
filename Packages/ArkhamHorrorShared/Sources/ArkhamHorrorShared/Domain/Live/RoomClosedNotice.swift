@@ -10,4 +10,13 @@ struct RoomClosedNotice: Equatable, Identifiable, Sendable {
     var id: GameID {
         gameID
     }
+
+    /// Whether a `RoomClosed` reason means the game itself was deleted. Only `deleted`
+    /// (Api/Handler/Arkham/Games/Shared.hs, Admin.hs delete) does. Every other reason keeps the
+    /// game listed: `abandoned` (the last player left), `maintenance` (the server entered
+    /// maintenance), an admin `swept` of an idle room, and any reason this client doesn't know.
+    /// Servers before schema 0.1.57 only send `deleted`.
+    static func deletesGame(reason: String) -> Bool {
+        reason == "deleted"
+    }
 }
