@@ -26,6 +26,33 @@ struct ArkhamDBWriteBackPollRaceTests {
         try writeBackStatusData([writeBackRow(deckA, state: .pending), rowB])
     }
 
+    private func model(_ transport: PollingTransport) async -> ArkhamDBViewModel {
+        await clock.setGated(true)
+        let counter = counter
+        let model = ArkhamDBViewModel(
+            profile: .hosted, service: ArkhamDBService(transport: transport),
+            authentication: nil, tokenProvider: { arkhamDBTestContext },
+            supportsWriteBack: true, savedDecksChanged: { counter.reloads += 1 },
+            clock: clock
+        )
+        await model.refreshStatus()
+        return model
+    }
+
+    /// Starts the user's request for deckB; save-as-new is confirmed first.
+    private func send(_ action: Action, on model: ArkhamDBViewModel) async -> Task<Void, Never> {
+        switch action {
+        case .keepRemote:
+            return Task { await model.chooseResolution(.keepRemote, for: deckB) }
+        case .saveAsNew:
+            model.openResolution(deckB)
+            await model.chooseResolution(.saveAsNew, for: deckB)
+            return Task { await model.confirmPendingResolution() }
+        case .retry:
+            return Task { await model.retryWriteBack(deckB) }
+        }
+    }
+
     @Test(
         "A held poll for one deck cannot clear another deck's new tracker",
         arguments: [Action.keepRemote, .saveAsNew, .retry]
@@ -48,15 +75,7 @@ struct ArkhamDBWriteBackPollRaceTests {
             ])),
             (200, status(writeBackRow(deckB, state: .succeeded))),
         ])
-        await clock.setGated(true)
-        let counter = counter
-        let model = ArkhamDBViewModel(
-            profile: .hosted, service: ArkhamDBService(transport: transport),
-            authentication: nil, tokenProvider: { arkhamDBTestContext },
-            supportsWriteBack: true, savedDecksChanged: { counter.reloads += 1 },
-            clock: clock
-        )
-        await model.refreshStatus()
+        let model = await model(transport)
         await model.chooseResolution(.keepRemote, for: deckA)
         let episode = model.writeBackPollEpisode
         #expect(model.awaitingResolutionDeckIDs == [deckA])
@@ -67,17 +86,7 @@ struct ArkhamDBWriteBackPollRaceTests {
         await clock.resumeOldestSleep()
         await transport.waitUntilHeld()
 
-        let user: Task<Void, Never>
-        switch action {
-        case .keepRemote:
-            user = Task { await model.chooseResolution(.keepRemote, for: deckB) }
-        case .saveAsNew:
-            model.openResolution(deckB)
-            await model.chooseResolution(.saveAsNew, for: deckB)
-            user = Task { await model.confirmPendingResolution() }
-        case .retry:
-            user = Task { await model.retryWriteBack(deckB) }
-        }
+        let user = await send(action, on: model)
         while model.statusPollWaiters.isEmpty {
             await Task.yield()
         }
