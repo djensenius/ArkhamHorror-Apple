@@ -7,6 +7,13 @@ extension AppModel {
         return compatibility.supportsArkhamDBAccountLinking
     }
 
+    /// Write-back UI needs linking plus its own independently advertised capability.
+    func supportsArkhamDBWriteBack(on profile: ServerProfile) -> Bool {
+        guard supportsArkhamDB(on: profile),
+              case let .signedIn(_, compatibility, _) = sessionState else { return false }
+        return compatibility.supportsArkhamDBWriteBack
+    }
+
     func deckService(on profile: ServerProfile) -> any DeckServicing {
         guard supportsArkhamDB(on: profile) else { return deckService }
         return ArkhamDBSyncDeckService(base: deckService, arkhamDB: arkhamDBService)

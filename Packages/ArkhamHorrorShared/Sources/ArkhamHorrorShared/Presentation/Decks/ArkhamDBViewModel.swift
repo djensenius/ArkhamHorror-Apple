@@ -4,12 +4,15 @@ import Observation
 @MainActor
 @Observable
 final class ArkhamDBViewModel {
-    private let profile: ServerProfile
-    private let service: ArkhamDBService
+    let profile: ServerProfile
+    let service: ArkhamDBService
     private let authentication: (any ArkhamDBAuthenticating)?
     private let tokenProvider: DecksViewModel.TokenProvider
     private let contextValidator: DecksViewModel.ContextValidator
     private let sessionExpiredHandler: DecksViewModel.SessionExpiredHandler
+    /// `arkhamdb.write-back.v1`; without it no write-back state or control is exposed.
+    let supportsWriteBack: Bool
+    let savedDecksChanged: @MainActor () async -> Void
 
     var status: ArkhamDBLinkStatus?
     var decks: [ArkhamDBRemoteDeckSummary] = []
@@ -20,6 +23,15 @@ final class ArkhamDBViewModel {
     var message: String?
     var needsRelinking = false
     var confirmsUnlink = false
+    var writeBackStatuses: [DeckID: ArkhamDBWriteBackStatus] = [:]
+    var skippedWriteBackCount = 0
+    /// The deck whose conflict sheet is open.
+    var resolvingDeckID: DeckID?
+    /// An overwrite or save-as-new awaiting explicit confirmation; nothing is sent yet.
+    var pendingConfirmation: ArkhamDBPendingResolution?
+    /// Decks with a submitted keep-remote or save-as-new whose asynchronous completion
+    /// (which re-syncs or clones a saved deck) has not yet been observed in status.
+    var awaitingResolutionDeckIDs: Set<DeckID> = []
 
     init(
         profile: ServerProfile,
@@ -27,7 +39,9 @@ final class ArkhamDBViewModel {
         authentication: (any ArkhamDBAuthenticating)?,
         tokenProvider: @escaping DecksViewModel.TokenProvider,
         contextValidator: @escaping DecksViewModel.ContextValidator = { _ in true },
-        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in }
+        sessionExpiredHandler: @escaping DecksViewModel.SessionExpiredHandler = { _ in },
+        supportsWriteBack: Bool = false,
+        savedDecksChanged: @escaping @MainActor () async -> Void = {}
     ) {
         self.profile = profile
         self.service = service
@@ -35,6 +49,8 @@ final class ArkhamDBViewModel {
         self.tokenProvider = tokenProvider
         self.contextValidator = contextValidator
         self.sessionExpiredHandler = sessionExpiredHandler
+        self.supportsWriteBack = supportsWriteBack
+        self.savedDecksChanged = savedDecksChanged
     }
 
     var statusText: String {
@@ -84,6 +100,9 @@ final class ArkhamDBViewModel {
             try await self.service.unlink(on: self.profile, token: context.token)
             try self.validate(context)
             self.status = nil
+            self.writeBackStatuses = [:]
+            self.awaitingResolutionDeckIDs = []
+            self.skippedWriteBackCount = 0
             self.decks = []
             self.skippedCount = 0
             self.hasLoadedDecks = false
@@ -106,16 +125,20 @@ final class ArkhamDBViewModel {
         }
     }
 
-    private func validate(_ context: DeckRequestContext) throws {
+    func validate(_ context: DeckRequestContext) throws {
         try Task.checkCancellation()
         guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
     }
 
-    private func updateStatus(_ context: DeckRequestContext) async throws {
+    func updateStatus(_ context: DeckRequestContext) async throws {
         let status = try await service.status(on: profile, token: context.token)
         try validate(context)
         self.status = status
         needsRelinking = false
+        await applyWriteBack(status.linked ? status.deckLinks : [])
+        // The saved-deck reload may suspend; never write into a session that went stale.
+        try validate(context)
+        skippedWriteBackCount = status.linked ? status.skippedDeckLinkCount : 0
         if !status.linked {
             decks = []
             skippedCount = 0
@@ -132,7 +155,7 @@ final class ArkhamDBViewModel {
         needsRelinking = false
     }
 
-    private func perform(_ operation: (DeckRequestContext) async throws -> Void) async {
+    func perform(_ operation: (DeckRequestContext) async throws -> Void) async {
         guard !isBusy else { return }
         isBusy = true
         message = nil
@@ -161,6 +184,9 @@ final class ArkhamDBViewModel {
                 if serviceError == .sessionExpired {
                     await sessionExpiredHandler(context)
                 }
+            } else if error is ArkhamDBResolveConflictRequest.ValidationError {
+                // Unreachable through the UI, which confirms first; never show "failed".
+                message = arkhamDBLocalized("writeBack.error.confirmationRequired")
             } else {
                 message = arkhamDBLinkErrorMessage(error as? ArkhamDBLinkFlowError)
             }

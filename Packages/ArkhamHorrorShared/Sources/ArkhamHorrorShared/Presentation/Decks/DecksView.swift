@@ -10,26 +10,25 @@ struct DecksView: View {
         model: AppModel, profile: ServerProfile,
         authentication: (any ArkhamDBAuthenticating)?
     ) {
-        _viewModel = State(
-            initialValue: DecksViewModel(
-                profile: profile,
-                deckService: model.deckService(on: profile),
-                deckSyncTracker: model.deckSyncTracker,
-                tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
-                sessionExpiredHandler: { context in
-                    await model.handleDeckSessionExpired(profile: profile, context: context)
-                },
-                loadedDecksRecorder: { decks in
-                    await model.recordLoadedDecksForChoice(decks, on: profile)
-                },
-                syncedDeckRecorder: { deck in
-                    model.recordSyncedDeckForChoice(deck, on: profile)
-                },
-                contextValidator: { context in
-                    model.isCurrentDeckRequestContext(context, for: profile)
-                }
-            )
+        let decksModel = DecksViewModel(
+            profile: profile,
+            deckService: model.deckService(on: profile),
+            deckSyncTracker: model.deckSyncTracker,
+            tokenProvider: { try await model.currentDeckRequestContext(for: profile) },
+            sessionExpiredHandler: { context in
+                await model.handleDeckSessionExpired(profile: profile, context: context)
+            },
+            loadedDecksRecorder: { decks in
+                await model.recordLoadedDecksForChoice(decks, on: profile)
+            },
+            syncedDeckRecorder: { deck in
+                model.recordSyncedDeckForChoice(deck, on: profile)
+            },
+            contextValidator: { context in
+                model.isCurrentDeckRequestContext(context, for: profile)
+            }
         )
+        _viewModel = State(initialValue: decksModel)
         if model.supportsArkhamDB(on: profile) {
             _arkhamDB = State(initialValue: ArkhamDBViewModel(
                 profile: profile,
@@ -39,7 +38,9 @@ struct DecksView: View {
                 contextValidator: { model.isCurrentDeckRequestContext($0, for: profile) },
                 sessionExpiredHandler: {
                     await model.handleDeckSessionExpired(profile: profile, context: $0)
-                }
+                },
+                supportsWriteBack: model.supportsArkhamDBWriteBack(on: profile),
+                savedDecksChanged: { await decksModel.load() }
             ))
         } else {
             _arkhamDB = State(initialValue: nil)
@@ -90,6 +91,7 @@ struct DecksView: View {
             }
         }
         .accessibilityIdentifier(AccountAccessibilityID.deckList)
+        .arkhamDBWriteBackConflictSheet(model: arkhamDB, decks: viewModel.decks)
         .navigationTitle("Decks")
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
@@ -192,6 +194,7 @@ struct DecksView: View {
                         isDeleting: viewModel.deletingDeckIDs.contains(deck.id),
                         isSyncingAll: viewModel.isSyncingAll,
                         syncState: viewModel.syncState(for: deck),
+                        arkhamDB: arkhamDB,
                         onSync: { Task { await viewModel.sync(deck) } },
                         onDelete: { viewModel.requestDelete(deck) }
                     )
@@ -206,6 +209,7 @@ private struct DeckRow: View {
     let isDeleting: Bool
     let isSyncingAll: Bool
     let syncState: DecksViewModel.SyncState?
+    let arkhamDB: ArkhamDBViewModel?
     let onSync: () -> Void
     let onDelete: () -> Void
 
@@ -223,6 +227,9 @@ private struct DeckRow: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 syncStatusText
+                if let arkhamDB, let status = arkhamDB.writeBackStatus(for: deck.id) {
+                    ArkhamDBWriteBackRowSection(model: arkhamDB, deck: deck, status: status)
+                }
             }
             Spacer()
             rowActions
