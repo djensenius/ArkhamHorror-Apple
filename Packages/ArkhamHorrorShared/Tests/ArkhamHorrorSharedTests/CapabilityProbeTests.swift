@@ -175,11 +175,11 @@ struct CapabilityProbeTests {
         }
     }
 
-    @Test("HTTP 503 throws unexpectedStatus(503)")
+    @Test("HTTP 503 without header or body throws maintenance, never unexpectedStatus")
     func http503Throws() async {
         let transport = stub(data: Data(), status: 503)
         let probe = CapabilityProbe(transport: transport)
-        await #expect(throws: CapabilityProbeError.unexpectedStatus(503)) {
+        await #expect(throws: CapabilityProbeError.maintenance(ServerMaintenance())) {
             try await probe.probe(defaultProfile)
         }
     }

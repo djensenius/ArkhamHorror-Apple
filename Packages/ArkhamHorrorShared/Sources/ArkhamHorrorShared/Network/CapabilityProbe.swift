@@ -40,6 +40,7 @@ struct CapabilityProbe: Sendable {
     /// | HTTP 200–299 valid JSON              | `CompatibilityEvaluator.evaluate(_:)` outcome   |
     /// | HTTP 200–299 invalid JSON            | throws `CapabilityProbeError.malformedPayload`  |
     /// | HTTP 404                             | `CompatibilityOutcome.legacyFallback`           |
+    /// | HTTP 503                             | throws `CapabilityProbeError.maintenance`       |
     /// | Other HTTP status                    | throws `CapabilityProbeError.unexpectedStatus`  |
     /// | Non-HTTP response                    | throws `CapabilityProbeError.nonHTTPResponse`   |
     /// | Genuine transport failure            | throws `CapabilityProbeError.transportFailure`  |
@@ -94,6 +95,10 @@ struct CapabilityProbe: Sendable {
             }
         case 404:
             outcome = evaluator.legacyFallback()
+        case 503:
+            throw CapabilityProbeError.maintenance(
+                ServerMaintenance(response: httpResponse, body: data)
+            )
         default:
             throw CapabilityProbeError.unexpectedStatus(httpResponse.statusCode)
         }

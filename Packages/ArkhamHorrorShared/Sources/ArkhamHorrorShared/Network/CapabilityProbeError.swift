@@ -10,6 +10,11 @@ enum CapabilityProbeError: Error, Sendable {
     /// HTTP 404 is handled separately as ``CompatibilityOutcome/legacyFallback``
     /// and is never reported here.
     case unexpectedStatus(Int)
+    /// HTTP 503: the server is refusing traffic, normally for a maintenance window.
+    ///
+    /// Carries the defensively parsed `Retry-After` and optional maintenance body; HTTP 503
+    /// is never reported as ``unexpectedStatus(_:)``.
+    case maintenance(ServerMaintenance)
     /// The 2xx response body could not be decoded as a valid ``ServerCapabilities`` payload.
     ///
     /// The associated `String` is a diagnostic message from the decoder and is intended
@@ -29,6 +34,8 @@ extension CapabilityProbeError: Equatable {
             true
         case let (.unexpectedStatus(lCode), .unexpectedStatus(rCode)):
             lCode == rCode
+        case let (.maintenance(lhsMaintenance), .maintenance(rhsMaintenance)):
+            lhsMaintenance == rhsMaintenance
         case (.malformedPayload, .malformedPayload):
             // Diagnostic strings are informational only; equality ignores them.
             true

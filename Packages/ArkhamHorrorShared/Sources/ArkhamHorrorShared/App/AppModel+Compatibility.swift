@@ -47,6 +47,9 @@ extension AppModel {
         if error is CancellationError {
             return nil
         }
+        if case let .maintenance(maintenance)? = error as? CapabilityProbeError {
+            return .maintenance(maintenance)
+        }
         if let probeError = error as? CapabilityProbeError {
             return .probeFailed(probeError)
         }

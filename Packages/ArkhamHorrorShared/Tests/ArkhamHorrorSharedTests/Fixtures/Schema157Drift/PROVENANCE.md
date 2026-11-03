@@ -60,3 +60,7 @@ Haskell encoders, and each test names its source. They are labelled synthetic th
   `{"tag":"RoomClosed","contents":"abandoned"|"maintenance"}`, from
   `Api/Arkham/Helpers.hs` (`closeAbandonedRoom`, `applyMaintenance`), encoded like the
   captured Contract `room-closed.json`.
+- `Schema157MaintenanceTests` 503 responses (synthetic): `Retry-After: 120` and
+  `{"maintenance":true,"since":<UTCTime>,"message":<Text>}` from
+  `backend/arkham-api/library/Foundation.hs` `maintenanceMiddleware`, with the message
+  text of `Api/Arkham/Maintenance.hs` `defaultMaintenanceMessage`.
