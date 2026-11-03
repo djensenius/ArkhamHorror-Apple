@@ -57,6 +57,8 @@ private actor PollingTransport: HTTPTransport {
 @MainActor
 private final class Probe {
     var isCurrent = true
+    /// The app session generation; a new sign-in hands out contexts with a new one.
+    var generation = 1
     var reloads = 0
 }
 
@@ -76,8 +78,14 @@ struct ArkhamDBWriteBackPollingTests {
         let probe = probe
         let model = ArkhamDBViewModel(
             profile: .hosted, service: ArkhamDBService(transport: transport),
-            authentication: nil, tokenProvider: { arkhamDBTestContext },
-            contextValidator: { _ in probe.isCurrent },
+            authentication: nil,
+            tokenProvider: {
+                DeckRequestContext(
+                    token: "app-token", sessionGeneration: probe.generation,
+                    credentialEpoch: 0, globalEpoch: 0
+                )
+            },
+            contextValidator: { probe.isCurrent && $0.sessionGeneration == probe.generation },
             supportsWriteBack: true, savedDecksChanged: { probe.reloads += 1 },
             clock: clock
         )
@@ -129,8 +137,7 @@ struct ArkhamDBWriteBackPollingTests {
         for _ in 0 ..< 5 {
             await tick()
         }
-        // The sixth sleep is released by `finish`; any seventh would run ungated.
-        await clock.waitUntilSleepPending(1)
+        // `finish` releases the sixth sleep; any seventh would run ungated.
         await finish(poll)
         #expect(await clock.requestedDurations == seconds(30, 60, 120, 240, 300, 300))
         let requests = await transport.requests
@@ -248,13 +255,15 @@ struct ArkhamDBWriteBackPollingTests {
         #expect(await clock.requestedDurations == seconds(30))
     }
 
-    @Test("A stale app session or profile stops polling without a request")
+    /// A new session would hand out a fresh, valid context, so only the previous poll's
+    /// context shows that the session changed.
+    @Test("A new app session after a poll stops polling without a request")
     func staleContextStops() async throws {
-        let (model, transport) = try await tracked(then: [(200, pending)])
+        let (model, transport) = try await tracked(then: [(200, pending), (200, pending)])
         let poll = Task { await model.pollWriteBackStatus() }
         await tick()
         await clock.waitUntilSleepPending(1)
-        probe.isCurrent = false
+        probe.generation += 1
         await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30, 60))
