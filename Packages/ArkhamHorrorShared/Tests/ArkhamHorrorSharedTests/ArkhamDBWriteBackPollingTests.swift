@@ -126,9 +126,11 @@ struct ArkhamDBWriteBackPollingTests {
     func scheduleAndAttemptCap() async throws {
         let (model, transport) = try await tracked(then: Array(repeating: (200, pending), count: 6))
         let poll = Task { await model.pollWriteBackStatus() }
-        for _ in 0 ..< 6 {
+        for _ in 0 ..< 5 {
             await tick()
         }
+        // The sixth sleep is released by `finish`; any seventh would run ungated.
+        await clock.waitUntilSleepPending(1)
         await finish(poll)
         #expect(await clock.requestedDurations == seconds(30, 60, 120, 240, 300, 300))
         let requests = await transport.requests
@@ -179,7 +181,7 @@ struct ArkhamDBWriteBackPollingTests {
             (200, writeBackStatusData([writeBackRow(deckA, state: .pending)])),
         ])
         let model = await model(transport)
-        await model.pollWriteBackStatus()
+        await finish(Task { await model.pollWriteBackStatus() })
         #expect(await clock.requestedDurations.isEmpty)
         #expect(await transport.requests.count == 1)
         #expect(model.writeBackPollEpisode == 0)
@@ -256,6 +258,17 @@ struct ArkhamDBWriteBackPollingTests {
         await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30, 60))
+    }
+
+    @Test("A session already stale at the first tick stops polling without a request")
+    func staleAtFirstTickStops() async throws {
+        let (model, transport) = try await tracked(then: [(200, pending)])
+        let poll = Task { await model.pollWriteBackStatus() }
+        await clock.waitUntilSleepPending(1)
+        probe.isCurrent = false
+        await finish(poll)
+        #expect(await transport.requests.count == 2)
+        #expect(await clock.requestedDurations == seconds(30))
     }
 
     @Test(
