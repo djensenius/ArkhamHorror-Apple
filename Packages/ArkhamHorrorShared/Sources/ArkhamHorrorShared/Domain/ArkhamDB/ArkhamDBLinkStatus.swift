@@ -81,10 +81,7 @@ extension ArkhamDBLinkStatus: Codable {
         try container.encode(tokenExpiry, forKey: .tokenExpiry)
         try container.encode(linkedAt, forKey: .linkedAt)
         try container.encode(writeBackEnabledDeckCount, forKey: .writeBackEnabledDeckCount)
-        // Omitted when empty so a 0.1.54 status round-trips unchanged. The 0.1.55 repin
-        // (fixture `deckLinks: []`) should switch this to always encode the key.
-        if !deckLinks.isEmpty {
-            try container.encode(deckLinks, forKey: .deckLinks)
-        }
+        // Always written: the key is required from schema 0.1.55 (fixture `deckLinks: []`).
+        try container.encode(deckLinks, forKey: .deckLinks)
     }
 }

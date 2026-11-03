@@ -98,6 +98,8 @@ answer-payment-amounts.json:contracts/fixtures/answer-payment-amounts.json
 answer-question.json:contracts/fixtures/answer-question.json
 arkhamdb.json:contracts/fixtures/arkhamdb.json
 arkhamdb.schema.json:contracts/schemas/arkhamdb.schema.json
+arkhamdb-write-back.json:contracts/fixtures/arkhamdb-write-back.json
+arkhamdb-write-back.schema.json:contracts/schemas/arkhamdb-write-back.schema.json
 basic-choice-question.schema.json:contracts/schemas/basic-choice-question.schema.json
 capabilities-arkhamdb.json:contracts/fixtures/capabilities-arkhamdb.json
 capabilities-locale-catalog.json:contracts/fixtures/capabilities-locale-catalog.json

@@ -201,12 +201,20 @@ struct ArkhamDBWriteBackContractTests {
 
     @Test("Status deckLinks: missing is empty; null or wrong type throws; rows decode")
     func statusDeckLinks() throws {
-        let linked = try arkhamDBFixtureData("linkedStatus")
-        var status = try ContractJSON.decode([String: JSONValue].self, from: linked)
-        #expect(status["deckLinks"] == nil)
-        let legacy = try ContractJSON.decode(ArkhamDBLinkStatus.self, from: linked)
+        var status = try ContractJSON.decode(
+            [String: JSONValue].self,
+            from: arkhamDBFixtureData("linkedStatus")
+        )
+        #expect(status["deckLinks"] == .array([]))
+        status.removeValue(forKey: "deckLinks")
+        let legacy = try decode(ArkhamDBLinkStatus.self, .object(status))
         #expect(legacy.deckLinks.isEmpty)
         #expect(legacy.skippedDeckLinkCount == 0)
+        // Encoding always writes the key, so a 0.1.54 status gains `deckLinks: []`.
+        var expected = status
+        expected["deckLinks"] = .array([])
+        #expect(try ContractJSON.decode(JSONValue.self, from: ContractJSON.encode(legacy))
+            == .object(expected))
         for invalid: JSONValue in [.null, .object([:]), .string("[]"), .bool(false)] {
             status["deckLinks"] = invalid
             #expect(throws: (any Error).self) {
