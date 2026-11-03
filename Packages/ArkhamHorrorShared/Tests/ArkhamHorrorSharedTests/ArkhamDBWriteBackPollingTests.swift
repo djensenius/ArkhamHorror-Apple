@@ -4,7 +4,7 @@ import Testing
 
 /// Replays scripted responses, can hold one request (counted from 0) open until
 /// released, and records the most requests ever in flight at once.
-private actor PollingTransport: HTTPTransport {
+actor PollingTransport: HTTPTransport {
     private var responses: [(Int, Data)]
     private(set) var requests: [URLRequest] = []
     private(set) var maxInFlight = 0
