@@ -174,13 +174,15 @@ final class ArkhamDBViewModel {
         isBusy = true
         message = nil
         defer { isBusy = false }
-        // Never overlap a background status poll: wait for its request to finish. Polls
-        // skip their tick while `isBusy`, so no new one starts meanwhile.
-        await waitForStatusPoll()
         var context: DeckRequestContext?
         do {
+            // The context is taken before any wait, so an action started in one app
+            // session is never sent under a session that replaced it meanwhile.
             let current = try await tokenProvider()
             context = current
+            // Never overlap a background status poll: wait for its request to finish.
+            // Polls skip their tick while `isBusy`, so no new one starts meanwhile.
+            await waitForStatusPoll()
             try validate(current)
             try await operation(current)
         } catch is CancellationError {

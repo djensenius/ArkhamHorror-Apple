@@ -300,6 +300,7 @@ struct ArkhamDBWriteBackPollingTests {
             (404, #"{"code":"disabled","error":"disabled"}"#),
             (409, #"{"code":"notLinked","error":"not linked"}"#),
             (404, ""),
+            (404, #"{"code":"notFound","error":"not found"}"#),
         ]
     )
     func capabilityLossStops(status: Int, body: String) async throws {

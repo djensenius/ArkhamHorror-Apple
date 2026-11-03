@@ -88,7 +88,7 @@ extension ArkhamDBViewModel {
             return true
         case let DeckServiceError.arkhamDB(remote?):
             let unavailable: [ArkhamDBErrorCode] = [
-                .disabled, .writeBackDisabled, .notLinked, .tokenExpired,
+                .disabled, .writeBackDisabled, .notLinked, .tokenExpired, .notFound,
             ]
             return unavailable.contains(remote.code)
         default:
