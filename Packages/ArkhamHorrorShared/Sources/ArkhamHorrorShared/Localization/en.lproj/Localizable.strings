@@ -456,7 +456,7 @@
 "arkhamdb.writeBack.state.failed" = "Couldn't send to ArkhamDB. Retry, or refresh status.";
 "arkhamdb.writeBack.state.failedUncertain" = "ArkhamDB may or may not have received the last push, and later pushes for this deck wait for it. Retry to check; if it stays uncertain, keep the ArkhamDB version or save as new. Nothing is created twice.";
 "arkhamdb.writeBack.state.failedDisabled" = "Write-back was turned off while a push was unfinished, and later pushes for this deck wait for it. With write-back on, retry, keep the ArkhamDB version or save as new.";
-"arkhamdb.writeBack.state.failedValidation" = "ArkhamDB write-back can't use this deck version: its campaign couldn't be identified safely, or it has cards ArkhamDB doesn't support. Retrying, keeping the ArkhamDB version or saving as new won't fix it, and later pushes for this deck stay blocked.";
+"arkhamdb.writeBack.state.failedValidation" = "Write-back stopped for this deck version: its campaign couldn't be identified safely, or the deck has cards this app doesn't support. Retrying won't help, and later pushes for this deck wait. Unless the campaign can't be identified, turning write-back off and on for this deck clears it, or offers keep and save as new for an unfinished new ArkhamDB deck. If you kept the ArkhamDB version, fix that deck on ArkhamDB first.";
 "arkhamdb.writeBack.state.succeeded" = "Last push to ArkhamDB succeeded.";
 "arkhamdb.writeBack.state.cancelled" = "The last push was cancelled.";
 "arkhamdb.writeBack.state.unknown" = "Unknown write-back state. Refresh status or update the app.";
