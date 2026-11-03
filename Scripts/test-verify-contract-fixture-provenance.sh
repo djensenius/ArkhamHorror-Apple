@@ -22,7 +22,7 @@ harness_root="$repo_root/.build/contract-fixture-provenance-selftest"
 real_contract_pin_file="$repo_root/Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift"
 
 fixture_names="
-arkhamdb.json capabilities-arkhamdb.json act-no-advance-cost.json answer-amounts.json answer-rejected.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
+arkhamdb.json arkhamdb-write-back.json capabilities-arkhamdb.json act-no-advance-cost.json answer-amounts.json answer-rejected.json answer-enemy-attack-assign-damage.json answer-enemy-attack-assign-horror.json answer-enemy-attack-assign-remaining-damage.json \
 answer-enemy-attack-assign-remaining-horror.json answer-enemy-attack.json answer-exchange-amounts.json answer-payment-amounts.json answer-question.json capabilities-locale-catalog.json \
 capabilities.json campaign-catalog.json card-code-entity-map.json catalog.json decks.json \
 game-lifecycle.json game-list.json game-update.json get-game.json \
@@ -48,7 +48,7 @@ question-roland-defeat-reaction.json question-round-end-forced-ability.json ques
 replay-attestation.json room-closed.json uuid-entity-map.json"
 
 schema_names="
-arkhamdb.schema.json basic-choice-question.schema.json capabilities.schema.json campaign-catalog.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
+arkhamdb.schema.json arkhamdb-write-back.schema.json basic-choice-question.schema.json capabilities.schema.json campaign-catalog.schema.json client-answer.schema.json question-presentation-representatives.schema.json \
 question-presentation.schema.json raw-question-fixture.schema.json replay-attestation.schema.json"
 
 failures=0
@@ -133,7 +133,7 @@ write_backend_manifest() {
   shift
   {
     echo '{'
-    echo '  "schemaRevision": "0.1.54",'
+    echo '  "schemaRevision": "0.1.55",'
     echo '  "fixtures": ['
     first=1
     for name in "$@"; do
@@ -143,6 +143,9 @@ write_backend_manifest() {
       case "$name" in
         arkhamdb.json)
           schema="contracts/schemas/arkhamdb.schema.json"
+          ;;
+        arkhamdb-write-back.json)
+          schema="contracts/schemas/arkhamdb-write-back.schema.json"
           ;;
         answer-*.json)
           schema="contracts/schemas/client-answer.schema.json"

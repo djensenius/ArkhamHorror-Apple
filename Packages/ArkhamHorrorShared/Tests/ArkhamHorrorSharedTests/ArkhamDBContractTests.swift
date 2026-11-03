@@ -162,17 +162,22 @@ struct ArkhamDBContractTests {
     @Test("Required keys, including nullable keys, reject missing and wrongly typed values")
     func strictRequiredKeys() throws {
         try assertRequiredKeys(ArkhamDBLinkStartResponse.self, name: "linkStart")
-        try assertRequiredKeys(ArkhamDBLinkStatus.self, name: "linkedStatus")
-        try assertRequiredKeys(ArkhamDBLinkStatus.self, name: "unlinkedStatus")
+        // `deckLinks` may be missing (0.1.54 servers); `statusDeckLinks` covers its strictness.
+        try assertRequiredKeys(ArkhamDBLinkStatus.self, name: "linkedStatus", except: "deckLinks")
+        try assertRequiredKeys(ArkhamDBLinkStatus.self, name: "unlinkedStatus", except: "deckLinks")
         try assertRequiredKeys(ArkhamDBRemoteDeckSummary.self, name: "deckSummary")
         try assertRequiredKeys(ArkhamDBLinkCompletionRequest.self, name: "completionRequest")
         try assertRequiredKeys(ArkhamDBImportRequest.self, name: "importRequest")
         try assertRequiredKeys(ArkhamDBError.self, name: "error")
     }
 
-    private func assertRequiredKeys(_ type: (some Decodable).Type, name: String) throws {
+    private func assertRequiredKeys(
+        _ type: (some Decodable).Type,
+        name: String,
+        except tolerated: String? = nil
+    ) throws {
         let fields = try object(name)
-        for key in fields.keys {
+        for key in fields.keys where key != tolerated {
             var missing = fields
             missing.removeValue(forKey: key)
             #expect(throws: (any Error).self, "Missing \(name).\(key)") { try decode(type, missing)

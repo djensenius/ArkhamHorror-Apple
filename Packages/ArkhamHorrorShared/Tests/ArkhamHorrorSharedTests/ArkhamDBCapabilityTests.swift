@@ -21,7 +21,7 @@ struct ArkhamDBCapabilityTests {
         )
         let outcome = CompatibilityEvaluator(pin: .current).evaluate(enabled)
         guard case let .compatible(capabilities, _, _) = outcome else {
-            Issue.record("Expected a compatible 0.1.54 server")
+            Issue.record("Expected a compatible 0.1.55 server")
             return
         }
         #expect(ServerCompatibility.modern(capabilities: capabilities)
@@ -42,19 +42,17 @@ struct ArkhamDBCapabilityTests {
     func writeBackCapabilityGate() throws {
         let enabled = try ContractJSON.decode(
             ServerCapabilities.self,
-            from: Data(arkhamDBWriteBackCapabilitiesJSON.utf8)
+            from: fixtureData("capabilities-arkhamdb")
         )
         #expect(enabled.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 55))
+        #expect(enabled.capabilities.contains("arkhamdb.write-back.v1"))
         let compatibility = ServerCompatibility.modern(capabilities: enabled.capabilities)
         #expect(compatibility.supportsArkhamDBWriteBack)
         #expect(compatibility.supportsArkhamDBAccountLinking)
-        let url = try #require(Bundle.module.url(
-            forResource: "capabilities-arkhamdb", withExtension: "json",
-            subdirectory: "Fixtures/Contract"
-        ))
-        let previous = try ContractJSON.decode(ServerCapabilities.self, from: Data(contentsOf: url))
-        #expect(previous.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 54))
-        let linkingOnly = ServerCompatibility.modern(capabilities: previous.capabilities)
+        // A 0.1.54 server advertised linking without write-back.
+        var previous = enabled.capabilities
+        #expect(previous.remove("arkhamdb.write-back.v1") != nil)
+        let linkingOnly = ServerCompatibility.modern(capabilities: previous)
         #expect(linkingOnly.supportsArkhamDBAccountLinking)
         #expect(!linkingOnly.supportsArkhamDBWriteBack)
         #expect(!ServerCompatibility.legacy.supportsArkhamDBWriteBack)
