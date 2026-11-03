@@ -22,6 +22,25 @@ struct ArkhamDBWriteBackPollSessionTests {
         case unlink, keepRemote
     }
 
+    private func model(_ transport: PollingTransport) async -> ArkhamDBViewModel {
+        await clock.setGated(true)
+        let session = session
+        let model = ArkhamDBViewModel(
+            profile: .hosted, service: ArkhamDBService(transport: transport),
+            authentication: nil,
+            tokenProvider: {
+                DeckRequestContext(
+                    token: "app-token", sessionGeneration: session.generation,
+                    credentialEpoch: 0, globalEpoch: 0
+                )
+            },
+            contextValidator: { $0.sessionGeneration == session.generation },
+            supportsWriteBack: true, clock: clock
+        )
+        await model.refreshStatus()
+        return model
+    }
+
     @Test(
         "An action waiting for a poll is not sent after the app session changes",
         arguments: [Action.unlink, .keepRemote]
@@ -38,21 +57,7 @@ struct ArkhamDBWriteBackPollSessionTests {
             (204, Data()),
             (200, pending),
         ])
-        await clock.setGated(true)
-        let session = session
-        let model = ArkhamDBViewModel(
-            profile: .hosted, service: ArkhamDBService(transport: transport),
-            authentication: nil,
-            tokenProvider: {
-                DeckRequestContext(
-                    token: "app-token", sessionGeneration: session.generation,
-                    credentialEpoch: 0, globalEpoch: 0
-                )
-            },
-            contextValidator: { $0.sessionGeneration == session.generation },
-            supportsWriteBack: true, clock: clock
-        )
-        await model.refreshStatus()
+        let model = await model(transport)
         await model.chooseResolution(.keepRemote, for: deckA)
         #expect(model.awaitingResolutionDeckIDs == [deckA])
 
