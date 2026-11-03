@@ -57,7 +57,7 @@ struct ArkhamDBService: Sendable {
     ) async throws -> Deck {
         var request = request("decks/import", method: "POST", on: profile, token: token)
         try attach(body, to: &request)
-        return try await decode(request, deckOperation: true)
+        return try await decode(request, context: .deckOperation)
     }
 
     func syncDeck(
@@ -66,7 +66,47 @@ struct ArkhamDBService: Sendable {
         let segment = id.rawValue.uuidString.lowercased()
         var request = request("decks/\(segment)/sync", method: "POST", on: profile, token: token)
         request.timeoutInterval = timeout
-        return try await decode(request, deckOperation: true)
+        return try await decode(request, context: .deckOperation)
+    }
+
+    /// Opts an owned linked deck in or out. Returns every owned deck's write-back status.
+    func setWriteBack(
+        deckID: DeckID, enabled: Bool, on profile: ServerProfile, token: String
+    ) async throws -> [ArkhamDBWriteBackStatus] {
+        var request = writeBackRequest(deckID, "write-back", method: "PUT", profile, token)
+        try attach(ArkhamDBWriteBackToggleRequest(enabled: enabled), to: &request)
+        return try await decode(request, context: .writeBack)
+    }
+
+    /// Asynchronously retries the oldest pending or failed push; poll status afterwards.
+    func retryWriteBack(
+        deckID: DeckID, on profile: ServerProfile, token: String
+    ) async throws -> [ArkhamDBWriteBackStatus] {
+        let request = writeBackRequest(deckID, "write-back/retry", method: "POST", profile, token)
+        return try await decode(request, context: .writeBack)
+    }
+
+    /// Resolves a conflict. Overwrite and save-as-new throw
+    /// `ArkhamDBResolveConflictRequest.ValidationError.confirmationRequired` before any
+    /// request unless `confirmed` is true.
+    func resolveConflict(
+        deckID: DeckID,
+        resolution: ArkhamDBWriteBackResolution,
+        confirmed: Bool,
+        on profile: ServerProfile,
+        token: String
+    ) async throws -> [ArkhamDBWriteBackStatus] {
+        let body = try ArkhamDBResolveConflictRequest(resolution: resolution, confirmed: confirmed)
+        var request = writeBackRequest(deckID, "resolve-conflict", method: "POST", profile, token)
+        try attach(body, to: &request)
+        return try await decode(request, context: .writeBack)
+    }
+
+    private func writeBackRequest(
+        _ id: DeckID, _ suffix: String, method: String, _ profile: ServerProfile, _ token: String
+    ) -> URLRequest {
+        let segment = id.rawValue.uuidString.lowercased()
+        return request("decks/\(segment)/\(suffix)", method: method, on: profile, token: token)
     }
 
     private func request(
@@ -90,17 +130,26 @@ struct ArkhamDBService: Sendable {
         }
     }
 
+    /// Selects how non-2xx responses without a typed ArkhamDB body are classified.
+    private enum ErrorContext {
+        case account
+        case deckOperation
+        case writeBack
+    }
+
     private func decode<Response: Decodable>(
-        _ request: URLRequest, deckOperation: Bool = false
+        _ request: URLRequest, context: ErrorContext = .account
     ) async throws -> Response {
-        let data = try await perform(request, deckOperation: deckOperation)
+        let data = try await perform(request, context: context)
         guard let decoded = try? ContractJSON.decode(Response.self, from: data) else {
             throw DeckServiceError.malformedPayload
         }
         return decoded
     }
 
-    private func perform(_ request: URLRequest, deckOperation: Bool = false) async throws -> Data {
+    private func perform(
+        _ request: URLRequest, context: ErrorContext = .account
+    ) async throws -> Data {
         let data: Data
         let response: URLResponse
         do {
@@ -119,19 +168,26 @@ struct ArkhamDBService: Sendable {
         case 200 ... 299: return data
         case 401: throw DeckServiceError.sessionExpired
         default:
-            throw responseError(data, statusCode: http.statusCode, deckOperation: deckOperation)
+            throw responseError(data, statusCode: http.statusCode, context: context)
         }
     }
 
     private func responseError(
-        _ data: Data, statusCode: Int, deckOperation: Bool
+        _ data: Data, statusCode: Int, context: ErrorContext
     ) -> DeckServiceError {
         let remote = try? ContractJSON.decode(ArkhamDBError.self, from: data)
         if remote != nil || statusCode == 409 {
             return .arkhamDB(remote)
         }
-        if deckOperation {
+        switch context {
+        case .account:
+            break
+        case .deckOperation:
             return deckOperationError(data, statusCode: statusCode)
+        case .writeBack:
+            if let error = writeBackError(statusCode) {
+                return .arkhamDB(error)
+            }
         }
         if statusCode == 501 {
             return .arkhamDB(nil)
@@ -142,6 +198,23 @@ struct ArkhamDBService: Sendable {
             }
         }
         return .unexpectedStatus(statusCode)
+    }
+
+    /// The server answers write-back 400/404 with framework bodies, not ArkhamDB errors.
+    /// Type them with the server's own status pairing (validationFailed→400,
+    /// notFound→404) so callers never treat them as session expiry or relinking.
+    private func writeBackError(_ statusCode: Int) -> ArkhamDBError? {
+        switch statusCode {
+        case 400:
+            ArkhamDBError(
+                code: .validationFailed,
+                error: "ArkhamDB write-back request was rejected"
+            )
+        case 404:
+            ArkhamDBError(code: .notFound, error: "ArkhamDB deck link was not found")
+        default:
+            nil
+        }
     }
 
     private func deckOperationError(_ data: Data, statusCode: Int) -> DeckServiceError {

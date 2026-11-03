@@ -34,6 +34,23 @@ func arkhamDBFixture<T: Decodable>(_ type: T.Type, _ key: String) throws -> T {
     try ContractJSON.decode(type, from: arkhamDBFixtureData(key))
 }
 
+/// A top-level value from the vendored schema 0.1.55 `arkhamdb-write-back.json` fixture.
+func arkhamDBWriteBackFixture(_ key: String) throws -> JSONValue {
+    let url = try #require(Bundle.module.url(
+        forResource: "arkhamdb-write-back", withExtension: "json",
+        subdirectory: "Fixtures/Contract"
+    ))
+    let root = try ContractJSON.decode([String: JSONValue].self, from: Data(contentsOf: url))
+    return try #require(root[key])
+}
+
+func arkhamDBWriteBackStateRows() throws -> [JSONValue] {
+    guard case let .array(rows) = try arkhamDBWriteBackFixture("states") else {
+        throw CocoaError(.coderReadCorrupt)
+    }
+    return rows
+}
+
 let arkhamDBTestContext = DeckRequestContext(
     token: "app-token", sessionGeneration: 1, credentialEpoch: 0, globalEpoch: 0
 )

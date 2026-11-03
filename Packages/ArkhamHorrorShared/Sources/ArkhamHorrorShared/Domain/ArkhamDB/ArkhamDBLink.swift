@@ -87,4 +87,11 @@ extension ServerCompatibility {
     var supportsArkhamDBAccountLinking: Bool {
         modernCapabilities.contains(Self.arkhamDBAccountLinkingCapability)
     }
+
+    static let arkhamDBWriteBackCapability = "arkhamdb.write-back.v1"
+
+    /// Write-back is advertised and checked independently of account linking.
+    var supportsArkhamDBWriteBack: Bool {
+        modernCapabilities.contains(Self.arkhamDBWriteBackCapability)
+    }
 }
