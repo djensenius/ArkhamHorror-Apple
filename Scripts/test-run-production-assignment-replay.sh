@@ -117,6 +117,47 @@ leaf_signing_authority() {
   /usr/bin/sed -n '/^Authority=/{s/^Authority=//p;q;}' <<<"$details"
 }
 
+# Sets selected_application to the first candidate of the given kind
+# (app-store or developer-id) that is not signed as Xcode and whose signature
+# verifies on its own, or to "" when none qualifies. Cheap signature metadata
+# is checked first; only remaining candidates are verified.
+selected_application=""
+select_signed_application() {
+  local kind="$1"
+  shift
+  local candidate details identifier leaf status
+  selected_application=""
+  for candidate in "$@"; do
+    [[ -d "$candidate" ]] || continue
+    if [[ "$kind" == app-store && ! -e "$candidate/Contents/_MASReceipt" ]]; then
+      continue
+    fi
+    details="$(/usr/bin/codesign -d --verbose=2 "$candidate" 2>&1)" || continue
+    leaf="$(/usr/bin/sed -n '/^Authority=/{s/^Authority=//p;q;}' <<<"$details")"
+    case "$kind:$leaf" in
+      "app-store:Apple Mac OS Application Signing") ;;
+      "developer-id:Developer ID Application: "*) ;;
+      *) continue ;;
+    esac
+    identifier="$(/usr/bin/sed -n 's/^Identifier=//p' <<<"$details")"
+    if [[ "$identifier" == com.apple.dt.Xcode ]]; then
+      printf 'note: skipping %s: signed as com.apple.dt.Xcode\n' "$candidate"
+      continue
+    fi
+    status=0
+    /usr/bin/codesign --verify --deep --strict "$candidate" \
+      >"$signature_log" 2>&1 || status=$?
+    if [[ "$status" != 0 ]]; then
+      printf 'note: skipping %s: its signature does not verify (codesign exit %s)\n' \
+        "$candidate" \
+        "$status"
+      continue
+    fi
+    selected_application="$candidate"
+    return 0
+  done
+}
+
 cleanup() {
   local exit_status=$?
   local cleanup_failed=0
@@ -312,15 +353,8 @@ expect_signature_verdict 3 "$launcher_requirement" "$apple_platform_application"
 printf 'PASS: Apple-signed %s satisfies the anchor clause but not the Xcode identifier\n' \
   "$apple_platform_application"
 
-mas_application=""
-for candidate in /Applications/*.app; do
-  [[ "$candidate" != "$xcode_application" &&
-    -e "$candidate/Contents/_MASReceipt" ]] || continue
-  [[ "$(leaf_signing_authority "$candidate" || true)" == \
-    "Apple Mac OS Application Signing" ]] || continue
-  mas_application="$candidate"
-  break
-done
+select_signed_application app-store /Applications/*.app
+readonly mas_application="$selected_application"
 if [[ -n "$mas_application" ]]; then
   expect_signature_verdict 0 "$anchor_requirement" "$mas_application" \
     "launcher anchor clause rejected Mac App Store application $mas_application"
@@ -329,39 +363,20 @@ if [[ -n "$mas_application" ]]; then
   printf 'PASS: Mac App Store %s satisfies the anchor clause but not the Xcode identifier\n' \
     "$mas_application"
 else
-  printf 'SKIP: no Mac App Store application other than Xcode under /Applications\n'
+  printf 'SKIP: no verifiable Mac App Store application not signed as com.apple.dt.Xcode under /Applications\n'
 fi
 
-developer_id_application=""
-for candidate in /Applications/*.app; do
-  [[ -d "$candidate" ]] || continue
-  [[ "$(leaf_signing_authority "$candidate" || true)" == \
-    "Developer ID Application: "* ]] || continue
-  developer_id_application="$candidate"
-  break
-done
-if [[ -z "$developer_id_application" ]]; then
-  printf 'SKIP: no Developer ID application under /Applications\n'
+select_signed_application developer-id /Applications/*.app
+readonly developer_id_application="$selected_application"
+if [[ -n "$developer_id_application" ]]; then
+  expect_signature_verdict 3 "$anchor_requirement" "$developer_id_application" \
+    "launcher anchor clause accepted Developer ID application $developer_id_application"
+  expect_signature_verdict 3 "$launcher_requirement" "$developer_id_application" \
+    "launcher signature requirement accepted Developer ID application $developer_id_application"
+  printf 'PASS: launcher anchor clause rejects Developer ID %s\n' \
+    "$developer_id_application"
 else
-  developer_id_status=0
-  /usr/bin/codesign --verify --deep --strict \
-    -R="$anchor_requirement" \
-    "$developer_id_application" \
-    >"$signature_log" 2>&1 || developer_id_status=$?
-  case "$developer_id_status" in
-    3)
-      printf 'PASS: launcher anchor clause rejects Developer ID %s\n' \
-        "$developer_id_application"
-      ;;
-    0)
-      fail "launcher anchor clause accepted Developer ID application $developer_id_application"
-      ;;
-    *)
-      printf 'SKIP: Developer ID %s does not verify on its own (codesign exit %s)\n' \
-        "$developer_id_application" \
-        "$developer_id_status"
-      ;;
-  esac
+  printf 'SKIP: no verifiable Developer ID application not signed as com.apple.dt.Xcode under /Applications\n'
 fi
 
 for replay_scenario in \
