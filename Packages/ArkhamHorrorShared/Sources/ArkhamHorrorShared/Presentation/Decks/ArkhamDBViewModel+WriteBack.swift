@@ -36,7 +36,7 @@ extension ArkhamDBViewModel {
                     && row.resultingLocalDeckId != $0.resultingLocalDeckId
             } ?? false
             let completed = awaitingResolutionDeckIDs.contains(deckID)
-                && row.state != .pending && row.state != .running
+                && row.state.endsTrackedResolution
             if resultChanged || completed {
                 awaitingResolutionDeckIDs.remove(deckID)
                 reload = true
@@ -56,12 +56,18 @@ extension ArkhamDBViewModel {
         }
     }
 
+    /// Retry resumes a durable stage that may still re-sync or clone a saved deck, so the
+    /// deck is tracked until its completion shows up in status.
     func retryWriteBack(_ deckID: DeckID) async {
         guard writeBackStatus(for: deckID)?.canRetry == true else { return }
-        await performWriteBack { context in
+        let inserted = awaitingResolutionDeckIDs.insert(deckID).inserted
+        let outcome = await performWriteBack { context in
             try await self.service.retryWriteBack(
                 deckID: deckID, on: self.profile, token: context.token
             )
+        }
+        if outcome == .skipped, inserted {
+            awaitingResolutionDeckIDs.remove(deckID)
         }
     }
 
@@ -112,9 +118,9 @@ extension ArkhamDBViewModel {
         _ deckID: DeckID, _ resolution: ArkhamDBWriteBackResolution, confirmed: Bool
     ) async {
         let tracks = resolution == .keepRemote || resolution == .saveAsNew
-        if tracks {
-            awaitingResolutionDeckIDs.insert(deckID)
-        }
+        // Only this call's own insertion is undone if it is skipped; an earlier in-flight
+        // resolution for the same deck keeps its tracker.
+        let inserted = tracks && awaitingResolutionDeckIDs.insert(deckID).inserted
         let outcome = await performWriteBack { context in
             try await self.service.resolveConflict(
                 deckID: deckID, resolution: resolution, confirmed: confirmed,
@@ -127,7 +133,7 @@ extension ArkhamDBViewModel {
         switch outcome {
         case .skipped:
             // Nothing was sent (busy, cancelled, stale or expired session).
-            if tracks {
+            if inserted {
                 awaitingResolutionDeckIDs.remove(deckID)
             }
         case .succeeded:

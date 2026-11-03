@@ -161,4 +161,77 @@ struct ArkhamDBWriteBackReloadTests {
         #expect(model.awaitingResolutionDeckIDs.isEmpty)
         #expect(reloads == 0)
     }
+
+    @Test(
+        "A failed resolution keeps tracking; Retry then completion reloads exactly once",
+        arguments: [ArkhamDBWriteBackResolution.keepRemote, .saveAsNew]
+    )
+    func failedThenRetried(resolution: ArkhamDBWriteBackResolution) async throws {
+        var reloads = 0
+        /// The resulting deck ID never changes, so only completion can trigger a reload.
+        func row(_ state: ArkhamDBWriteBackState, _ error: String? = nil) throws -> Data {
+            try writeBackStatusData([
+                writeBackRow(deckA, state: state, error: error, resulting: deckB),
+            ])
+        }
+        let pending = try ContractJSON.encode([
+            writeBackRow(deckA, state: .pending, resulting: deckB),
+        ])
+        let (model, _) = try await loaded(
+            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged, resulting: deckB)],
+            then: [
+                (200, pending), (200, row(.failed, "remoteUnavailable")),
+                (200, pending), (200, row(.succeeded)), (200, row(.succeeded)),
+            ],
+            savedDecksChanged: { reloads += 1 }
+        )
+        model.openResolution(deckA)
+        await model.chooseResolution(resolution, for: deckA)
+        await model.confirmPendingResolution()
+        await model.refreshStatus()
+        #expect(reloads == 0)
+        #expect(model.awaitingResolutionDeckIDs == [deckA])
+        await model.retryWriteBack(deckA)
+        #expect(reloads == 0)
+        await model.refreshStatus()
+        #expect(reloads == 1)
+        await model.refreshStatus()
+        #expect(reloads == 1)
+    }
+
+    @Test("Retrying an untracked failed push tracks it until completion")
+    func retryTracks() async throws {
+        var reloads = 0
+        let (model, _) = try await loaded(
+            [writeBackRow(deckA, state: .failed, error: "remoteUnavailable")],
+            then: [
+                (200, ContractJSON.encode([writeBackRow(deckA, state: .pending)])),
+                (200, writeBackStatusData([writeBackRow(deckA, state: .succeeded)])),
+            ],
+            savedDecksChanged: { reloads += 1 }
+        )
+        await model.retryWriteBack(deckA)
+        #expect(model.awaitingResolutionDeckIDs == [deckA])
+        await model.refreshStatus()
+        #expect(reloads == 1)
+    }
+
+    @Test("A second resolution skipped while busy keeps the first one's tracking")
+    func skippedSecondKeepsFirst() async throws {
+        var reloads = 0
+        let model = try await tracking(then: [
+            (200, writeBackStatusData([writeBackRow(deckA, state: .succeeded)])),
+        ], savedDecksChanged: { reloads += 1 })
+        // The first keep-remote is still awaiting completion; a second one enters while
+        // a request is in flight and is skipped.
+        model.writeBackStatuses[deckA] = writeBackRow(
+            deckA, state: .conflict, reason: .remoteChanged
+        )
+        model.isBusy = true
+        await model.chooseResolution(.keepRemote, for: deckA)
+        model.isBusy = false
+        #expect(model.awaitingResolutionDeckIDs == [deckA])
+        await model.refreshStatus()
+        #expect(reloads == 1)
+    }
 }

@@ -50,6 +50,17 @@ extension ArkhamDBWriteBackResolution {
     }
 }
 
+extension ArkhamDBWriteBackState {
+    /// Whether a tracked resolution or retry has ended. `failed` is retryable, and
+    /// pending/running/unknown states are still in progress, so tracking continues.
+    var endsTrackedResolution: Bool {
+        switch self {
+        case .succeeded, .idle, .cancelled, .conflict: true
+        case .pending, .running, .failed, .unknown: false
+        }
+    }
+}
+
 extension ArkhamDBWriteBackStatus {
     var blockedReason: ArkhamDBWriteBackConflictReason? {
         guard state == .conflict, let reason = conflict?.reason, reason.isBlocked else {
