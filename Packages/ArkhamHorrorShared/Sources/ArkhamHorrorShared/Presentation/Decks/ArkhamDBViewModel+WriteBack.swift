@@ -17,12 +17,34 @@ extension ArkhamDBViewModel {
         resolvingDeckID.flatMap(writeBackStatus(for:))
     }
 
-    func applyWriteBack(_ rows: [ArkhamDBWriteBackStatus]) {
+    /// Applies authoritative rows. Resolutions complete asynchronously on the server, so
+    /// saved decks are reloaded once when a tracked keep-remote/save-as-new leaves
+    /// pending/running, or when a known row's `resultingLocalDeckId` appears or changes.
+    func applyWriteBack(_ rows: [ArkhamDBWriteBackStatus]) async {
         guard supportsWriteBack else {
             writeBackStatuses = [:]
+            awaitingResolutionDeckIDs = []
             return
         }
+        let previous = writeBackStatuses
         writeBackStatuses = Dictionary(rows.map { ($0.localDeckId, $0) }) { _, last in last }
+        awaitingResolutionDeckIDs.formIntersection(writeBackStatuses.keys)
+        var reload = false
+        for (deckID, row) in writeBackStatuses {
+            let resultChanged = previous[deckID].map {
+                row.resultingLocalDeckId != nil
+                    && row.resultingLocalDeckId != $0.resultingLocalDeckId
+            } ?? false
+            let completed = awaitingResolutionDeckIDs.contains(deckID)
+                && row.state != .pending && row.state != .running
+            if resultChanged || completed {
+                awaitingResolutionDeckIDs.remove(deckID)
+                reload = true
+            }
+        }
+        if reload {
+            await savedDecksChanged()
+        }
     }
 
     func setWriteBack(_ deckID: DeckID, enabled: Bool) async {
@@ -67,9 +89,14 @@ extension ArkhamDBViewModel {
         await resolve(deckID, resolution, confirmed: false)
     }
 
-    func confirmPendingResolution() async {
-        guard let pending = pendingConfirmation else { return }
-        pendingConfirmation = nil
+    /// Confirms `captured` (the dialog's presented value), or the current confirmation.
+    /// The dialog may clear `pendingConfirmation` on dismissal before this runs, so the
+    /// captured value is used, and every safety check is made against current state.
+    func confirmPendingResolution(_ captured: ArkhamDBPendingResolution? = nil) async {
+        guard let pending = captured ?? pendingConfirmation else { return }
+        if pendingConfirmation == pending {
+            pendingConfirmation = nil
+        }
         guard pending.deckID == resolvingDeckID,
               writeBackStatus(for: pending.deckID)?.allowedResolutions
               .contains(pending.resolution) == true
@@ -84,6 +111,10 @@ extension ArkhamDBViewModel {
     private func resolve(
         _ deckID: DeckID, _ resolution: ArkhamDBWriteBackResolution, confirmed: Bool
     ) async {
+        let tracks = resolution == .keepRemote || resolution == .saveAsNew
+        if tracks {
+            awaitingResolutionDeckIDs.insert(deckID)
+        }
         let outcome = await performWriteBack { context in
             try await self.service.resolveConflict(
                 deckID: deckID, resolution: resolution, confirmed: confirmed,
@@ -93,11 +124,22 @@ extension ArkhamDBViewModel {
         if outcome == .succeeded, resolvingDeckID == deckID {
             resolvingDeckID = nil
         }
-        // Save-as-new may add a campaign copy (`resultingLocalDeckId`) to saved decks. A
-        // failed response may still have been applied (fail-closed decoding), so refresh
-        // after any attempt that reached a refreshable failure too.
-        if resolution == .saveAsNew, outcome != .skipped {
-            await savedDecksChanged()
+        switch outcome {
+        case .skipped:
+            // Nothing was sent (busy, cancelled, stale or expired session).
+            if tracks {
+                awaitingResolutionDeckIDs.remove(deckID)
+            }
+        case .succeeded:
+            // Completion is observed through later status rows (see applyWriteBack).
+            break
+        case .failed:
+            // A save-as-new response may have been applied despite failing (fail-closed
+            // decoding). Reload now unless the refreshed rows already did; keep tracking
+            // so a later completion reloads again.
+            if resolution == .saveAsNew, awaitingResolutionDeckIDs.contains(deckID) {
+                await savedDecksChanged()
+            }
         }
     }
 
@@ -121,7 +163,7 @@ extension ArkhamDBViewModel {
             do {
                 let rows = try await operation(context)
                 try self.validate(context)
-                self.applyWriteBack(rows)
+                await self.applyWriteBack(rows)
                 self.skippedWriteBackCount = 0
                 outcome = .succeeded
             } catch {

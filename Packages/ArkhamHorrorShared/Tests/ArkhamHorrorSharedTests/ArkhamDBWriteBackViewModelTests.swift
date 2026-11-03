@@ -168,30 +168,6 @@ struct ArkhamDBWriteBackViewModelTests {
         #expect(await transport.requests.count == 1)
     }
 
-    @Test("Saved decks are refreshed after save-as-new only")
-    func refreshAfterSaveAsNew() async throws {
-        var refreshes = 0
-        let response = try ContractJSON.encode([writeBackRow(deckA, state: .pending)])
-        let (model, _) = try await loaded(
-            [writeBackRow(deckA, state: .conflict, reason: .remoteChanged)],
-            then: [(200, response)],
-            savedDecksChanged: { refreshes += 1 }
-        )
-        await model.chooseResolution(.keepRemote, for: deckA)
-        #expect(refreshes == 0)
-
-        let (saving, _) = try await loaded(
-            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged)],
-            then: [(200, response)],
-            savedDecksChanged: { refreshes += 1 }
-        )
-        saving.openResolution(deckA)
-        await saving.chooseResolution(.saveAsNew, for: deckA)
-        #expect(refreshes == 0)
-        await saving.confirmPendingResolution()
-        #expect(refreshes == 1)
-    }
-
     @Test("A failed write-back call refreshes status and shows a specific message")
     func refreshAfterError() async throws {
         let refreshed = writeBackRow(deckA, enabled: false, state: .cancelled)
@@ -299,5 +275,82 @@ struct ArkhamDBWriteBackAppGateTests {
         }
         model.sessionState = .signedIn(profile: .hosted, compatibility: .legacy, user: .sample)
         #expect(!model.supportsArkhamDBWriteBack(on: .hosted))
+    }
+}
+
+@Suite("ArkhamDB write-back saved-deck reloads")
+@MainActor
+struct ArkhamDBWriteBackReloadTests {
+    private let deckA = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000A1")!)
+    private let deckB = DeckID(UUID(uuidString: "00000000-0000-0000-0000-0000000000B2")!)
+
+    private func loaded(
+        _ rows: [ArkhamDBWriteBackStatus],
+        then responses: [(Int, Data)],
+        savedDecksChanged: @escaping @MainActor () async -> Void
+    ) async throws -> (ArkhamDBViewModel, ArkhamDBScriptedTransport) {
+        let transport = try ArkhamDBScriptedTransport(
+            [(200, writeBackStatusData(rows))] + responses
+        )
+        let model = ArkhamDBViewModel(
+            profile: .hosted, service: ArkhamDBService(transport: transport),
+            authentication: nil, tokenProvider: { arkhamDBTestContext },
+            supportsWriteBack: true, savedDecksChanged: savedDecksChanged
+        )
+        await model.refreshStatus()
+        return (model, transport)
+    }
+
+    @Test(
+        "Saved decks reload once, when a later status shows the resolution completed",
+        arguments: [ArkhamDBWriteBackResolution.keepRemote, .saveAsNew]
+    )
+    func reloadOnCompletion(resolution: ArkhamDBWriteBackResolution) async throws {
+        var reloads = 0
+        let pending = writeBackRow(deckA, state: .pending)
+        let (model, transport) = try await loaded(
+            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged)],
+            then: [
+                (200, ContractJSON.encode([pending])),
+                (200, writeBackStatusData([pending])),
+                (200, writeBackStatusData([writeBackRow(deckA, state: .succeeded)])),
+                (200, writeBackStatusData([writeBackRow(deckA, state: .succeeded)])),
+            ],
+            savedDecksChanged: { reloads += 1 }
+        )
+        model.openResolution(deckA)
+        await model.chooseResolution(resolution, for: deckA)
+        await model.confirmPendingResolution()
+        #expect(await transport.requests.count == 2)
+        #expect(reloads == 0)
+        await model.refreshStatus()
+        #expect(reloads == 0)
+        await model.refreshStatus()
+        #expect(reloads == 1)
+        #expect(model.awaitingResolutionDeckIDs.isEmpty)
+        await model.refreshStatus()
+        #expect(reloads == 1)
+    }
+
+    @Test("A new or changed resultingLocalDeckId reloads saved decks once")
+    func reloadOnResultingDeck() async throws {
+        var reloads = 0
+        let (model, _) = try await loaded(
+            [writeBackRow(deckA, state: .pending), writeBackRow(deckB)],
+            then: [
+                (200, writeBackStatusData([
+                    writeBackRow(deckA, state: .pending, resulting: deckB), writeBackRow(deckB),
+                ])),
+                (200, writeBackStatusData([
+                    writeBackRow(deckA, state: .pending, resulting: deckB), writeBackRow(deckB),
+                ])),
+            ],
+            savedDecksChanged: { reloads += 1 }
+        )
+        #expect(reloads == 0)
+        await model.refreshStatus()
+        #expect(reloads == 1)
+        await model.refreshStatus()
+        #expect(reloads == 1)
     }
 }

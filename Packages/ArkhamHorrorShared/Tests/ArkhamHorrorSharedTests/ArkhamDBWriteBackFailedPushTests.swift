@@ -103,4 +103,42 @@ struct ArkhamDBWriteBackFailedPushTests {
         await model.confirmPendingResolution()
         #expect(await transport.requests.count == 1)
     }
+
+    @Test("A confirmation dismissed before its Task runs is still sent exactly once")
+    func capturedConfirmationSurvivesDismissal() async throws {
+        let pending = try ContractJSON.encode([writeBackRow(deckA, state: .pending)])
+        let (model, transport) = try await loaded(
+            [writeBackRow(deckA, state: .conflict, reason: .remoteChanged)],
+            then: [(200, pending)]
+        )
+        model.openResolution(deckA)
+        await model.chooseResolution(.overwrite, for: deckA)
+        let captured = try #require(model.pendingConfirmation)
+        model.cancelPendingResolution()
+        await model.confirmPendingResolution(captured)
+        await model.confirmPendingResolution(captured)
+        let requests = await transport.requests
+        #expect(requests.count == 2)
+        #expect(try writeBackBody(#require(requests.last)) == .object([
+            "resolution": .string("overwrite"), "confirmed": .bool(true),
+        ]))
+    }
+
+    @Test("A captured confirmation for another deck or a refused resolution sends nothing")
+    func capturedConfirmationRevalidated() async throws {
+        let (model, transport) = try await loaded([
+            writeBackRow(deckA, state: .conflict, reason: .remoteChanged),
+            writeBackRow(deckB, state: .conflict, reason: .campaignChanged),
+        ])
+        model.openResolution(deckA)
+        await model.chooseResolution(.overwrite, for: deckA)
+        let other = try #require(model.pendingConfirmation)
+        model.openResolution(deckB)
+        await model.confirmPendingResolution(other)
+        // deckB's status does not allow overwrite.
+        await model.confirmPendingResolution(
+            ArkhamDBPendingResolution(deckID: deckB, resolution: .overwrite)
+        )
+        #expect(await transport.requests.count == 1)
+    }
 }

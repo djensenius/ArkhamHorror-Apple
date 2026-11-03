@@ -143,7 +143,7 @@ struct ArkhamDBWriteBackConflictSheet: View {
                 presenting: model.pendingConfirmation
             ) { pending in
                 Button(arkhamDBLocalized(pending.resolution.titleKey), role: .destructive) {
-                    Task { await model.confirmPendingResolution() }
+                    Task { await model.confirmPendingResolution(pending) }
                 }
                 .accessibilityIdentifier("arkhamdb.writeBack.confirm")
                 Button(arkhamDBLocalized("cancel"), role: .cancel) {

@@ -29,6 +29,9 @@ final class ArkhamDBViewModel {
     var resolvingDeckID: DeckID?
     /// An overwrite or save-as-new awaiting explicit confirmation; nothing is sent yet.
     var pendingConfirmation: ArkhamDBPendingResolution?
+    /// Decks with a submitted keep-remote or save-as-new whose asynchronous completion
+    /// (which re-syncs or clones a saved deck) has not yet been observed in status.
+    var awaitingResolutionDeckIDs: Set<DeckID> = []
 
     init(
         profile: ServerProfile,
@@ -98,6 +101,7 @@ final class ArkhamDBViewModel {
             try self.validate(context)
             self.status = nil
             self.writeBackStatuses = [:]
+            self.awaitingResolutionDeckIDs = []
             self.skippedWriteBackCount = 0
             self.decks = []
             self.skippedCount = 0
@@ -131,7 +135,7 @@ final class ArkhamDBViewModel {
         try validate(context)
         self.status = status
         needsRelinking = false
-        applyWriteBack(status.linked ? status.deckLinks : [])
+        await applyWriteBack(status.linked ? status.deckLinks : [])
         skippedWriteBackCount = status.linked ? status.skippedDeckLinkCount : 0
         if !status.linked {
             decks = []
