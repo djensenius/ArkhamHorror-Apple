@@ -40,6 +40,9 @@ final class ArkhamDBViewModel {
     var writeBackPollEpisode = 0
     /// A background status poll request is in flight (it never sets `isBusy`).
     @ObservationIgnored var isPollingStatus = false
+    /// The context of the last write-back request sent; polling starts from it so a
+    /// session or account change before the first tick stops polling.
+    @ObservationIgnored var writeBackPollContext: DeckRequestContext?
     @ObservationIgnored var statusPollWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(

@@ -29,7 +29,7 @@ extension ArkhamDBViewModel {
     /// not use an attempt.
     func pollWriteBackStatus() async {
         var attempt = 0
-        var lastContext: DeckRequestContext?
+        var lastContext = writeBackPollContext
         while attempt < Self.writeBackPollDelays.count, isAwaitingWriteBackCompletion {
             do {
                 try await clock.sleep(for: Self.writeBackPollDelays[attempt])

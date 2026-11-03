@@ -182,6 +182,7 @@ extension ArkhamDBViewModel {
     ) async -> WriteBackOutcome {
         var outcome = WriteBackOutcome.skipped
         await perform { context in
+            self.writeBackPollContext = context
             do {
                 let rows = try await operation(context)
                 try self.validate(context)

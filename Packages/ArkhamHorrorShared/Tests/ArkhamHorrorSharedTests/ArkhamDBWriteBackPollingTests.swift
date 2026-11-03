@@ -280,6 +280,19 @@ struct ArkhamDBWriteBackPollingTests {
         #expect(await clock.requestedDurations == seconds(30))
     }
 
+    /// The new session hands out a valid context, so only the resolution's own context
+    /// shows the change.
+    @Test("A new app session before the first tick stops polling without a request")
+    func newSessionBeforeFirstTickStops() async throws {
+        let (model, transport) = try await tracked(then: [(200, pending)])
+        let poll = Task { await model.pollWriteBackStatus() }
+        await clock.waitUntilSleepPending(1)
+        probe.generation += 1
+        await finish(poll)
+        #expect(await transport.requests.count == 2)
+        #expect(await clock.requestedDurations == seconds(30))
+    }
+
     @Test(
         "Losing write-back stops polling",
         arguments: [
