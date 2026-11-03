@@ -63,6 +63,7 @@ extension PublicGameSnapshot: Codable {
         case phaseHistory
         case turnHistory
         case enemyAttackTargets
+        case outcome
     }
 
     // swiftlint:disable:next function_body_length
@@ -197,15 +198,14 @@ extension PublicGameSnapshot: Codable {
         enemyAttackTargets = try container.decode(
             [EnemyAttackTarget].self, forKey: .enemyAttackTargets
         )
+        outcome = try decodeOptionalNullable(GameOutcome.self, from: container, forKey: .outcome)
     }
 
     private static func decodeOptionalOffBoardInvestigators(
         from container: KeyedDecodingContainer<CodingKeys>,
         forKey key: CodingKeys
     ) throws -> [InvestigatorID: Investigator]? {
-        guard container.contains(key) else {
-            return nil
-        }
+        guard container.contains(key) else { return nil }
         if try container.decodeNil(forKey: key) {
             return nil
         }
@@ -299,6 +299,7 @@ extension PublicGameSnapshot: Codable {
         try container.encode(phaseHistory, forKey: .phaseHistory)
         try container.encode(turnHistory, forKey: .turnHistory)
         try container.encode(enemyAttackTargets, forKey: .enemyAttackTargets)
+        try container.encodeOptionalNullable(outcome, forKey: .outcome)
     }
 
     private struct DecodedQuestionPresentations {

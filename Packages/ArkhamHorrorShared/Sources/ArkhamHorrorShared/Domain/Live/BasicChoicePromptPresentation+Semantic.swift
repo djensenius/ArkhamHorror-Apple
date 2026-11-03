@@ -205,6 +205,11 @@ extension BasicChoicePromptPresentation {
             return "Choose a reaction"
         case .chooseOne, .chooseOneWizard, .dropDown, .pickSupplies:
             return "Choose an action"
+        case .chooseFromCollection:
+            return semanticLocalized(
+                "semantic.question.title.chooseCard",
+                value: "Choose a card"
+            )
         case .chooseAmounts, .chooseDeck, .chooseExchangeAmounts, .chooseJoinDeck,
              .choosePaymentAmounts, .chooseSome, .chooseSome1, .chooseUpgradeDeck,
              .continueCampaign, .pickCampaignSettings, .pickCampaignSpecific,
@@ -227,7 +232,12 @@ extension BasicChoicePromptPresentation {
         if let cost = presentation.payCost {
             parts.append("Cost: \(semanticCostSummary(cost, in: projection))")
         }
-        if let cardCode = presentation.cardCode {
+        if let labelCards = presentation.labelCards {
+            let cardNames = labelCards.compactMap { semanticCardName($0, in: projection) }
+            if !cardNames.isEmpty {
+                parts.append(cardNames.joined(separator: ", "))
+            }
+        } else if let cardCode = presentation.cardCode {
             if let cardName = semanticCardName(cardCode, in: projection) {
                 parts.append(cardName)
             }

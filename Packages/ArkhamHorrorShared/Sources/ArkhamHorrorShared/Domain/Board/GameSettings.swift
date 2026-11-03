@@ -22,9 +22,40 @@ struct GameSettings: Sendable {
     let strictAsIfAt: Bool
     let ultimatumsAndBoons: [String]
     let ultimatumsAndBoonsEnabled: Bool
+    /// Schema 0.1.57 `settingsCustomRandomWeaknessPools`, keyed by player. `nil` when an
+    /// older server omits the key, so re-encoding never invents it.
+    var customRandomWeaknessPools: UUIDKeyedMap<PlayerIDTag, CustomRandomWeaknessPool>?
 }
 
 extension GameSettings: Equatable, Hashable {}
+
+/// One player's custom random basic weakness pool, encoded on the wire as a 2-element
+/// `[enabled, cardCodes]` array.
+struct CustomRandomWeaknessPool: Sendable, Equatable, Hashable {
+    let enabled: Bool
+    let cardCodes: [String]
+}
+
+extension CustomRandomWeaknessPool: Codable {
+    init(from decoder: any Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        enabled = try container.decode(Bool.self)
+        cardCodes = try container.decode([String].self)
+        guard container.isAtEnd else {
+            let context = DecodingError.Context(
+                codingPath: container.codingPath,
+                debugDescription: "Expected exactly 2 elements for a custom weakness pool"
+            )
+            throw DecodingError.dataCorrupted(context)
+        }
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        try container.encode(enabled)
+        try container.encode(cardCodes)
+    }
+}
 
 extension GameSettings: Codable {
     private enum CodingKeys: String, CodingKey {
@@ -36,6 +67,7 @@ extension GameSettings: Codable {
         case strictAsIfAt = "settingsStrictAsIfAt"
         case ultimatumsAndBoons = "settingsUltimatumsAndBoons"
         case ultimatumsAndBoonsEnabled = "settingsUltimatumsAndBoonsEnabled"
+        case customRandomWeaknessPools = "settingsCustomRandomWeaknessPools"
     }
 
     init(from decoder: any Decoder) throws {
@@ -57,6 +89,10 @@ extension GameSettings: Codable {
         ultimatumsAndBoonsEnabled = try container.decode(
             Bool.self, forKey: .ultimatumsAndBoonsEnabled
         )
+        customRandomWeaknessPools = try container.decodePresentIfContained(
+            UUIDKeyedMap<PlayerIDTag, CustomRandomWeaknessPool>.self,
+            forKey: .customRandomWeaknessPools
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -71,5 +107,8 @@ extension GameSettings: Codable {
         try container.encode(strictAsIfAt, forKey: .strictAsIfAt)
         try container.encode(ultimatumsAndBoons, forKey: .ultimatumsAndBoons)
         try container.encode(ultimatumsAndBoonsEnabled, forKey: .ultimatumsAndBoonsEnabled)
+        try container.encodeIfPresent(
+            customRandomWeaknessPools, forKey: .customRandomWeaknessPools
+        )
     }
 }

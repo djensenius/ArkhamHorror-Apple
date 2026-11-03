@@ -204,6 +204,18 @@ struct GameLogRef: Sendable, Equatable, Hashable, Codable {
         case entityID = "entityId"
         case faceDown
     }
+
+    /// Writes `cardCode`/`cardId`/`entityId` as explicit nulls: the schema's `logRef`
+    /// requires those keys, and the synthesized encoder would omit nil values.
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(name, forKey: .name)
+        try container.encode(cardCode, forKey: .cardCode)
+        try container.encode(cardID, forKey: .cardID)
+        try container.encode(entityID, forKey: .entityID)
+        try container.encode(faceDown, forKey: .faceDown)
+    }
 }
 
 enum GameLogRefKindTag: Sendable {}

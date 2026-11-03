@@ -20,14 +20,49 @@ extension JSONValue: Equatable, Hashable {}
 extension JSONValue {
     static func hasValidQuestionLabelWrapperFields(_ object: [String: JSONValue]) -> Bool {
         guard case .string = object["label"],
-              object["card"] == .null || object["card"]?.isStringLiteral == true
+              questionLabelCardCodes(object) != nil
         else { return false }
         return true
     }
 
-    private var isStringLiteral: Bool {
-        guard case .string = self else { return false }
-        return true
+    /// The card codes a `QuestionLabel` wrapper is about, accepting both wire shapes:
+    /// servers before schema 0.1.57 send a single nullable `card` string, while 0.1.57 and
+    /// later send a `labelCards` string array (`Arkham/Question.hs` `QuestionLabel`).
+    /// Returns `nil` when neither or both fields are present, or when the present field
+    /// has the wrong type, so a mixed or malformed wrapper fails closed.
+    static func questionLabelCardCodes(_ object: [String: JSONValue]) -> [String]? {
+        switch (object["card"], object["labelCards"]) {
+        case (.null?, nil):
+            return []
+        case let (.string(card)?, nil):
+            return [card]
+        case let (nil, .array(values)?):
+            var cards: [String] = []
+            for value in values {
+                guard case let .string(card) = value else { return nil }
+                cards.append(card)
+            }
+            return cards
+        default:
+            return nil
+        }
+    }
+
+    /// Whether `object` has exactly the `QuestionLabel` wrapper keys of one wire shape:
+    /// `{tag, label, card, question}` (before schema 0.1.57) or
+    /// `{tag, label, labelCards, question}` (0.1.57 and later).
+    static func hasExactQuestionLabelWrapperKeys(_ object: [String: JSONValue]) -> Bool {
+        let keys = Set(object.keys)
+        return keys == ["tag", "label", "card", "question"]
+            || keys == ["tag", "label", "labelCards", "question"]
+    }
+
+    /// Whether `object` is an exact-key `QuestionLabel` wrapper that names no card in
+    /// either wire shape (`card: null` or `labelCards: []`).
+    static func isCardlessExactQuestionLabelWrapper(_ object: [String: JSONValue]) -> Bool {
+        hasExactQuestionLabelWrapperKeys(object)
+            && object["tag"] == .string("QuestionLabel")
+            && questionLabelCardCodes(object) == []
     }
 
     /// A shallow, `O(1)` description of this node's kind (and immediate size for the two
