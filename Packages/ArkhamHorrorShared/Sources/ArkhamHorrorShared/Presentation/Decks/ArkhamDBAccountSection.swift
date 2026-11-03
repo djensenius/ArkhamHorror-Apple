@@ -20,6 +20,10 @@ struct ArkhamDBAccountSection: View {
                 ArkhamFailureText(message: message)
                     .accessibilityIdentifier("arkhamdb.message")
             }
+            if model.supportsWriteBack, model.skippedWriteBackCount > 0 {
+                Text(arkhamDBSkippedWriteBackText(model.skippedWriteBackCount))
+                    .accessibilityIdentifier("arkhamdb.writeBack.skipped")
+            }
             #if os(tvOS)
                 if model.status?.linked != true {
                     Text(arkhamDBLocalized("anotherDevice"))

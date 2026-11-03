@@ -19,10 +19,14 @@ func arkhamDBErrorMessage(_ error: ArkhamDBError?) -> String {
     if error?.code == .disabled {
         return arkhamDBLocalized("disabled")
     }
-    if error?.code == .remoteUnavailable {
-        return arkhamDBLocalized("remoteUnavailable")
+    switch error?.code {
+    case .remoteUnavailable: return arkhamDBLocalized("remoteUnavailable")
+    case .writeBackDisabled: return arkhamDBLocalized("writeBack.error.disabled")
+    case .conflict: return arkhamDBLocalized("writeBack.error.conflict")
+    case .pushUncertain: return arkhamDBLocalized("writeBack.error.pushUncertain")
+    case .validationFailed: return arkhamDBLocalized("writeBack.error.validationFailed")
+    default: return arkhamDBLocalized("failed")
     }
-    return arkhamDBLocalized("failed")
 }
 
 func arkhamDBSkippedText(_ count: Int) -> String {
