@@ -60,8 +60,6 @@ private final class Probe {
     var reloads = 0
 }
 
-/// Gated clock and transport: a regression that keeps polling would hang, so the suite
-/// has a time limit.
 @Suite("ArkhamDB write-back status polling", .timeLimit(.minutes(1)))
 @MainActor
 struct ArkhamDBWriteBackPollingTests {
@@ -111,6 +109,15 @@ struct ArkhamDBWriteBackPollingTests {
         await clock.resumeOldestSleep()
     }
 
+    /// Ungates the clock and releases any pending sleep, then awaits the loop. A loop
+    /// that wrongly keeps polling then runs out its attempts (failing the request and
+    /// duration assertions) instead of hanging.
+    private func finish(_ poll: Task<Void, Never>) async {
+        await clock.setGated(false)
+        await clock.resumeOldestSleep()
+        await poll.value
+    }
+
     private func seconds(_ values: Int...) -> [Duration] {
         values.map { .seconds($0) }
     }
@@ -122,7 +129,7 @@ struct ArkhamDBWriteBackPollingTests {
         for _ in 0 ..< 6 {
             await tick()
         }
-        await poll.value
+        await finish(poll)
         #expect(await clock.requestedDurations == seconds(30, 60, 120, 240, 300, 300))
         let requests = await transport.requests
         #expect(requests.count == 8)
@@ -143,7 +150,7 @@ struct ArkhamDBWriteBackPollingTests {
         let poll = Task { await model.pollWriteBackStatus() }
         await tick()
         await tick()
-        await poll.value
+        await finish(poll)
         #expect(await clock.requestedDurations == seconds(30, 60))
         #expect(await transport.requests.count == 4)
         #expect(model.awaitingResolutionDeckIDs.isEmpty)
@@ -159,7 +166,7 @@ struct ArkhamDBWriteBackPollingTests {
         let poll = Task { await model.pollWriteBackStatus() }
         await tick()
         await tick()
-        await poll.value
+        await finish(poll)
         #expect(await clock.requestedDurations == seconds(30, 60))
         #expect(await transport.requests.count == 4)
         #expect(probe.reloads == 1)
@@ -188,7 +195,8 @@ struct ArkhamDBWriteBackPollingTests {
         #expect(!model.isBusy)
         #expect(model.isPollingStatus)
         let user = Task { await model.refreshStatus() }
-        while model.statusPollWaiters.isEmpty {
+        // Until the user request waits for the poll, or (if it does not wait) is sent.
+        while model.statusPollWaiters.isEmpty, await transport.requests.count < 4 {
             await Task.yield()
         }
         #expect(model.isBusy)
@@ -200,8 +208,7 @@ struct ArkhamDBWriteBackPollingTests {
         #expect(!model.isBusy)
         await clock.waitUntilSleepPending(1)
         poll.cancel()
-        await clock.resumeOldestSleep()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 4)
     }
 
@@ -224,8 +231,7 @@ struct ArkhamDBWriteBackPollingTests {
         #expect(await clock.requestedDurations == seconds(30, 30, 60))
         #expect(await transport.maxInFlight == 1)
         poll.cancel()
-        await clock.resumeOldestSleep()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 4)
     }
 
@@ -235,8 +241,7 @@ struct ArkhamDBWriteBackPollingTests {
         let poll = Task { await model.pollWriteBackStatus() }
         await clock.waitUntilSleepPending(1)
         await model.unlink()
-        await clock.resumeOldestSleep()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 4)
         #expect(await clock.requestedDurations == seconds(30))
     }
@@ -248,8 +253,7 @@ struct ArkhamDBWriteBackPollingTests {
         await tick()
         await clock.waitUntilSleepPending(1)
         probe.isCurrent = false
-        await clock.resumeOldestSleep()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30, 60))
     }
@@ -267,7 +271,7 @@ struct ArkhamDBWriteBackPollingTests {
         let (model, transport) = try await tracked(then: [(status, Data(body.utf8))])
         let poll = Task { await model.pollWriteBackStatus() }
         await tick()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30))
     }
@@ -279,7 +283,7 @@ struct ArkhamDBWriteBackPollingTests {
         ])
         let poll = Task { await model.pollWriteBackStatus() }
         await tick()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30))
     }
@@ -293,16 +297,17 @@ struct ArkhamDBWriteBackPollingTests {
         await transport.waitUntilHeld()
         poll.cancel()
         await transport.release()
-        await poll.value
+        await finish(poll)
         #expect(await transport.requests.count == 3)
         #expect(await clock.requestedDurations == seconds(30))
         #expect(!model.isPollingStatus)
 
+        await clock.setGated(true)
         let second = Task { await model.pollWriteBackStatus() }
         await clock.waitUntilSleepPending(1)
         second.cancel()
-        await clock.resumeOldestSleep()
-        await second.value
+        await finish(second)
         #expect(await transport.requests.count == 3)
+        #expect(await clock.requestedDurations == seconds(30, 30))
     }
 }
