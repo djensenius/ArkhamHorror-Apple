@@ -6,7 +6,7 @@ import Testing
 /// investigator `playProhibitions`/`commitProhibitions`/`cannotDiscoverClues`/
 /// `cannotSpendClues`, the chaos bag's `debugRevealedChaosTokens`, the scenario's
 /// `sealedChaosTokens`, and the game and game-list `outcome`. These tests decode the
-/// captured sync-candidate bytes in `Fixtures/Schema157Drift` and prove re-encoding keeps
+/// governed 0.1.57 bytes in `Fixtures/Contract` and prove re-encoding keeps
 /// every key, while pre-0.1.57 bytes (which omit them) still decode and re-encode exactly.
 @Suite("Schema 0.1.57 board fields")
 struct Schema157BoardFieldsTests {
