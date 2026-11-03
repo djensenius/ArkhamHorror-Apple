@@ -10,6 +10,9 @@ private let replayCatalogRevision = "1." + String(repeating: "b", count: 32)
 private let replayGameRevision = String(repeating: "c", count: 40)
 private let replayCheckpointArtifactSHA256 = String(repeating: "d", count: 64)
 private let replayCheckpointEnvelopeSHA256 = String(repeating: "e", count: 64)
+/// SHA-256 of the vendored `Fixtures/Contract/question-enemy-attack-damage-assignment.json`
+/// serialized as sorted-key compact JSON. It is derived from the vendored fixture, not pinned
+/// by the fork, and is regenerated on each repin (see f7f8b6b).
 private let replayBackendPromptSHA256 =
     "be851edc534b93f40a3eae283ab8c1b0ba88f838f6fe9eb432a2cd3fc25e414d"
 
@@ -504,6 +507,7 @@ struct AssignmentReplayCasesAndEvidenceTests {
         ))
     }
 
+    // The "golden vector" is replayBackendPromptSHA256, derived from the vendored fixture.
     @Test("Canonical prompt digest matches the backend golden vector")
     func promptDigestMatchesBackendVector() throws {
         #expect(
