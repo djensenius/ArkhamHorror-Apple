@@ -66,12 +66,12 @@ extension DecksViewModel {
         do {
             let context = try await tokenProvider()
             requestContext = context
-            let syncedDeck = try await deckService.syncDeck(
-                deck.id,
-                on: profile,
-                token: context.token,
-                timeout: 10
-            )
+            let check = sendCheck(context)
+            let syncedDeck = try await ArkhamDBService.$sendCheck.withValue(check) {
+                try await deckService.syncDeck(
+                    deck.id, on: profile, token: context.token, timeout: 10
+                )
+            }
             guard contextValidator(context) else { throw GameLifecycleTokenAccessError.stale }
             await deckSyncTracker?.recordSync(syncedDeck, on: profile, at: Date())
             guard contextValidator(context) else {
@@ -166,6 +166,15 @@ extension DecksViewModel {
         return true
     }
 
+    /// Binds `ArkhamDBService.sendCheck` to this request's session.
+    private func sendCheck(_ context: DeckRequestContext) -> @Sendable () async throws -> Void {
+        { @MainActor in
+            guard self.contextValidator(context) else {
+                throw GameLifecycleTokenAccessError.stale
+            }
+        }
+    }
+
     private func uniqueSyncableDecks(from loadedDecks: [Deck]) -> [Deck] {
         var seenDeckIDs: Set<DeckID> = []
         return loadedDecks.filter { deck in
@@ -213,8 +222,11 @@ extension DecksViewModel {
         deckSyncStates[deck.id] = .syncing
         let service = deckService
         let profile = profile
+        let check = sendCheck(context)
         group.addTask {
-            await Self.syncOutcome(for: deck, service: service, profile: profile, context: context)
+            await Self.syncOutcome(
+                for: deck, service: service, profile: profile, context: context, sendCheck: check
+            )
         }
     }
 
@@ -328,15 +340,20 @@ private extension DecksViewModel {
         for deck: Deck,
         service: any DeckServicing,
         profile: ServerProfile,
-        context: DeckRequestContext
+        context: DeckRequestContext,
+        sendCheck: @escaping @Sendable () async throws -> Void
     ) async -> SyncOutcome {
         do {
-            let syncedDeck = try await service.syncDeck(
-                deck.id,
-                on: profile,
-                token: context.token,
-                timeout: 10
-            )
+            // Syncs queue at the ArkhamDB request gate; one whose session went stale
+            // meanwhile is never sent.
+            let syncedDeck = try await ArkhamDBService.$sendCheck.withValue(sendCheck) {
+                try await service.syncDeck(
+                    deck.id,
+                    on: profile,
+                    token: context.token,
+                    timeout: 10
+                )
+            }
             return .succeeded(requestedID: deck.id, syncedDeck)
         } catch is CancellationError {
             return .cancelled(deck.id)

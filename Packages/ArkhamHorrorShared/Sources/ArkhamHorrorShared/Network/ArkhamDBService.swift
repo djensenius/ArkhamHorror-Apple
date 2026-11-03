@@ -6,17 +6,37 @@ struct ArkhamDBDeckList: Sendable, Equatable {
 }
 
 /// Authenticated read-side ArkhamDB endpoints. OAuth credentials never leave the server.
+///
+/// Every request is sent through one `ArkhamDBRequestGate`, shared by all copies of a
+/// service, so at most one is in flight at a time.
 struct ArkhamDBService: Sendable {
     private let transport: any HTTPTransport
     private let pin: ContractPin
+    let gate: ArkhamDBRequestGate
 
-    init(transport: any HTTPTransport = URLSessionTransport(), pin: ContractPin = .current) {
+    /// Runs after a request is admitted by the gate and before it is sent. A request can
+    /// wait behind others, so callers bind their session check here; a throw sends
+    /// nothing and is rethrown unchanged.
+    @TaskLocal static var sendCheck: (@Sendable () async throws -> Void)?
+
+    init(
+        transport: any HTTPTransport = URLSessionTransport(),
+        pin: ContractPin = .current,
+        gate: ArkhamDBRequestGate = ArkhamDBRequestGate()
+    ) {
         self.transport = transport
         self.pin = pin
+        self.gate = gate
     }
 
-    func status(on profile: ServerProfile, token: String) async throws -> ArkhamDBLinkStatus {
-        try await decode(request("status", on: profile, token: token))
+    /// A `.background` status request never waits: it throws `ArkhamDBRequestGate.Busy`
+    /// without sending while another request is in flight or waiting.
+    func status(
+        on profile: ServerProfile,
+        token: String,
+        priority: ArkhamDBRequestGate.Priority = .user
+    ) async throws -> ArkhamDBLinkStatus {
+        try await decode(request("status", on: profile, token: token), priority: priority)
     }
 
     func startLink(
@@ -138,9 +158,11 @@ struct ArkhamDBService: Sendable {
     }
 
     private func decode<Response: Decodable>(
-        _ request: URLRequest, context: ErrorContext = .account
+        _ request: URLRequest,
+        context: ErrorContext = .account,
+        priority: ArkhamDBRequestGate.Priority = .user
     ) async throws -> Response {
-        let data = try await perform(request, context: context)
+        let data = try await perform(request, context: context, priority: priority)
         guard let decoded = try? ContractJSON.decode(Response.self, from: data) else {
             throw DeckServiceError.malformedPayload
         }
@@ -148,12 +170,15 @@ struct ArkhamDBService: Sendable {
     }
 
     private func perform(
-        _ request: URLRequest, context: ErrorContext = .account
+        _ request: URLRequest,
+        context: ErrorContext = .account,
+        priority: ArkhamDBRequestGate.Priority = .user
     ) async throws -> Data {
+        let sent = try await send(request, priority: priority)
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await transport.data(for: request)
+            (data, response) = try sent.get()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -170,6 +195,30 @@ struct ArkhamDBService: Sendable {
         default:
             throw responseError(data, statusCode: http.statusCode, context: context)
         }
+    }
+
+    /// Holds the gate only around the transport call. Admission failures (`Busy`,
+    /// cancellation, a failed `sendCheck`) throw before sending; transport outcomes are
+    /// returned so the permit is released on every path before they are classified.
+    private func send(
+        _ request: URLRequest, priority: ArkhamDBRequestGate.Priority
+    ) async throws -> Result<(Data, URLResponse), any Error> {
+        try await gate.acquire(priority)
+        do {
+            try Task.checkCancellation()
+            try await Self.sendCheck?()
+        } catch {
+            await gate.release()
+            throw error
+        }
+        let sent: Result<(Data, URLResponse), any Error>
+        do {
+            sent = try await .success(transport.data(for: request))
+        } catch {
+            sent = .failure(error)
+        }
+        await gate.release()
+        return sent
     }
 
     private func responseError(
