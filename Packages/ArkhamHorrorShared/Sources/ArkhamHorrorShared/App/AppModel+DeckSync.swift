@@ -217,13 +217,22 @@ extension AppModel {
     ) async throws -> Deck {
         let service = deckService(on: profile)
         let timeout = deckChoiceSyncTimeout
+        // The timeout includes any wait at the ArkhamDB request gate; a sync still
+        // queued when it fires is cancelled without sending. During a refresh-and-sync
+        // (up to three 10 s syncs ahead of it) this usually falls back to the saved deck
+        // with the stale-fallback note.
+        let check: @Sendable () async throws -> Void = { @MainActor in
+            try self.ensureCurrentDeckChoiceContext(context, on: profile)
+        }
         return try await withDeckChoiceSyncTimeout(seconds: timeout) {
-            try await service.syncDeck(
-                deck.id,
-                on: profile,
-                token: context.token,
-                timeout: timeout
-            )
+            try await ArkhamDBService.$sendCheck.withValue(check) {
+                try await service.syncDeck(
+                    deck.id,
+                    on: profile,
+                    token: context.token,
+                    timeout: timeout
+                )
+            }
         }
     }
 
