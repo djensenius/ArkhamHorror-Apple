@@ -115,6 +115,7 @@ struct ArkhamDBWriteBackRecoveryTests {
     func ordinaryRecoveryFailure() async throws {
         let (model, _) = try await retried(refresh: [(500, Data())])
         #expect(model.message == arkhamDBLocalized("writeBack.error.disabled"))
+        #expect(!model.needsRelinking)
         #expect(session.expiries == 0)
         #expect(model.awaitingResolutionDeckIDs == [deckA])
     }
@@ -128,9 +129,81 @@ struct ArkhamDBWriteBackRecoveryTests {
             #expect(model.message == "ArkhamDB can't apply that choice to this deck now, "
                 + "and the latest status couldn't be loaded. Refresh status and try again.")
             #expect(model.message != arkhamDBLocalized("writeBack.error.conflict"))
+            #expect(!model.needsRelinking)
             #expect(model.awaitingResolutionDeckIDs == [deckA])
         }
         #expect(session.expiries == 0)
+    }
+
+    /// The recovery refresh's 409 body for `code` (`tokenExpired`, `notLinked`, `disabled`).
+    private func refreshRejection(_ code: String) throws -> Data {
+        code == "tokenExpired" ? try arkhamDBFixtureData("tokenExpiredError")
+            : Data(#"{"code":"\#(code)","error":"\#(code)"}"#.utf8)
+    }
+
+    /// `tracked` is the expected completion tracker (`[deckA]` unless given).
+    private func expectRelinkRequired(_ model: ArkhamDBViewModel, tracked: Set<DeckID>? = nil) {
+        #expect(model.needsRelinking)
+        #expect(model.message == arkhamDBLocalized("relinkRequired"))
+        #expect(model.message == "Relink your ArkhamDB account in Decks to sync private decks. "
+            + "Your app session is still signed in.")
+        #expect(session.expiries == 0)
+        #expect(model.awaitingResolutionDeckIDs == (tracked ?? [deckA]))
+    }
+
+    @Test(
+        "A recovery refresh that needs relinking shows relink instead of the write-back error",
+        arguments: ["tokenExpired", "notLinked"], [false, true]
+    )
+    func relinkDuringRecovery(refresh: String, rejectedAsConflict: Bool) async throws {
+        let (model, _) = try await retried(
+            rejection: rejectedAsConflict ? conflict : nil,
+            refresh: [(409, refreshRejection(refresh))]
+        )
+        expectRelinkRequired(model)
+        #expect(model.writeBackStatus(for: deckA)?.state == .failed)
+    }
+
+    @Test(
+        "A non-relink ArkhamDB refresh failure keeps the write-back error",
+        arguments: [false, true]
+    )
+    func nonRelinkRefreshFailure(rejectedAsConflict: Bool) async throws {
+        let (model, _) = try await retried(
+            rejection: rejectedAsConflict ? conflict : nil,
+            refresh: [(409, refreshRejection("disabled"))]
+        )
+        #expect(!model.needsRelinking)
+        let key = rejectedAsConflict ? "conflictRefreshFailed" : "disabled"
+        #expect(model.message == arkhamDBLocalized("writeBack.error.\(key)"))
+        #expect(session.expiries == 0)
+        #expect(model.awaitingResolutionDeckIDs == [deckA])
+    }
+
+    @Test("A write-back toggle whose recovery refresh needs relinking shows relink")
+    func relinkAfterToggle() async throws {
+        let (model, transport) = try await loaded(
+            [writeBackRow(deckA)],
+            then: [(409, disabled), (409, refreshRejection("tokenExpired"))]
+        )
+        await model.setWriteBack(deckA, enabled: false)
+        #expect(await transport.requests.map(\.httpMethod) == ["GET", "PUT", "GET"])
+        expectRelinkRequired(model, tracked: [])
+        #expect(model.writeBackPollEpisode == 0)
+        #expect(model.writeBackStatus(for: deckA) == writeBackRow(deckA))
+    }
+
+    @Test("A resolution whose recovery refresh needs relinking shows relink")
+    func relinkAfterResolution() async throws {
+        let (model, transport) = try await loaded(
+            [writeBackRow(deckA, state: .conflict, reason: .campaignChanged)],
+            then: [(409, disabled), (409, refreshRejection("tokenExpired"))]
+        )
+        model.openResolution(deckA)
+        await model.chooseResolution(.keepRemote, for: deckA)
+        #expect(await transport.requests.map(\.httpMethod) == ["GET", "POST", "GET"])
+        expectRelinkRequired(model)
+        #expect(model.resolvingDeckID == deckA)
     }
 
     @Test("A conflict whose recovery refresh succeeds says status was refreshed")
