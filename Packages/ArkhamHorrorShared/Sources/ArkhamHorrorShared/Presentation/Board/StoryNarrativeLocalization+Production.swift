@@ -3,7 +3,19 @@ import Foundation
 
 struct ProductionTitleResolution {
     let title: String?
+    /// The title's inline nodes, set only when it carries a `[^N]` footnote reference.
+    let titleNodes: [StoryNode]?
     let degradedReason: StoryUnavailableReason?
+
+    init(
+        title: String?,
+        titleNodes: [StoryNode]? = nil,
+        degradedReason: StoryUnavailableReason?
+    ) {
+        self.title = title
+        self.titleNodes = titleNodes
+        self.degradedReason = degradedReason
+    }
 }
 
 struct ProductionEntryResolution {
@@ -60,6 +72,7 @@ extension StoryNarrativeLocalization {
             }
             return .success(ResolvedStory(
                 title: titleResolution.title,
+                titleNodes: titleResolution.titleNodes,
                 body: body,
                 degradedReason: degradedReason
             ))
@@ -90,7 +103,8 @@ extension StoryNarrativeLocalization {
             return .success(ProductionTitleResolution(title: nil, degradedReason: nil))
         }
         guard rawTitle.hasPrefix("$") else {
-            return .success(ProductionTitleResolution(title: rawTitle, degradedReason: nil))
+            // Story titles go through the web's `formatContent` too, so `[^N]` splits.
+            return .success(footnotedTitle([.text(rawTitle)], degradedReason: nil))
         }
         let key = String(rawTitle.dropFirst())
         switch resolveKey(
@@ -116,11 +130,24 @@ extension StoryNarrativeLocalization {
             guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
                 return .failure(.unsupportedEntry)
             }
-            return .success(ProductionTitleResolution(
-                title: rendered.nodes.map(\.plainText).joined(),
-                degradedReason: rendered.degradedReason
+            return .success(footnotedTitle(
+                rendered.nodes, degradedReason: rendered.degradedReason
             ))
         }
+    }
+
+    /// A title whose `[^N]` references split out like story text. `title` stays the plain
+    /// projection; `titleNodes` is set only when a footnote reference was split, with any
+    /// catalog `<p>`/`<hN>` wrapper unwrapped so the inline title renderer accepts it.
+    private static func footnotedTitle(
+        _ nodes: [StoryNode], degradedReason: StoryUnavailableReason?
+    ) -> ProductionTitleResolution {
+        let footnoted = nodes.splittingFootnoteMarkers
+        return ProductionTitleResolution(
+            title: footnoted.map(\.plainText).joined(),
+            titleNodes: footnoted.containsFootnoteMarker ? footnoted.unwrappingBlocks : nil,
+            degradedReason: degradedReason
+        )
     }
 
     static func resolveProductionChoiceLabel(
@@ -161,18 +188,43 @@ extension StoryNarrativeLocalization {
             guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
                 return .failure(.unsupportedEntry)
             }
-            let trimmed = rendered.nodes.map(\.plainText).joined()
+            let label = footnotedChoiceLabel(rendered.nodes)
+            let trimmed = label.nodes.map(\.plainText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
             // Catalog `.icon` nodes for web icons keep their glyph in the choice title
             // instead of flattening to a word; `runeM` uses the glyph key `rune-M`.
             // Normalizing turns unknown icons into text nodes but does not merge them;
             // `trimmedTextEdges` then trims the edges and coalesces adjacent text.
-            let nodes = rendered.nodes.containsSemanticIcon
-                ? rendered.nodes.normalizingWebIconNames.trimmedTextEdges
+            let nodes = label.hasMarker || label.nodes.containsSemanticIcon
+                ? label.nodes.normalizingWebIconNames.trimmedTextEdges
                 : nil
-            return .success(BasicChoiceResolvedLabelText(title: trimmed, inlineNodes: nodes))
+            let spoken = label.nodes.map(\.spokenText).joined()
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            return .success(BasicChoiceResolvedLabelText(
+                title: trimmed, inlineNodes: nodes,
+                accessibilityTitle: label.hasMarker ? spoken : nil
+            ))
         }
+    }
+
+    /// Catalog choice labels go through the web's `formatContent`, so `[^N]` splits like
+    /// story text. A text variable can still leave a raw `{icon}` or escape in the label;
+    /// then the label stays unsplit so the legacy re-parse handles icons and footnotes in
+    /// one pass (`productionVariableFootnoteIsParsed`). A label with catalog icon nodes
+    /// keeps them as `inlineNodes` and is never re-parsed, so it splits regardless and the
+    /// variable's placeholder stays verbatim text.
+    private static func footnotedChoiceLabel(
+        _ nodes: [StoryNode]
+    ) -> (nodes: [StoryNode], hasMarker: Bool) {
+        let footnoted = nodes.splittingFootnoteMarkers
+        guard footnoted.containsFootnoteMarker,
+              nodes.containsSemanticIcon || !StoryIconInlineParser.containsRawPlaceholder(
+                  footnoted.map(\.plainText).joined()
+              )
+        else { return (nodes, false) }
+        // The inline label renderer rejects `<p>`/`<hN>` wrappers, which would drop the marker.
+        return (footnoted.unwrappingBlocks, true)
     }
 
     static func productionChoiceLabelCatalogKey(_ wireLabel: String) -> String? {
@@ -400,11 +452,15 @@ extension StoryNarrativeLocalization {
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         guard text.hasPrefix("$") else {
-            return .success(ProductionEntryResolution(entry: .text(text), degradedReason: nil))
+            return .success(ProductionEntryResolution(
+                entry: footnotedTextEntry(text), degradedReason: nil
+            ))
         }
         let key = String(text.dropFirst())
         if let chrome = chromeVocabulary[key] {
-            return .success(ProductionEntryResolution(entry: .text(chrome), degradedReason: nil))
+            return .success(ProductionEntryResolution(
+                entry: footnotedTextEntry(chrome), degradedReason: nil
+            ))
         }
         return resolveProductionCatalogEntry(
             key,
@@ -426,7 +482,9 @@ extension StoryNarrativeLocalization {
             guard let text = substituteVariables(chrome, variables: variables) else {
                 return .failure(.missingVariable)
             }
-            return .success(ProductionEntryResolution(entry: .text(text), degradedReason: nil))
+            return .success(ProductionEntryResolution(
+                entry: footnotedTextEntry(text), degradedReason: nil
+            ))
         }
         return resolveProductionCatalogEntry(
             key,
@@ -436,6 +494,13 @@ extension StoryNarrativeLocalization {
             makeFallback: { .text($0) },
             makeResolved: { .nodes($0.nodes) }
         )
+    }
+
+    /// Literal story text goes through the web's `formatContent` like catalog text, so a
+    /// `[^N]` reference becomes a footnote marker; text without one stays `.text`.
+    private static func footnotedTextEntry(_ text: String) -> ResolvedStoryEntry {
+        let nodes = StoryNode.splittingFootnoteMarkers(in: text)
+        return nodes.containsFootnoteMarker ? .nodes(nodes) : .text(text)
     }
 
     // swiftlint:disable:next function_parameter_count
@@ -639,6 +704,27 @@ extension StoryNarrativeLocalization {
 }
 
 private extension [StoryNode] {
+    /// Whether any node, at any depth, is a split `[^N]` footnote reference.
+    var containsFootnoteMarker: Bool {
+        contains { node in
+            switch node {
+            case .footnoteMarker:
+                true
+            case let .group(children), let .paragraph(children), let .heading(_, children),
+                 let .emphasis(_, children), let .cardReference(_, children):
+                children.containsFootnoteMarker
+            case let .list(_, items):
+                items.contains { $0.containsFootnoteMarker }
+            case let .table(head, body):
+                (head + body).contains { row in
+                    row.cells.contains { $0.children.containsFootnoteMarker }
+                }
+            case .text, .lineBreak, .rule, .image, .icon, .semanticIcon:
+                false
+            }
+        }
+    }
+
     var containsSemanticIcon: Bool {
         contains { node in
             switch node {
@@ -743,6 +829,27 @@ private extension StoryNode {
 }
 
 private extension [StoryNode] {
+    /// Paragraph and heading wrappers spliced into their parent, at any inline depth, so a
+    /// one-line title or choice label renders inline. Their plain text is unchanged, since
+    /// `plainText` joins sibling blocks without a separator too.
+    var unwrappingBlocks: [StoryNode] {
+        flatMap { node -> [StoryNode] in
+            switch node {
+            case let .paragraph(children), let .heading(_, children):
+                children.unwrappingBlocks
+            case let .group(children):
+                [.group(children.unwrappingBlocks)]
+            case let .emphasis(style, children):
+                [.emphasis(style, children.unwrappingBlocks)]
+            case let .cardReference(code, children):
+                [.cardReference(code: code, children: children.unwrappingBlocks)]
+            case .text, .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker,
+                 .list, .table:
+                [node]
+            }
+        }
+    }
+
     var trimmedTextEdges: [StoryNode] {
         var nodes = self
         while let first = nodes.first, case let .text(text) = first {

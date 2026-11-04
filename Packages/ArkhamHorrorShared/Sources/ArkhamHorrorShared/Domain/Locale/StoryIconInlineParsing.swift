@@ -85,7 +85,8 @@ enum StoryIconInlineParser {
 
     /// Whether `text` still holds an unrendered web placeholder: a braced or bracketed icon,
     /// the `{asterisk}` / `{underscore}` escape, or a `[^N]` footnote reference. Catalog
-    /// choice-label text never contains these; text variable values may.
+    /// choice-label text has none (its `[^N]` is already split into markers); a text
+    /// variable value may, and then the label is left unsplit for this parser.
     static func containsRawPlaceholder(_ text: String) -> Bool {
         // Flat icon atoms hold no emphasis, so any markup atom is an icon or a footnote.
         unescaped(text) != text || footnoted(iconAtoms(text)).contains(where: \.isMarkup)

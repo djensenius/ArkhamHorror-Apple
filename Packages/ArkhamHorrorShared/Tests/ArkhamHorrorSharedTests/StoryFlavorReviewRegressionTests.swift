@@ -121,6 +121,29 @@ extension AppModelLiveGameTests {
         #expect(resolution.body[12] == .text("Future readable text"))
     }
 
+    @Test("Semantic presentation flavor path keeps ReturnToEntry on top-level and nested items")
+    func semanticPresentationFlavorPathKeepsReturnToEntry() async throws {
+        let (model, _) = makeSignedInModel()
+        await model.flowTask?.value
+        func returnTo(_ key: String) -> JSONValue {
+            .object(["tag": .string("ModifyEntry"), "modifiers": .array([.string("ReturnToEntry")]), "entry": .object(["tag": .string("I18nEntry"), "key": .string(key), "variables": .object([:])])])
+        }
+        let body: [JSONValue] = [
+            returnTo("story.returnTo.top"),
+            .object(["tag": .string("ListEntry"), "list": .array([.object(["entry": .object(["tag": .string("I18nEntry"), "key": .string("story.listItem"), "variables": .object([:])]), "nested": .array([.object(["entry": returnTo("story.returnTo.nested"), "nested": .array([])])])])])]),
+        ]
+        let flavorText = QuestionPresentation.FlavorText(title: "$setup", body: body)
+        let resolution = try #require(model.storyResolution(for: flavorText)?.story)
+        #expect(resolution.body == [
+            .modified(modifiers: [.returnToEntry], entry: .text("story.returnTo.top")),
+            .list(items: [
+                ResolvedStoryListItem(entry: .text("story.listItem"), nested: [
+                    ResolvedStoryListItem(entry: .modified(modifiers: [.returnToEntry], entry: .text("story.returnTo.nested")), nested: []),
+                ]),
+            ]),
+        ])
+    }
+
     @Test("Catalog loading, loaded, and failed states have the approved prompt behavior")
     func catalogFirstLoadStatesDriveStoryPromptBehavior() async throws {
         let documents = try promptBehaviorCatalogDocuments()

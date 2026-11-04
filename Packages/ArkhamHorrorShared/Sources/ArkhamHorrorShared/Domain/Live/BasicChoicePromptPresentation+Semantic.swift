@@ -615,12 +615,13 @@ extension BasicChoicePromptPresentation {
         if let nodes = labelResolution?.inlineNodes {
             // Rendered catalog nodes already carry their plain-text title; spoken-izing it
             // again could strip literal `*x*`, `_x_` or `{icon}` text the nodes still show.
+            // A split footnote reference reads from the resolver's own spoken title.
             return BasicChoiceResolvedChoiceLabel(
                 title: title,
                 titleNodes: nodes,
                 subtitle: nil,
                 systemImage: choice.systemImage,
-                accessibilityLabel: title
+                accessibilityLabel: labelResolution?.accessibilityTitle ?? title
             )
         }
         let hasRawPlaceholder = StoryIconInlineParser.containsRawPlaceholder(title)
@@ -861,9 +862,13 @@ extension BasicChoicePromptPresentation {
             title: title,
             labelResolution: labelResolution
         )
-        let spokenTitle = semanticAccessibilityText(for: title, descriptor: descriptor)
+        let spokenTitle = semanticAccessibilityText(
+            for: title, descriptor: descriptor, labelResolution: labelResolution
+        )
         let spokenSubtitle = subtitle.map {
-            semanticAccessibilityText(for: $0, descriptor: descriptor)
+            semanticAccessibilityText(
+                for: $0, descriptor: descriptor, labelResolution: labelResolution
+            )
         }
         let accessibilityLabel = spokenSubtitle.map { "\(spokenTitle), \($0)" } ?? spokenTitle
         return BasicChoiceResolvedChoiceLabel(
@@ -1178,7 +1183,8 @@ extension BasicChoicePromptPresentation {
         fallback: String?
     ) -> String {
         if let title = labelResolution?.title {
-            return title
+            return semanticUnsplitFootnotedLabel(labelResolution).flatMap(semanticInlineLabel)
+                ?? title
         }
         if let text = descriptor.label?.text {
             if let inline = semanticInlineLabel(text) {
@@ -1207,8 +1213,28 @@ extension BasicChoicePromptPresentation {
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
+        let unsplit = semanticUnsplitFootnotedLabel(labelResolution)
+        if let nodes = unsplit.flatMap({ semanticRawLabelNodes($0, title: title) }) {
+            return nodes
+        }
         guard let labelText = descriptor.label?.text else { return nil }
         return semanticRawLabelNodes(labelText, title: title)
+    }
+
+    /// A resolved catalog title the resolver left unsplit because a text variable put a raw
+    /// `{icon}` or escape beside a `[^N]` reference (`footnotedChoiceLabel`). Like
+    /// `legacyChoiceLabel`, it is then formatted as a raw label; `nil` for any other title,
+    /// so labels without a footnote reference keep their resolved text.
+    private func semanticUnsplitFootnotedLabel(
+        _ labelResolution: BasicChoiceLabelResolution?
+    ) -> String? {
+        guard let title = labelResolution?.title, labelResolution?.inlineNodes == nil,
+              StoryNode.splittingFootnoteMarkers(in: title).contains(where: { node in
+                  guard case .footnoteMarker = node else { return false }
+                  return true
+              })
+        else { return nil }
+        return title
     }
 
     /// Inline icon and emphasis nodes for a raw label whose spoken form is `title`, or `nil`
@@ -1300,12 +1326,19 @@ extension BasicChoicePromptPresentation {
     /// The VoiceOver form of a displayed choice title or subtitle `text`. When `text` was
     /// derived from one of the descriptor's raw labels, the same raw label is re-projected
     /// with footnote references spoken (`1927[^5]` displays "19275" but reads
-    /// "1927 footnote 5"); any other text is already its own spoken form.
+    /// "1927 footnote 5"); a catalog label with a split footnote reference reads its
+    /// resolved ``BasicChoiceResolvedLabelText/accessibilityTitle``; any other text is
+    /// already its own spoken form.
     private func semanticAccessibilityText(
         for text: String,
-        descriptor: QuestionPresentation.Choice
+        descriptor: QuestionPresentation.Choice,
+        labelResolution: BasicChoiceLabelResolution?
     ) -> String {
+        if labelResolution?.title == text, let spoken = labelResolution?.accessibilityTitle {
+            return spoken
+        }
         let rawSources = [
+            semanticUnsplitFootnotedLabel(labelResolution),
             descriptor.label?.text,
             descriptor.tooltip,
             descriptor.flavorText?.title,

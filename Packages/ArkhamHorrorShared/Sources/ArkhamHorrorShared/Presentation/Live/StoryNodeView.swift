@@ -194,6 +194,79 @@ enum StoryFlavorEntryStatus: Equatable {
     }
 }
 
+/// The faint "Return to" wash for `ReturnToEntry` setup lines, mirroring the web
+/// `.return-to` class (FormattedEntry.vue): a 3pt dark-teal leading rule, a teal wash
+/// fading to transparent teal, square leading corners and rounded trailing corners. Text colour
+/// and font are left alone so it composes with every other modifier.
+enum StoryReturnToEntryPresentation {
+    static let colorHex: UInt32 = 0x2D6A62
+    static let ruleWidth: CGFloat = 3
+    static let leadingInset: CGFloat = 10
+    static let verticalInset: CGFloat = 2
+    static let washOpacity: Double = 0.10
+    static let washEnd: CGFloat = 0.75
+    static let trailingRadius: CGFloat = 4
+
+    /// The web draws the 3px rule outside its 10px padding, so text sits
+    /// `leadingInset` from the rule and `leadingInset + ruleWidth` from the edge.
+    static var effectiveLeadingPadding: CGFloat {
+        leadingInset + ruleWidth
+    }
+
+    static var color: Color {
+        Color(
+            red: Double((colorHex >> 16) & 0xFF) / 255,
+            green: Double((colorHex >> 8) & 0xFF) / 255,
+            blue: Double(colorHex & 0xFF) / 255
+        )
+    }
+
+    static func applies(to modifiers: [FlavorTextModifier]) -> Bool {
+        modifiers.contains(.returnToEntry)
+    }
+}
+
+private struct StoryReturnToEntryModifier: ViewModifier {
+    let isApplied: Bool
+
+    func body(content: Content) -> some View {
+        if isApplied {
+            content
+                .padding(.leading, StoryReturnToEntryPresentation.effectiveLeadingPadding)
+                .padding(.vertical, StoryReturnToEntryPresentation.verticalInset)
+                .background(
+                    LinearGradient(
+                        stops: [
+                            .init(
+                                color: StoryReturnToEntryPresentation.color
+                                    .opacity(StoryReturnToEntryPresentation.washOpacity),
+                                location: 0
+                            ),
+                            .init(
+                                color: StoryReturnToEntryPresentation.color.opacity(0),
+                                location: StoryReturnToEntryPresentation.washEnd
+                            ),
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    ),
+                    in: UnevenRoundedRectangle(
+                        bottomTrailingRadius: StoryReturnToEntryPresentation.trailingRadius,
+                        topTrailingRadius: StoryReturnToEntryPresentation.trailingRadius
+                    )
+                )
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(StoryReturnToEntryPresentation.color)
+                        .frame(width: StoryReturnToEntryPresentation.ruleWidth)
+                        .accessibilityHidden(true)
+                }
+        } else {
+            content
+        }
+    }
+}
+
 private struct StoryReferenceText: View {
     let title: String
     var detail: String = ""
@@ -229,6 +302,9 @@ private struct StoryFlavorTextModifier: ViewModifier {
             .padding(padding)
             .background(background)
             .overlay(border)
+            .modifier(StoryReturnToEntryModifier(
+                isApplied: StoryReturnToEntryPresentation.applies(to: modifiers)
+            ))
     }
 
     private var foregroundStyle: Color? {
@@ -816,6 +892,7 @@ enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
     case title2
     case title3
     case headline
+    case callout
     case caption
 
     var swiftUITextStyle: Font.TextStyle {
@@ -824,6 +901,7 @@ enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
         case .title2: .title2
         case .title3: .title3
         case .headline: .headline
+        case .callout: .callout
         case .caption: .caption
         }
     }
@@ -937,6 +1015,7 @@ enum StoryWebGlyphFontMetrics {
             case .title2: .title2
             case .title3: .title3
             case .headline: .headline
+            case .callout: .callout
             case .caption: .caption1
             }
         }
@@ -949,6 +1028,7 @@ enum StoryWebGlyphFontMetrics {
             case .title2: .title2
             case .title3: .title3
             case .headline: .headline
+            case .callout: .callout
             case .caption: .caption1
             }
         }

@@ -2,16 +2,21 @@ import Foundation
 
 /// A fully rendered story. It is created only after every title and body entry has resolved.
 struct ResolvedStory: Sendable, Equatable {
+    /// The plain-text projection of the title.
     let title: String?
+    /// The title's inline nodes, set only when it carries a `[^N]` footnote reference.
+    let titleNodes: [StoryNode]?
     let body: [ResolvedStoryEntry]
     let degradedReason: StoryUnavailableReason?
 
     init(
         title: String?,
+        titleNodes: [StoryNode]? = nil,
         body: [ResolvedStoryEntry],
         degradedReason: StoryUnavailableReason? = nil
     ) {
         self.title = title
+        self.titleNodes = titleNodes
         self.body = body
         self.degradedReason = degradedReason
     }

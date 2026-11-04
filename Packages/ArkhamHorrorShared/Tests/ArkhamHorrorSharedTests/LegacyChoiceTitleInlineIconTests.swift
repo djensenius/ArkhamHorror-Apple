@@ -318,6 +318,55 @@ extension LegacyChoiceTitleInlineIconTests {
         #expect(footnoteOnly.accessibilityLabel == "Done at 1927 footnote 5")
     }
 
+    @Test("A catalog $ label splits [^N]; a raw placeholder from a variable keeps it unsplit")
+    func catalogLabelFootnoteIsSplitByTheResolver() throws {
+        let question = try fixtureQuestion()
+        let resolver = catalogResolver([
+            .text("Read 1927[^5] at "), .variable(name: "name", source: .named, role: .text),
+        ])
+        func label(_ name: String) throws -> BasicChoiceResolvedLabelText {
+            try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+                "$label.doneWithMulligan name=s:\"\(name)\"",
+                resolver: resolver, catalogUnavailability: .catalog(.transportFailure)
+            ).get()
+        }
+        let split = try label("the archive")
+        #expect(split == BasicChoiceResolvedLabelText(
+            title: "Read 19275 at the archive",
+            inlineNodes: [.text("Read 1927"), .footnoteMarker("5"), .text(" at the archive")],
+            accessibilityTitle: "Read 1927 footnote 5 at the archive"
+        ))
+        let resolved = prompt(question, resolutions: [0: .resolved(split)])
+            .resolvedChoiceLabel(for: question.choices[0], in: projection())
+        #expect(resolved.title == "Read 19275 at the archive")
+        #expect(resolved.titleNodes == split.inlineNodes)
+        #expect(resolved.accessibilityLabel == "Read 1927 footnote 5 at the archive")
+
+        // An escape from a text variable is a raw placeholder: the label stays unsplit.
+        #expect(try label("{asterisk}") == BasicChoiceResolvedLabelText(
+            title: "Read 1927[^5] at {asterisk}"
+        ))
+    }
+
+    @Test("A catalog $ label with an icon, [^N] and a raw variable placeholder splits [^N]")
+    func catalogLabelFootnoteWithIconAndRawPlaceholderSplits() throws {
+        let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+            "$label.doneWithMulligan name=s:\"{asterisk}\"",
+            resolver: catalogResolver([
+                .text("Spend "), .variable(name: "action", source: .named, role: .icon),
+                .text(" 1927[^5] "), .variable(name: "name", source: .named, role: .text),
+            ]), catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        let resolved = try prompt(fixtureQuestion(), resolutions: [0: .resolved(label)])
+            .resolvedChoiceLabel(for: fixtureQuestion().choices[0], in: projection())
+        #expect(resolved.title == "Spend action 19275 {asterisk}")
+        #expect(resolved.titleNodes == [
+            .text("Spend "), .icon("action"), .text(" 1927"), .footnoteMarker("5"),
+            .text(" {asterisk}"),
+        ])
+        #expect(resolved.accessibilityLabel == "Spend action 1927 footnote 5 {asterisk}")
+    }
+
     @Test("A legacy no-envelope title speaks icons by name and footnotes as \"footnote N\"")
     func legacyNoEnvelopeAccessibilityLabelSpeaksIconsAndFootnotes() throws {
         let question = try fixtureQuestion()

@@ -56,6 +56,24 @@ struct StoryNodeViewProjectionTests {
         }
     }
 
+    @Test("ReturnToEntry projects the web return-to wash values and no status marker")
+    func returnToEntryPresentationValues() {
+        #expect(StoryReturnToEntryPresentation.applies(to: [.returnToEntry]))
+        #expect(StoryReturnToEntryPresentation.applies(to: [.borderedEntry, .returnToEntry]))
+        #expect(!StoryReturnToEntryPresentation.applies(to: [.borderedEntry]))
+        #expect(!StoryReturnToEntryPresentation.applies(to: []))
+        #expect(StoryReturnToEntryPresentation.colorHex == 0x2D6A62)
+        #expect(StoryReturnToEntryPresentation.ruleWidth == 3)
+        #expect(StoryReturnToEntryPresentation.leadingInset == 10)
+        // Text starts 13 from the edge: 10 clear of the 3pt rule, matching the web.
+        #expect(StoryReturnToEntryPresentation.effectiveLeadingPadding == 13)
+        #expect(StoryReturnToEntryPresentation.verticalInset == 2)
+        #expect(StoryReturnToEntryPresentation.washOpacity == 0.10)
+        #expect(StoryReturnToEntryPresentation.washEnd == 0.75)
+        #expect(StoryReturnToEntryPresentation.trailingRadius == 4)
+        #expect(StoryFlavorEntryStatus.status(for: [.returnToEntry]) == nil)
+    }
+
     @Test("A footnote body projects a caption-relative raised number and one localized label")
     func footnoteEntryProjectsMarkerAndLocalizedLabel() {
         let body: ResolvedStoryEntry = .nodes([
