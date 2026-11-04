@@ -96,6 +96,12 @@ extension BasicChoicePromptPresentation {
         promptQuestionLabelTitle ?? liveChooseDeckGenericHeading()
     }
 
+    /// The picker heading's marker nodes and spoken form when it is a question label
+    /// carrying a `[^N]` footnote (TASK-1.22.12); `nil` otherwise.
+    var liveChooseDeckPickerHeadingFootnote: BasicChoiceFootnotedText? {
+        promptQuestionLabelFootnote
+    }
+
     private func liveChooseDeckGenericHeading() -> String {
         semanticLocalized("liveChooseDeck.heading.generic", value: "Choose a Deck")
     }

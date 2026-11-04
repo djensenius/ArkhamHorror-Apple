@@ -269,7 +269,8 @@ struct LiveGameView: View {
                         gameID: gameID,
                         promptKey: promptKey,
                         heading: renderedPrompt?.liveChooseDeckPickerHeading
-                            ?? BasicChoicePromptPresentation.liveChooseDeckGenericHeading()
+                            ?? BasicChoicePromptPresentation.liveChooseDeckGenericHeading(),
+                        headingFootnote: renderedPrompt?.liveChooseDeckPickerHeadingFootnote
                     )
                     .id(promptKey)
                 case let .readOnly(message):
