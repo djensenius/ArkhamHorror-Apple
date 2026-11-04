@@ -5,6 +5,8 @@ struct BasicChoiceResolvedChoiceLabel: Sendable, Equatable {
     let title: String
     let titleNodes: [StoryNode]?
     let subtitle: String?
+    /// Inline nodes for `subtitle`, set only when it carries a `[^N]` footnote marker.
+    let subtitleNodes: [StoryNode]?
     let systemImage: String
     let accessibilityLabel: String
 
@@ -12,12 +14,14 @@ struct BasicChoiceResolvedChoiceLabel: Sendable, Equatable {
         title: String,
         titleNodes: [StoryNode]? = nil,
         subtitle: String?,
+        subtitleNodes: [StoryNode]? = nil,
         systemImage: String,
         accessibilityLabel: String
     ) {
         self.title = title
         self.titleNodes = titleNodes
         self.subtitle = subtitle
+        self.subtitleNodes = subtitleNodes
         self.systemImage = systemImage
         self.accessibilityLabel = accessibilityLabel
     }
@@ -669,6 +673,7 @@ extension BasicChoicePromptPresentation {
             title: title,
             titleNodes: titleNodes,
             subtitle: resolution.subtitle,
+            subtitleNodes: resolution.subtitleNodes,
             systemImage: resolution.systemImage,
             accessibilityLabel: semanticLocalized(
                 "semantic.choice.accessibility.withCost",
@@ -875,6 +880,9 @@ extension BasicChoicePromptPresentation {
             title: title,
             titleNodes: titleNodes,
             subtitle: subtitle,
+            subtitleNodes: subtitle.flatMap {
+                semanticSubtitleNodes(for: descriptor, subtitle: $0)
+            },
             systemImage: semanticSystemImage(for: descriptor),
             accessibilityLabel: accessibilityLabel
         )
@@ -1210,6 +1218,11 @@ extension BasicChoicePromptPresentation {
         title: String,
         labelResolution: BasicChoiceLabelResolution?
     ) -> [StoryNode]? {
+        if descriptor.kind == .info {
+            if let nodes = semanticInfoTitleNodes(for: descriptor, title: title) {
+                return nodes
+            }
+        }
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
@@ -1219,6 +1232,49 @@ extension BasicChoicePromptPresentation {
         }
         guard let labelText = descriptor.label?.text else { return nil }
         return semanticRawLabelNodes(labelText, title: title)
+    }
+
+    /// An info choice's title nodes, set only when the title carries a `[^N]` footnote
+    /// marker: the resolved flavor title's own nodes, or the formatted raw flavor title.
+    private func semanticInfoTitleNodes(
+        for descriptor: QuestionPresentation.Choice,
+        title: String
+    ) -> [StoryNode]? {
+        if let nodes = semanticInfoStoryTitleNodes(for: descriptor, title: title) {
+            return nodes
+        }
+        guard let raw = descriptor.flavorText?.title,
+              let nodes = semanticRawLabelNodes(raw, title: title),
+              StoryFootnoteSuperscript.title(for: nodes) != nil
+        else { return nil }
+        return nodes
+    }
+
+    /// The resolved flavor title's footnoted nodes when they render `title`.
+    private func semanticInfoStoryTitleNodes(
+        for descriptor: QuestionPresentation.Choice,
+        title: String
+    ) -> [StoryNode]? {
+        guard let story = choiceFlavorResolutions[descriptor.sourceIndex]?.story,
+              let nodes = story.titleNodes,
+              story.title?.trimmingCharacters(in: .whitespacesAndNewlines) == title,
+              StoryFootnoteSuperscript.title(for: nodes) != nil
+        else { return nil }
+        return nodes
+    }
+
+    /// A choice subtitle's nodes, set only when the subtitle is the choice's formatted
+    /// tooltip and carries a `[^N]` footnote marker.
+    private func semanticSubtitleNodes(
+        for descriptor: QuestionPresentation.Choice,
+        subtitle: String
+    ) -> [StoryNode]? {
+        guard descriptor.kind != .info, descriptor.kind != .invalidLabel,
+              let tooltip = descriptor.tooltip,
+              let nodes = semanticRawLabelNodes(tooltip, title: subtitle),
+              StoryFootnoteSuperscript.title(for: nodes) != nil
+        else { return nil }
+        return nodes
     }
 
     /// A resolved catalog title without inline nodes that still holds a raw `{icon}`,
@@ -1334,6 +1390,11 @@ extension BasicChoicePromptPresentation {
     ) -> String {
         if labelResolution?.title == text, let spoken = labelResolution?.accessibilityTitle {
             return spoken
+        }
+        if descriptor.kind == .info {
+            if let nodes = semanticInfoStoryTitleNodes(for: descriptor, title: text) {
+                return nodes.map(\.spokenText).joined()
+            }
         }
         let rawSources = [
             semanticUnsplitRawLabel(labelResolution),
