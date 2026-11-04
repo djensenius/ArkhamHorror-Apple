@@ -428,7 +428,9 @@ project differs from `project.yml`.
 only runs from the commit that last changed it, so the helper grafts `HEAD`'s
 committed `Scripts/test-run-production-assignment-replay.sh` onto that audited
 launcher commit (nothing else changes) and runs it without `DEVELOPER_DIR` in a
-temporary detached worktree.
+temporary detached worktree. The self-signed certificate scenario creates and
+deletes a temporary keychain, so it runs only in GitHub Actions (or locally with
+`ARKHAM_SELFTEST_KEYCHAIN=1`) and is skipped otherwise.
 
 ## Current limitations
 
