@@ -77,7 +77,10 @@ struct Schema163ContractDriftTests {
             "pl": ["cardNames"],
             "pt-BR": ["core"],
         ])
-        #expect(manifest.languageResolution["pl-PL"] == "pl")
+        // Tags are stored ASCII-lowercased (`pl-PL` -> `pl-pl`).
+        #expect(manifest.languageResolution == [
+            "de": "de", "en": "en", "pl": "pl", "pl-pl": "pl", "pt": "pt-BR", "pt-br": "pt-BR",
+        ])
     }
 
     private func data(_ name: String) throws -> Data {
