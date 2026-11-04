@@ -1,39 +1,251 @@
 import Foundation
 
-/// Shared inline icon parsing for server-provided button labels that still contain the
-/// web's literal `{iconName}` placeholders. Catalog-rendered story text already arrives as
-/// `StoryNode.semanticIcon`; this parser exists only for non-catalog label strings.
-/// Raw labels follow the web's unescaped `replaceIcons` behavior, so `{{skull}}` renders as
-/// a literal `{`, the skull icon, and a literal `}` rather than as an escaped placeholder.
+/// The web's named inline icons: every `iconClasses` key from fork commit
+/// 858b8a094611a766ed3e7b6ecc6168ab331feb17 `frontend/src/arkham/icons.ts:12-45`, plus the
+/// homebrew `{moon}` icon (`frontend/homebrew/*/icons.json`, no web-font glyph). Any other
+/// braced name (for example `{neutral}` or `{future}`) is not an icon and stays literal, as
+/// it does on the web.
+enum WebIconName: String, CaseIterable, Sendable {
+    case action, fast, reaction
+    case willpower, intellect, combat, agility, wild
+    case guardian, seeker, rogue, mystic, survivor
+    case elderSign, autoFail, skull, cultist, tablet, elderThing
+    case bless, curse, frost, blood
+    case sealA, sealB, sealC, sealD, sealE
+    case codex, day, night, perPlayer
+    case moon
+}
+
+/// One inline icon placeholder in a raw label: a named web icon or a rune (`{runeM}` or
+/// `[tdc_rune_m]`, `icons.ts:49,56`).
+enum WebIconPlaceholder: Sendable, Equatable, Hashable {
+    case named(WebIconName)
+    /// An uppercase ASCII rune letter, `A`-`Z`.
+    case rune(Character)
+
+    /// Parses a braced placeholder name: a ``WebIconName`` raw value or `runeX` with an
+    /// uppercase `X`, exactly like the web's `{rune([A-Z])}`.
+    init?(placeholderName name: String) {
+        if let named = WebIconName(rawValue: name) {
+            self = .named(named)
+            return
+        }
+        guard name.count == 5, name.hasPrefix("rune"), let letter = name.last,
+              letter.isASCII, letter.isUppercase
+        else { return nil }
+        self = .rune(letter)
+    }
+
+    /// The ``StoryIconGlyph`` key; runes use the web's `rune-X` class name.
+    var glyphKey: String {
+        switch self {
+        case let .named(name): name.rawValue
+        case let .rune(letter): "rune-\(letter)"
+        }
+    }
+
+    /// Chaos, skill and seal icons keep their typed ``StoryIcon`` node (and its SF Symbol
+    /// fallback); every other icon is a named glyph node.
+    var node: StoryNode {
+        if case let .named(name) = self, let icon = StoryIcon.iconVariableValue(name.rawValue) {
+            return .semanticIcon(icon)
+        }
+        return .icon(glyphKey)
+    }
+}
+
+/// Shared inline parsing for server-provided button labels that still contain the web's
+/// literal `{iconName}` placeholders. Catalog-rendered story text already arrives as nodes;
+/// this parser exists only for non-catalog label strings. It follows the web's
+/// `formatContent` (fork `frontend/src/arkham/helpers.ts:229-246`) in order: icons and both
+/// rune forms, then `_bold_`, then `*italic*`, then the `{asterisk}` -> `*` and
+/// `{underscore}` -> `_` escapes. Raw labels follow the web's unescaped `replaceIcons`, so
+/// `{{skull}}` renders as a literal `{`, the skull icon, and a literal `}`.
+///
+/// One deliberate difference: an underscore inside a word (`a_b`, `tdc_rune_m`) never opens
+/// or closes bold, so identifiers stay literal.
 enum StoryIconInlineParser {
+    /// Inline nodes for `text`, or `nil` when it has no icon and no emphasis (the plain
+    /// title then renders as is).
     static func nodes(for text: String) -> [StoryNode]? {
-        var nodes: [StoryNode] = []
-        var cursor = text.startIndex
-        var foundIcon = false
+        let atoms = formattedAtoms(text)
+        guard atoms.contains(where: \.isMarkup) else { return nil }
+        return storyNodes(atoms)
+    }
 
-        while cursor < text.endIndex {
-            guard let open = text[cursor...].firstIndex(of: "{") else {
-                appendText(String(text[cursor...]), to: &nodes)
-                break
-            }
-            appendText(String(text[cursor ..< open]), to: &nodes)
-            guard let close = text[text.index(after: open)...].firstIndex(of: "}") else {
-                appendText(String(text[open...]), to: &nodes)
-                break
-            }
+    /// The spoken/plain form of `text`: the same formatting as ``nodes(for:)`` with each
+    /// icon replaced by its spoken name and emphasis markers removed.
+    static func plainText(
+        for text: String,
+        spokenName: (WebIconPlaceholder) -> String
+    ) -> String {
+        plainText(formattedAtoms(text), spokenName: spokenName)
+    }
 
-            let name = String(text[text.index(after: open) ..< close])
-            if let icon = StoryIcon.iconVariableValue(name) {
-                nodes.append(.semanticIcon(icon))
-                foundIcon = true
-                cursor = text.index(after: close)
-            } else {
-                appendText(String(text[open]), to: &nodes)
-                cursor = text.index(after: open)
+    private indirect enum Atom {
+        case character(Character)
+        case icon(WebIconPlaceholder)
+        case emphasis(LocaleCatalogEmphasis, [Atom])
+
+        var isMarkup: Bool {
+            if case .character = self {
+                return false
             }
+            return true
         }
 
-        return foundIcon ? nodes : nil
+        func isCharacter(_ character: Character) -> Bool {
+            if case let .character(value) = self {
+                return value == character
+            }
+            return false
+        }
+
+        var isWordCharacter: Bool {
+            if case let .character(value) = self {
+                return value.isLetter || value.isNumber
+            }
+            return false
+        }
+    }
+
+    private static func formattedAtoms(_ text: String) -> [Atom] {
+        italicized(emphasized(iconAtoms(text), delimiter: "_", style: .bold, intraword: false))
+    }
+
+    private static func iconAtoms(_ text: String) -> [Atom] {
+        let characters = Array(text)
+        var atoms: [Atom] = []
+        var index = 0
+        while index < characters.count {
+            if let (placeholder, length) = placeholder(in: characters, at: index) {
+                atoms.append(.icon(placeholder))
+                index += length
+            } else {
+                atoms.append(.character(characters[index]))
+                index += 1
+            }
+        }
+        return atoms
+    }
+
+    private static let runeTokenPrefix = Array("[tdc_rune_")
+
+    private static func placeholder(
+        in characters: [Character],
+        at index: Int
+    ) -> (WebIconPlaceholder, Int)? {
+        switch characters[index] {
+        case "{":
+            guard let close = characters[(index + 1)...].firstIndex(of: "}"),
+                  let placeholder = WebIconPlaceholder(
+                      placeholderName: String(characters[(index + 1) ..< close])
+                  )
+            else { return nil }
+            return (placeholder, close - index + 1)
+        case "[":
+            let letterIndex = index + runeTokenPrefix.count
+            guard letterIndex + 1 < characters.count,
+                  Array(characters[index ..< letterIndex]) == runeTokenPrefix,
+                  characters[letterIndex + 1] == "]",
+                  characters[letterIndex].isASCII, characters[letterIndex].isLetter,
+                  let letter = characters[letterIndex].uppercased().first
+            else { return nil }
+            return (.rune(letter), runeTokenPrefix.count + 2)
+        default:
+            return nil
+        }
+    }
+
+    /// Pairs each delimiter with the next one, like the web's `_([^_]*)_` and
+    /// `\*([^\*]*)\*`. When `intraword` is `false`, a pair whose opener follows a letter or
+    /// digit, or whose closer precedes one, is literal.
+    private static func emphasized(
+        _ atoms: [Atom],
+        delimiter: Character,
+        style: LocaleCatalogEmphasis,
+        intraword: Bool
+    ) -> [Atom] {
+        var result: [Atom] = []
+        var index = 0
+        while index < atoms.count {
+            guard atoms[index].isCharacter(delimiter),
+                  let close = atoms[(index + 1)...].firstIndex(where: {
+                      $0.isCharacter(delimiter)
+                  }),
+                  intraword || !(
+                      (index > 0 && atoms[index - 1].isWordCharacter)
+                          || (close + 1 < atoms.count && atoms[close + 1].isWordCharacter)
+                  )
+            else {
+                result.append(atoms[index])
+                index += 1
+                continue
+            }
+            result.append(.emphasis(style, Array(atoms[(index + 1) ..< close])))
+            index = close + 1
+        }
+        return result
+    }
+
+    private static func italicized(_ atoms: [Atom]) -> [Atom] {
+        let nested = atoms.map { atom -> Atom in
+            if case let .emphasis(style, children) = atom {
+                return .emphasis(style, italicized(children))
+            }
+            return atom
+        }
+        return emphasized(nested, delimiter: "*", style: .italic, intraword: true)
+    }
+
+    private static func unescaped(_ text: String) -> String {
+        text.replacingOccurrences(of: "{asterisk}", with: "*")
+            .replacingOccurrences(of: "{underscore}", with: "_")
+    }
+
+    private static func storyNodes(_ atoms: [Atom]) -> [StoryNode] {
+        var nodes: [StoryNode] = []
+        var buffer = ""
+        for atom in atoms {
+            switch atom {
+            case let .character(character):
+                buffer.append(character)
+                continue
+            case let .icon(placeholder):
+                appendText(unescaped(buffer), to: &nodes)
+                nodes.append(placeholder.node)
+            case let .emphasis(style, children):
+                appendText(unescaped(buffer), to: &nodes)
+                let inner = storyNodes(children)
+                if !inner.isEmpty {
+                    nodes.append(.emphasis(style, inner))
+                }
+            }
+            buffer = ""
+        }
+        appendText(unescaped(buffer), to: &nodes)
+        return nodes
+    }
+
+    private static func plainText(
+        _ atoms: [Atom],
+        spokenName: (WebIconPlaceholder) -> String
+    ) -> String {
+        var result = ""
+        var buffer = ""
+        for atom in atoms {
+            switch atom {
+            case let .character(character):
+                buffer.append(character)
+                continue
+            case let .icon(placeholder):
+                result += unescaped(buffer) + spokenName(placeholder)
+            case let .emphasis(_, children):
+                result += unescaped(buffer) + plainText(children, spokenName: spokenName)
+            }
+            buffer = ""
+        }
+        return result + unescaped(buffer)
     }
 
     private static func appendText(_ text: String, to nodes: inout [StoryNode]) {

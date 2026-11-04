@@ -342,4 +342,30 @@ struct BoardMulliganChoiceActionabilityTests {
             labelResolution: resolved.choiceLabelResolutions[0]
         ) == "Done replacing cards")
     }
+
+    @Test("Legacy choice titles speak icon names instead of raw placeholders")
+    func legacyChoiceTitleAccessibilitySpeaksIconNames() throws {
+        let question = try fixtureQuestion()
+        let ownerID = BoardTestFixtures.playerID()
+        let projection = projection(ownerID: ownerID, hand: [], cards: [:])
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: ownerID,
+                questionVersion: 4,
+                rawQuestion: question.rawValue,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .supported(question),
+            choiceLabelResolutions: [0: .resolved("Done at [tdc_rune_m] {perPlayer}")],
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+        let resolved = prompt.resolvedChoiceLabel(for: question.choices[0], in: projection)
+        #expect(resolved.title == "Done at [tdc_rune_m] {perPlayer}")
+        #expect(resolved.accessibilityLabel == "Done at Rune M Per player")
+    }
 }

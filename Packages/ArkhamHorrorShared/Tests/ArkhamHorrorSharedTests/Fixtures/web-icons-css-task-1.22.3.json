@@ -1,0 +1,9 @@
+{
+  "provenance": "fork 858b8a094611a766ed3e7b6ecc6168ab331feb17 frontend/src/styles/icons.css",
+  "mappings": [
+    { "iconName": "codex", "cssClass": "codex-icon", "family": "ArkhamSlim", "codepoint": "0068" },
+    { "iconName": "day", "cssClass": "day-icon", "family": "ArkhamSlim", "codepoint": "0069" },
+    { "iconName": "night", "cssClass": "night-icon", "family": "ArkhamSlim", "codepoint": "006A" },
+    { "iconName": "perPlayer", "cssClass": "per-player", "family": "ArkhamIcons", "codepoint": "E915" }
+  ]
+}

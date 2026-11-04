@@ -156,7 +156,12 @@ extension StoryNode {
     /// camelCase name (`elderThing` -> "elder thing"). Never the raw `{name}` placeholder, and
     /// never invented prose.
     static func spokenIconLabel(_ name: String) -> String {
-        BoardDisplayFormatting.humanizeTag(name).lowercased()
+        // The web's rune glyph key `rune-M` would otherwise humanize to "rune- m".
+        let runeLetter = name.count == 6 && name.hasPrefix("rune-") ? name.last : nil
+        if let runeLetter, runeLetter.isASCII, runeLetter.isUppercase {
+            return "rune \(runeLetter.lowercased())"
+        }
+        return BoardDisplayFormatting.humanizeTag(name).lowercased()
     }
 }
 

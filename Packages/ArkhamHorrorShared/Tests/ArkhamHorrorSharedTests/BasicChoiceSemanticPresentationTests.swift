@@ -250,9 +250,98 @@ struct BasicChoiceSemanticPresentationTests {
         let choice = try #require(prompt.choices.first)
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
 
-        #expect(resolved.title == "Use Willpower: Commit {willpower}")
+        #expect(resolved.title == "Use Willpower: Commit Willpower")
         #expect(resolved.titleNodes == nil)
-        #expect(resolved.accessibilityLabel == "Use Willpower: Commit {willpower}")
+        #expect(resolved.accessibilityLabel == "Use Willpower: Commit Willpower")
+    }
+
+    @Test("Raw choice labels speak every web icon name and keep title, nodes and label aligned")
+    // swiftlint:disable:next function_body_length
+    func rawChoiceLabelsSpeakWebIconNames() throws {
+        struct Case {
+            let label: String
+            let title: String
+            let nodes: [StoryNode]?
+
+            init(_ label: String, _ title: String, _ nodes: [StoryNode]?) {
+                self.label = label
+                self.title = title
+                self.nodes = nodes
+            }
+        }
+        let cases: [Case] = [
+            Case(
+                "Spend {perPlayer} clues",
+                "Spend Per player clues",
+                [.text("Spend "), .icon("perPlayer"), .text(" clues")]
+            ),
+            Case(
+                "Gain {action} at [tdc_rune_m]",
+                "Gain Action at Rune M",
+                [.text("Gain "), .icon("action"), .text(" at "), .icon("rune-M")]
+            ),
+            Case(
+                "{blood} or {sealA} on {runeQ}",
+                "Blood or Seal A on Rune Q",
+                [
+                    .semanticIcon(.chaosToken(.blood)), .text(" or "),
+                    .semanticIcon(.seal(.sealA)), .text(" on "), .icon("rune-Q"),
+                ]
+            ),
+            Case(
+                "{fast} {reaction} {codex} {day} {night} {moon}",
+                "Fast Reaction Codex Day Night Moon",
+                [
+                    .icon("fast"), .text(" "), .icon("reaction"), .text(" "), .icon("codex"),
+                    .text(" "), .icon("day"), .text(" "), .icon("night"), .text(" "),
+                    .icon("moon"),
+                ]
+            ),
+            Case(
+                "Take _1_ {asterisk}",
+                "Take 1 *",
+                [.text("Take "), .emphasis(.bold, [.text("1")]), .text(" *")]
+            ),
+            Case("Keep tdc_rune_m and a_b", "Keep tdc_rune_m and a_b", nil),
+            Case("Choose {neutral} {future}", "Choose {neutral} {future}", nil),
+        ]
+        for testCase in cases {
+            let prompt = try singleChoicePrompt(choice: .init(
+                sourceIndex: 0,
+                kind: .localizedLabel,
+                label: .init(kind: .embeddedI18n, text: testCase.label)
+            ))
+            let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+            let choice = try #require(prompt.choices.first)
+            let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+            let comment = Comment(rawValue: testCase.label)
+            #expect(resolved.title == testCase.title, comment)
+            #expect(resolved.accessibilityLabel == testCase.title, comment)
+            #expect(resolved.titleNodes == testCase.nodes, comment)
+        }
+    }
+
+    @Test("Spoken icon names cover the web vocabulary with the 1.22.2 chaos names unchanged")
+    func spokenIconNameTable() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "x")
+        ))
+        let spoken = WebIconName.allCases.map { prompt.semanticIconSpokenName(.named($0)) }
+        #expect(spoken == [
+            "Action", "Fast", "Reaction",
+            "Willpower", "Intellect", "Combat", "Agility", "Wild",
+            "Guardian", "Seeker", "Rogue", "Mystic", "Survivor",
+            "Elder Sign", "Auto-fail", "Skull", "Cultist", "Tablet", "Elder Thing",
+            "Bless", "Curse", "Frost", "Blood",
+            "Seal A", "Seal B", "Seal C", "Seal D", "Seal E",
+            "Codex", "Day", "Night", "Per player", "Moon",
+        ])
+        #expect(prompt.semanticIconSpokenName(.rune("Z")) == "Rune Z")
+        for name in WebIconName.allCases {
+            #expect(!prompt.semanticSpokenLabel("{\(name.rawValue)}").contains("{"))
+        }
     }
 
     @Test("Non-catalog labels equal to their title use inline glyph nodes")
