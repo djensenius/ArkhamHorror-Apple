@@ -139,7 +139,7 @@ extension StoryNode {
     }
 
     // swiftlint:disable:next cyclomatic_complexity
-    private func flattened(footnote: (String) -> String) -> String {
+    func flattened(footnote: (String) -> String) -> String {
         func join(_ children: [StoryNode]) -> String {
             children.map { $0.flattened(footnote: footnote) }.joined()
         }

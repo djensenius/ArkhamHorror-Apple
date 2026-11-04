@@ -73,6 +73,31 @@ enum BoardLinkedChoicePresentationPolicy {
     }
 }
 
+/// A native `Menu` row for a linked choice. Menu items only take a plain string, so a
+/// `[^N]` footnote shows as superscript digits (`menuTitle`) and VoiceOver gets the spoken
+/// "… footnote N" title. macOS `Menu` items may ignore the accessibility label and read the
+/// superscript title instead; that is best effort (TASK-1.22.12).
+struct BoardLinkedChoiceMenuButton: View {
+    let title: String
+    let accessibilityTitle: String
+    let action: () -> Void
+
+    init(title: String, accessibilityTitle: String, action: @escaping () -> Void) {
+        self.title = title
+        self.accessibilityTitle = accessibilityTitle
+        self.action = action
+    }
+
+    init(choice: BoardLinkedChoice, action: @escaping () -> Void) {
+        self.init(title: choice.menuTitle, accessibilityTitle: choice.spokenTitle, action: action)
+    }
+
+    var body: some View {
+        Button(title, action: action)
+            .accessibilityLabel(Text(accessibilityTitle))
+    }
+}
+
 /// Native touch/pointer/VoiceOver board affordance, with an optional semantic focus ID
 /// for linked elements that can answer the current server prompt from the board itself.
 struct BoardLinkedChoiceFace<Content: View>: View {
@@ -99,12 +124,14 @@ struct BoardLinkedChoiceFace<Content: View>: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text(accessibilityLabel))
-            .accessibilityHint(activationHint(choice.title))
+            .accessibilityHint(activationHint(choice.spokenTitle))
             .linkedChoiceFocused(focusID, focusBinding: focusBinding)
         case let .nativeMenu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                    BoardLinkedChoiceMenuButton(choice: choice) {
+                        onLinkedChoice(choice.choiceIndex)
+                    }
                 }
             } label: {
                 content().cardFaceStyle(linkedChoices: linkedChoices, isFocused: isFocused)
@@ -133,7 +160,7 @@ struct BoardLinkedChoiceFace<Content: View>: View {
     private func semanticHint(for decision: BoardLinkedChoicePresentationDecision) -> Text {
         switch decision {
         case let .submit(choice):
-            activationHint(choice.title)
+            activationHint(choice.spokenTitle)
         case .menu:
             choiceMenuHint
         case .highlightOnly:

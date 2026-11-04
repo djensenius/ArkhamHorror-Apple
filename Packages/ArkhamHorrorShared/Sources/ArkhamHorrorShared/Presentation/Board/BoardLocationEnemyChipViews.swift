@@ -20,12 +20,14 @@ struct BoardEnemyTileChipView: View {
                 .accessibilityHint(Text(BoardLocalization.format(
                     "board.linkedChoice.activateHint",
                     "Activates %@",
-                    choice.title
+                    choice.spokenTitle
                 )))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                    BoardLinkedChoiceMenuButton(choice: choice) {
+                        onLinkedChoice(choice.choiceIndex)
+                    }
                 }
             } label: {
                 chip(isFocused: false)
@@ -115,12 +117,14 @@ struct BoardEnemyCompactChipView: View {
                 .accessibilityHint(Text(BoardLocalization.format(
                     "board.linkedChoice.activateHint",
                     "Activates %@",
-                    choice.title
+                    choice.spokenTitle
                 )))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                    BoardLinkedChoiceMenuButton(choice: choice) {
+                        onLinkedChoice(choice.choiceIndex)
+                    }
                 }
             } label: {
                 chip(isFocused: false)
@@ -195,7 +199,13 @@ enum BoardEnemyCompactFormatting {
                 BoardLinkedChoice(
                     choiceIndex: choice.choiceIndex,
                     title: "\(disambiguatedSummary): \(choice.title)",
-                    isActionable: choice.isActionable
+                    isActionable: choice.isActionable,
+                    displayNodes: choice.displayNodes.map {
+                        [.text("\(disambiguatedSummary): ")] + $0
+                    },
+                    accessibilityTitle: choice.accessibilityTitle.map {
+                        "\(disambiguatedSummary): \($0)"
+                    }
                 )
             }
         }
