@@ -491,21 +491,29 @@ enum StoryInlineTextRenderer {
         }
     }
 
+    /// The web glyph for a named `.icon` node. Catalog icon variables arrive with the web's
+    /// placeholder name (`runeM`), so the name is normalised to its glyph key (`rune-M`)
+    /// here; a glyph key does not parse as a placeholder and maps to itself.
     static func namedIconGlyph(
         _ name: String, iconFonts: WebIconFontAvailability
     ) -> StoryInlineSemanticIconRun? {
-        guard let glyph = StoryIconGlyph.byIconName[name],
+        let key = glyphKey(forIconNamed: name)
+        guard let glyph = StoryIconGlyph.byIconName[key],
               let fontName = iconFonts.postScriptName(for: glyph) else { return nil }
-        return .webGlyph(iconName: name, fontName: fontName, glyph: glyph.string)
+        return .webGlyph(iconName: key, fontName: fontName, glyph: glyph.string)
+    }
+
+    private static func glyphKey(forIconNamed name: String) -> String {
+        WebIconPlaceholder(placeholderName: name)?.glyphKey ?? name
     }
 
     private static func namedIconText(
         _ name: String, iconFonts: WebIconFontAvailability, textStyle: StoryInlineTextStyle
     ) -> Text {
-        if case let .webGlyph(_, fontName, glyph) = namedIconGlyph(name, iconFonts: iconFonts) {
+        if case let .webGlyph(key, fontName, glyph) = namedIconGlyph(name, iconFonts: iconFonts) {
             return Text(verbatim: glyph).font(.custom(
                 fontName,
-                size: StoryWebGlyphFontMetrics.pointSize(forIconNamed: name, textStyle: textStyle),
+                size: StoryWebGlyphFontMetrics.pointSize(forIconNamed: key, textStyle: textStyle),
                 relativeTo: textStyle.swiftUITextStyle
             ))
         }

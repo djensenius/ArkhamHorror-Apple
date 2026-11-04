@@ -125,6 +125,18 @@ struct GameLogOutlineTests {
         ) == nil)
         #expect(StoryNodePresentation.accessibilityLabel(for: rune) == "Chamber rune m")
 
+        // A log icon part that names a rune the web way (`runeM`) renders the rune glyph.
+        let runeSlim = WebIconFontAvailability(registrations: [
+            .arkhamSlim: .init(
+                family: .arkhamSlim, postScriptName: "arkhamslim", supportedScalars: [0xE90C]
+            ),
+        ])
+        #expect(renderer.render(.icon("runeM")) == [.icon("runeM")])
+        #expect(StoryInlineTextRenderer.namedIconGlyph("runeM", iconFonts: runeSlim) == .webGlyph(
+            iconName: "rune-M", fontName: "arkhamslim", glyph: "\u{E90C}"
+        ))
+        #expect(StoryNodePresentation.accessibilityLabel(for: [.icon("runeM")]) == "rune m")
+
         let slim = WebIconFontAvailability(registrations: [
             .arkhamSlim: .init(
                 family: .arkhamSlim, postScriptName: "arkhamslim",

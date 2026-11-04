@@ -333,6 +333,25 @@ extension WebIconFontGlyphMappingTests {
                 == .webGlyph(iconName: "perPlayer", fontName: "arkhamicons", glyph: "\u{E915}")
         )
         #expect(StoryInlineTextRenderer.namedIconGlyph("moon", iconFonts: slim) == nil)
+        // Catalog icon variables carry the web placeholder name; it renders the rune glyph.
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("runeM", iconFonts: slim)
+                == .webGlyph(iconName: "rune-M", fontName: "arkhamslim", glyph: "\u{E90C}")
+        )
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("rune-M", iconFonts: slim)
+                == .webGlyph(iconName: "rune-M", fontName: "arkhamslim", glyph: "\u{E90C}")
+        )
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("runeA", iconFonts: slim)
+                == .webGlyph(iconName: "rune-A", fontName: "arkhamslim", glyph: "\u{E900}")
+        )
+        #expect(StoryInlineTextRenderer.namedIconGlyph("runem", iconFonts: slim) == nil)
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("runeM", iconFonts: WebIconFontAvailability())
+                == nil
+        )
+        #expect(StoryNode.spokenIconLabel("runeM") == "rune m")
         #expect(StoryNode.spokenIconLabel("rune-M") == "rune m")
         #expect(StoryNode.spokenIconLabel("perPlayer") == "per player")
     }
