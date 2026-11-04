@@ -45,6 +45,14 @@ enum AssetLocator {
         case let .card(.genericBack(back), _):
             [genericBackCandidate(back)]
 
+        case let .tarot(arcana):
+            // English-only by design: never localized, never in the digest.
+            [AssetCandidateFactory.make(
+                segments: ["tarot", "tarot-\(arcana.imageNumber).jpg"],
+                localeRoot: nil,
+                format: .jpeg
+            )]
+
         default:
             [singleCandidate(for: key.category)]
         }
@@ -52,8 +60,8 @@ enum AssetLocator {
 
     /// Builds the single candidate for every category that never
     /// participates in localization or the front/back fallback chain
-    /// (i.e. every ``AssetCategory`` case besides `.card` and
-    /// `.homebrewCard`, which ``candidates(for:digest:)`` always handles
+    /// (i.e. every ``AssetCategory`` case besides `.card`, `.homebrewCard`
+    /// and `.tarot`, which ``candidates(for:digest:)`` always handles
     /// itself before reaching here).
     private static func singleCandidate(for category: AssetCategory) -> AssetCandidate {
         let (segments, format) = pathComponents(for: category)
@@ -90,9 +98,9 @@ enum AssetLocator {
             return (["tokens", "\(icon.rawValue).png"], .png)
         case let .catalogImage(image):
             return (image.segments, image.format)
-        case .card, .homebrewCard:
+        case .card, .homebrewCard, .tarot:
             preconditionFailure(
-                "card/homebrewCard are always handled by candidates(for:digest:) directly"
+                "card/homebrewCard/tarot are always handled by candidates(for:digest:) directly"
             )
         }
     }
