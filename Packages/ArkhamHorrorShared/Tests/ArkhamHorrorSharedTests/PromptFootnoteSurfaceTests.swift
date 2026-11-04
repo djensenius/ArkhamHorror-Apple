@@ -190,11 +190,11 @@ struct PromptFootnoteSurfaceTests {
 
     @Test("A marker-only label renders just the marker and speaks \"footnote N\"")
     func markerOnlyLabels() throws {
-        // The header's spoken label is the untrimmed node join, so it keeps a leading space.
+        // Spoken labels are trimmed, so a marker-only label has no leading space.
         let header = try prompt(questionLabel: "[^5]")
         #expect(header.headerTitle(in: projection) == "[^5]")
         #expect(header.promptQuestionLabelFootnote == BasicChoiceFootnotedText(
-            nodes: [.footnoteMarker("5")], accessibilityLabel: " footnote 5"
+            nodes: [.footnoteMarker("5")], accessibilityLabel: "footnote 5"
         ))
 
         // A choice's spoken label is trimmed, so the info title has no leading space.

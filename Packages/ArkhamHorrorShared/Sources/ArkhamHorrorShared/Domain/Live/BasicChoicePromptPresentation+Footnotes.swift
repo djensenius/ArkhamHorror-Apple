@@ -16,8 +16,7 @@ extension BasicChoiceFootnotedText {
         else { return nil }
         self.init(
             nodes: nodes,
-            accessibilityLabel: resolution?.accessibilityTitle
-                ?? nodes.map(\.spokenText).joined()
+            accessibilityLabel: resolution?.accessibilityTitle ?? Self.spokenText(nodes)
         )
     }
 
@@ -25,7 +24,13 @@ extension BasicChoiceFootnotedText {
     init?(rawText: String) {
         let nodes = StoryNode.splittingFootnoteMarkers(in: rawText)
         guard StoryFootnoteSuperscript.title(for: nodes) != nil else { return nil }
-        self.init(nodes: nodes, accessibilityLabel: nodes.map(\.spokenText).joined())
+        self.init(nodes: nodes, accessibilityLabel: Self.spokenText(nodes))
+    }
+
+    /// The nodes' spoken form, trimmed like the resolver's and choice labels' spoken titles,
+    /// so a marker-only label reads "footnote N" without a leading space.
+    private static func spokenText(_ nodes: [StoryNode]) -> String {
+        nodes.map(\.spokenText).joined().trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

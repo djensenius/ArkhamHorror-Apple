@@ -50,7 +50,7 @@ struct AmountTravelDeckFootnoteTests {
         let markerOnly = try #require(amountPrompt(legend: "Assign", rowLabel: "[^5]").rows.first)
         #expect(markerOnly.title == "[^5]")
         #expect(markerOnly.titleFootnote?.nodes == [.footnoteMarker("5")])
-        #expect(markerOnly.spokenTitle == " footnote 5")
+        #expect(markerOnly.spokenTitle == "footnote 5")
     }
 
     @Test("Amount labels without footnotes are unchanged")
@@ -104,7 +104,7 @@ struct AmountTravelDeckFootnoteTests {
             title: spokenTitle, locationTitle: action.spokenLocationTitle
         ) == "A footnote 1 and B footnote 22: Alexandria  footnote 1")
         #expect(travel.travelTimeLabelFootnote == BasicChoiceFootnotedText(
-            nodes: [.footnoteMarker("4")], accessibilityLabel: " footnote 4"
+            nodes: [.footnoteMarker("4")], accessibilityLabel: "footnote 4"
         ))
         let locked = try #require(travel.locations.first { $0.isLocked })
         #expect(locked.lockedTitle == "Locked6")
@@ -150,7 +150,7 @@ struct AmountTravelDeckFootnoteTests {
 
         let markerOnly = try deckPrompt(questionLabel: "[^5]")
         #expect(markerOnly.liveChooseDeckPickerHeadingFootnote == BasicChoiceFootnotedText(
-            nodes: [.footnoteMarker("5")], accessibilityLabel: " footnote 5"
+            nodes: [.footnoteMarker("5")], accessibilityLabel: "footnote 5"
         ))
     }
 
