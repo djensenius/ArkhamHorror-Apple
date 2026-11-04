@@ -1257,7 +1257,8 @@ extension BasicChoicePromptPresentation {
     ) -> [StoryNode]? {
         guard let story = choiceFlavorResolutions[descriptor.sourceIndex]?.story,
               let nodes = story.titleNodes,
-              story.title?.trimmingCharacters(in: .whitespacesAndNewlines) == title
+              story.title?.trimmingCharacters(in: .whitespacesAndNewlines) == title,
+              StoryFootnoteSuperscript.title(for: nodes) != nil
         else { return nil }
         return nodes
     }
