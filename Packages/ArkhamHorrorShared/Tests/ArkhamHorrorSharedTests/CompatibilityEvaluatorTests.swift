@@ -118,6 +118,15 @@ struct CompatibilityEvaluatorTests {
 
     // MARK: - Client too old
 
+    @Test("Server minimum 0.1.63 equal to the pinned 0.1.63 is compatible")
+    func serverMinimumEqualToPinIsCompatible() {
+        let caps = compatibleServer(
+            schemaRevision: .literal(major: 0, minor: 1, patch: 63),
+            nativeClientMinimumRevision: .literal(major: 0, minor: 1, patch: 63)
+        )
+        #expect(evaluator.evaluate(caps) == .compatible(capabilities: []))
+    }
+
     @Test("Server minimum 0.1.64 rejects a client that only supports 0.1.63")
     func serverMinimumRejectsClient() {
         let serverMinimum = ContractRevision.literal(major: 0, minor: 1, patch: 64)
