@@ -3,52 +3,11 @@ import Foundation
 import Testing
 
 /// Schema 0.1.57 repin (backend `4db99461`, the upstream sync, djensenius/ArkhamHorror#247):
-/// the governed `Fixtures/Contract` bytes vendored from that commit report 0.1.57, agree with
-/// `ContractPin.current`, and decode with the client's types.
+/// the governed `Fixtures/Contract` board, socket and presentation bytes added by 0.1.57
+/// still decode with the client's types. Those bytes are unchanged at the 0.1.63 pin; the
+/// pin, capabilities and attestation revisions are covered by `Schema163ContractDriftTests`.
 @Suite("Schema 0.1.57 contract drift")
 struct Schema157ContractDriftTests {
-    private static let revision = ContractRevision.literal(major: 0, minor: 1, patch: 57)
-
-    @Test("ContractPin.current pins 0.1.57 and still accepts 0.1.48 servers")
-    func pinRevisions() {
-        let pin = ContractPin.current
-        #expect(pin.backendCommit == "4db9946179ef8b7a242bd7e40c0a2d74990cf3e9")
-        #expect(pin.supportedSchemaRevision == Self.revision)
-        #expect(pin.sourceNativeClientMinimumRevision == Self.revision)
-        #expect(pin.minimumServerSchemaRevision == .literal(major: 0, minor: 1, patch: 48))
-        #expect(pin.expectedApiBasePath == "/api/v1")
-    }
-
-    @Test("Vendored 0.1.57 capabilities match the pin and evaluate as compatible")
-    func capabilitiesMatchPin() throws {
-        for name in ["capabilities", "capabilities-arkhamdb", "capabilities-locale-catalog"] {
-            let caps = try ContractJSON.decode(ServerCapabilities.self, from: data(name))
-            #expect(caps.schemaRevision == Self.revision, "\(name)")
-            #expect(
-                caps.nativeClientMinimumRevision
-                    == ContractPin.current.sourceNativeClientMinimumRevision,
-                "\(name)"
-            )
-            guard case .compatible = CompatibilityEvaluator(pin: .current).evaluate(caps) else {
-                Issue.record("\(name) is not compatible with ContractPin.current")
-                continue
-            }
-        }
-    }
-
-    @Test("The manifest and replay attestation record schema 0.1.57")
-    func manifestAndAttestationRevisions() throws {
-        guard case let .object(manifest) = try value("manifest") else {
-            Issue.record("manifest.json is not an object")
-            return
-        }
-        #expect(manifest["schemaRevision"] == .string("0.1.57"))
-        let attested = try Self.values(forKey: "contractSchemaRevision", in: value(
-            "replay-attestation"
-        ))
-        #expect(attested == [.string("0.1.57"), .string("0.1.57")])
-    }
-
     @Test("Vendored 0.1.57 board and socket fixtures decode")
     func boardAndSocketFixturesDecode() throws {
         let game = try ContractJSON.decode(GetGameEnvelope.self, from: data("get-game")).game
@@ -102,19 +61,5 @@ struct Schema157ContractDriftTests {
 
     private func value(_ name: String) throws -> JSONValue {
         try LosslessJSONParser.parse(data(name))
-    }
-
-    private static func values(forKey key: String, in value: JSONValue) -> [JSONValue] {
-        switch value {
-        case let .object(object):
-            object.keys.sorted().flatMap { name -> [JSONValue] in
-                let nested = object[name].map { values(forKey: key, in: $0) } ?? []
-                return name == key ? [object[name]].compactMap(\.self) + nested : nested
-            }
-        case let .array(array):
-            array.flatMap { values(forKey: key, in: $0) }
-        default:
-            []
-        }
     }
 }
