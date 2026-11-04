@@ -599,8 +599,9 @@ extension BasicChoicePromptPresentation {
             labelResolution: labelResolution,
             revealsHandCardFaces: revealsHandCardFaces
         )
-        if Self.legacyTitleIsCatalogText(choice), labelResolution?.title == title,
-           let spokenTitle = semanticInlineLabel(title) {
+        let isCatalogTitle = Self.legacyTitleIsCatalogText(choice)
+            && labelResolution?.title == title
+        if isCatalogTitle, let spokenTitle = semanticInlineLabel(title) {
             // Catalog text keeps web icons and emphasis as inline nodes, like the
             // presentation path; names and fixed strings below stay literal.
             return BasicChoiceResolvedChoiceLabel(
