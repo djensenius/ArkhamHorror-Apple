@@ -195,9 +195,10 @@ extension StoryNarrativeLocalization {
             // Catalog `.icon` nodes for web icons keep their glyph in the choice title
             // instead of flattening to a word; `runeM` uses the glyph key `rune-M`.
             // Normalizing turns unknown icons into text nodes but does not merge them;
-            // `trimmedTextEdges` then trims the edges and coalesces adjacent text.
+            // `trimmedTextEdges` then trims the edges and coalesces adjacent text. The inline
+            // label renderer rejects `<p>`/`<hN>` wrappers, so they are unwrapped first.
             let nodes = label.hasMarker || label.nodes.containsSemanticIcon
-                ? label.nodes.normalizingWebIconNames.trimmedTextEdges
+                ? label.nodes.unwrappingBlocks.normalizingWebIconNames.trimmedTextEdges
                 : nil
             let spoken = label.nodes.map(\.spokenText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
