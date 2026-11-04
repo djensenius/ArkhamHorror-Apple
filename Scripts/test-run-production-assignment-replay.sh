@@ -310,9 +310,20 @@ cleanup() {
     -n "$selfsigned_keychain" &&
     "$selfsigned_keychain" == "$harness_root/"* ]]
   then
-    if ! /usr/bin/security delete-keychain "$selfsigned_keychain" >/dev/null 2>&1; then
+    # Subshells keep a fail() inside these helpers from skipping the rest of
+    # cleanup.
+    if [[ -e "$selfsigned_keychain" ]] &&
+      ! (bounded "security delete-keychain (cleanup)" \
+        /usr/bin/security delete-keychain "$selfsigned_keychain" \
+        >/dev/null 2>&1)
+    then
       printf 'FAIL: could not delete self-test keychain %s\n' "$selfsigned_keychain" >&2
       cleanup_failed=1
+    fi
+    # create-keychain may have listed the path without leaving a file, or
+    # delete-keychain may have failed; drop only our own search-list entry.
+    if ! selfsigned_keychain_search_status; then
+      (remove_selfsigned_keychain_from_search_list) >/dev/null 2>&1
     fi
     if ! selfsigned_keychain_search_status; then
       printf 'FAIL: self-test keychain may still be in the user search list\n' >&2
@@ -605,12 +616,12 @@ EOF
   [[ ! -e "$selfsigned_keychain" ]] ||
     fail "self-test keychain path already exists"
   keychain_status=0
+  # Set before create-keychain, which adds the keychain to the search list,
+  # so an interruption in between still reaches the cleanup backstop.
+  created_selfsigned_keychain=1
   bounded "security create-keychain" \
     /usr/bin/security create-keychain -p "$keychain_password" \
     "$selfsigned_keychain" >"$selfsigned_log" 2>&1 || keychain_status=$?
-  if [[ "$keychain_status" == 0 || -e "$selfsigned_keychain" ]]; then
-    created_selfsigned_keychain=1
-  fi
   if [[ "$keychain_status" != 0 ]]; then
     /bin/cat "$selfsigned_log" >&2
     fail "could not create the self-test keychain"
