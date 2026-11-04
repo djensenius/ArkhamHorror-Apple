@@ -222,8 +222,9 @@ enum StoryReturnToEntryPresentation {
         .adaptive(lightHex: colorHex, darkHex: darkColorHex)
     }
 
-    /// Codex panels ignore Return to, as the web's FormattedEntry drops every other class
-    /// for codex entries.
+    /// Codex entries skip only the Return to rule and wash, following the web's codex
+    /// branch in FormattedEntry. Colour, font and alignment modifiers still apply to codex
+    /// entries here, as they did before.
     static func applies(to modifiers: [FlavorTextModifier]) -> Bool {
         modifiers.contains(.returnToEntry) && !modifiers.contains(.codexEntry)
     }
@@ -241,11 +242,15 @@ enum StoryFlavorPanelLayer: Equatable {
 
 /// Orders the surface and Return to layers so a Return to entry is one coherent panel.
 ///
-/// Current backend data only puts `ReturnToEntry` on list items, never together with
-/// bordered, codex or interlude entries (arkham-api `Arkham/FlavorText.hs`), but if they are
-/// combined the Return to rule and wash sit inside the framed panel's border, as the web
-/// merges both classes on one element. Unframed surfaces (token reveal, by difficulty) keep
-/// their rounded wash inside the Return to padding.
+/// No current backend call site combines `ReturnToEntry` with bordered, codex or interlude
+/// entries: the `returnTo` helpers only extend list items (arkham-api
+/// `Arkham/FlavorText.hs:150-160`). `extendModifiers` (`:200-203`) would merge it into an
+/// existing `ModifyEntry`, so the combination is not type-enforced, but nothing produces it
+/// today. If bordered or interlude entries are combined with it, the Return to rule and wash
+/// sit inside the framed panel's border, as the web merges both classes on one element.
+/// Codex entries skip only the Return to layer (see
+/// ``StoryReturnToEntryPresentation/applies(to:)``). Unframed surfaces (token reveal, by
+/// difficulty) keep their rounded wash inside the Return to padding.
 enum StoryFlavorPanelLayout {
     static func isFramed(_ modifiers: [FlavorTextModifier]) -> Bool {
         modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry)
