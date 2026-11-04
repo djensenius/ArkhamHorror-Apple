@@ -5,6 +5,14 @@ import Foundation
 /// homebrew `{moon}` icon (`frontend/homebrew/*/icons.json`, no web-font glyph). Any other
 /// braced name (for example `{neutral}` or `{future}`) is not an icon and stays literal, as
 /// it does on the web.
+///
+/// `{moon}` deliberately keeps the honest fallback (an SF Symbol plus the spoken name
+/// "moon") instead of the web's artwork. On the web it comes from the Circus Ex Mortis
+/// homebrew (`frontend/homebrew/circus-ex-mortis/icons.json`, `style.css:5-16`): a CSS mask
+/// over `./img/icons/moon.png` that Vite emits as a hashed bundle asset
+/// (`frontend/src/arkham/homebrewAssets.ts:4-8`), so there is no font glyph and no stable
+/// asset URL to load at runtime. The image's licence is unknown, and this client vendors no
+/// image bytes (`Resources/AssetDigests/PROVENANCE.md`).
 enum WebIconName: String, CaseIterable, Sendable {
     case action, fast, reaction
     case willpower, intellect, combat, agility, wild
