@@ -36,6 +36,43 @@ enum SlotIcon: String, CaseIterable, Sendable, Equatable, Hashable {
     case leadInvestigator = "lead-investigator"
 }
 
+/// The 22 major arcana the web client ships tarot art for.
+///
+/// Raw values are the backend's `TarotCardArcana` strings. Mirrors
+/// `tarotArcanaImage` in `frontend/src/arkham/types/TarotCard.ts` exactly:
+/// each case maps to `tarot/tarot-<imageNumber>.jpg`. Declaration order is
+/// the image number, so `imageNumber` is the case's index.
+enum TarotArcanaArt: String, CaseIterable, Sendable, Equatable, Hashable {
+    case theFool = "TheFool0"
+    case theMagician = "TheMagicianI"
+    case theHighPriestess = "TheHighPriestessII"
+    case theEmpress = "TheEmpressIII"
+    case theEmperor = "TheEmperorIV"
+    case theHierophant = "TheHierophantV"
+    case theLovers = "TheLoversVI"
+    case theChariot = "TheChariotVII"
+    case strength = "StrengthVIII"
+    case theHermit = "TheHermitIX"
+    case wheelOfFortune = "WheelOfFortuneX"
+    case justice = "JusticeXI"
+    case theHangedMan = "TheHangedManXII"
+    case death = "DeathXIII"
+    case temperance = "TemperanceXIV"
+    case theDevil = "TheDevilXV"
+    case theTower = "TheTowerXVI"
+    case theStar = "TheStarXVII"
+    case theMoon = "TheMoonXVIII"
+    case theSun = "TheSunXIX"
+    case judgement = "JudgementXX"
+    case theWorld = "TheWorldXXI"
+
+    /// The `N` in `tarot/tarot-N.jpg` (0 for The Fool … 21 for The World).
+    var imageNumber: Int {
+        // allCases is declared in image-number order; every case is present.
+        Self.allCases.firstIndex(of: self) ?? 0
+    }
+}
+
 /// The specific side/variant of a card an ``AssetKey`` requests art for.
 ///
 /// This intentionally does not attempt to replicate the web client's
@@ -100,6 +137,8 @@ enum AssetCategory: Sendable, Equatable, Hashable {
     case homebrewCampaignBox(campaign: AssetIdentifier)
     /// `tokens/<slot>.png`.
     case slotIcon(SlotIcon)
+    /// `tarot/tarot-<n>.jpg`. English-only by design.
+    case tarot(TarotArcanaArt)
     /// An exact, validated semantic image from a locale catalog.
     case catalogImage(CatalogImageAsset)
 }
@@ -116,7 +155,7 @@ extension AssetCategory {
             case .encounter, .player: .jpeg
             case let .custom(_, format): format
             }
-        case .portrait, .campaignBox, .homebrewCampaignBox:
+        case .portrait, .campaignBox, .homebrewCampaignBox, .tarot:
             .jpeg
         case .chaosToken, .homebrewChaosToken, .setIcon, .homebrewSetIcon, .slotIcon:
             .png
@@ -129,7 +168,7 @@ extension AssetCategory {
     /// digest before falling back to English. Only the shared `cards/`
     /// path family is localized on the CDN; every other category (generic
     /// backs, portraits, chaos tokens, set icons, boxes, homebrew, slot
-    /// icons) is English-only regardless of the requested locale.
+    /// icons, tarot) is English-only regardless of the requested locale.
     var isLocalizable: Bool {
         if case .card(.art, _) = self {
             return true

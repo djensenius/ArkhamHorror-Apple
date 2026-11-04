@@ -72,6 +72,7 @@ struct LocalizedDigestCompactorDriftTests {
         let result = LocalizedDigestCompactor.compactCardIdentifiers(fromRawEntries: [
             "cards/01001.avif",
             "portraits/01001.jpg", // wrong prefix
+            "tarot/tarot-0.jpg", // tarot art is English-only, never in the digest
             "cards/01002.bmp", // unrecognized extension
             "cards/01001B.avif", // uppercase suffix: fails cardCode grammar
             "cards/51025-.avif", // trailing hyphen: fails cardCode grammar

@@ -250,6 +250,58 @@ struct PickDestinyPromptTests {
         #expect(source.contains("proxy.scrollTo(focusedID, anchor: .center)"))
     }
 
+    @Test("Pick Destiny rows show hosted tarot art, rotated 180° only when reversed")
+    func pickDestinyTarotImagePresentation() throws {
+        let key = try #require(PickDestinyTarotImageView.assetKey(forArcana: "TemperanceXIV"))
+        #expect(key == AssetKey(source: .hosted, category: .tarot(.temperance), locale: .english))
+        #expect(AssetLocator.candidates(for: key).map { $0.url(base: .hosted).absoluteString } ==
+            ["https://assets.arkhamhorror.app:443/img/arkham/tarot/tarot-14.jpg"])
+        #expect(PickDestinyTarotImageView.assetKey(forArcana: "NotAnArcana") == nil)
+        #expect(PickDestinyTarotImageView.rotationDegrees(for: .reversed) == 180)
+        #expect(PickDestinyTarotImageView.rotationDegrees(for: .upright) == 0)
+        // 4:7 portrait; compact rows use a smaller card so several fit in 240pt.
+        #expect(PickDestinyTarotImageView.size(isCompact: false) == CGSize(width: 60, height: 105))
+        #expect(PickDestinyTarotImageView.size(isCompact: true) == CGSize(width: 36, height: 63))
+
+        let source = try pickDestinyPromptViewSource()
+        let symbol = try #require(source.range(of: "\"arrow.uturn.down\"")?.lowerBound)
+        let image = try #require(
+            source.range(
+                of: "PickDestinyTarotImageView(tarot: drawing.tarot, isCompact: isCompact)"
+            )?.lowerBound
+        )
+        let title = try #require(source.range(of: "Text(row.scenarioTitle)")?.lowerBound)
+        #expect(symbol < image)
+        #expect(image < title)
+
+        let imageSource = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appending(path: "Sources/ArkhamHorrorShared/Presentation/Live")
+                .appending(path: "PickDestinyTarotImageView.swift"),
+            encoding: .utf8
+        )
+        #expect(imageSource.contains(
+            ".rotationEffect(.degrees(Self.rotationDegrees(for: tarot.facing)))"
+        ))
+        #expect(imageSource.contains("reduceMotion ? nil : .easeInOut"))
+        // Hidden once, on the outer container, covering image, progress and placeholder.
+        #expect(imageSource.components(separatedBy: ".accessibilityHidden(true)").count == 2)
+        #expect(imageSource.contains("""
+                }
+                .accessibilityHidden(true)
+            }
+        }
+
+        private struct LoadedPickDestinyTarotImageView
+        """))
+        let failure = try #require(imageSource.range(of: "case .failure:")?.upperBound)
+        let placeholder = try #require(
+            imageSource.range(of: ".fill(Color.secondary.opacity(0.15))")?.lowerBound
+        )
+        #expect(failure < placeholder)
+    }
+
     @Test("AppModel send fence rejects illegal Pick Destiny answers before transport")
     func appModelRejectsIllegalPickDestinyBeforeSend() async throws {
         let model = await GameLifecycleTestModel.makeSignedIn(
