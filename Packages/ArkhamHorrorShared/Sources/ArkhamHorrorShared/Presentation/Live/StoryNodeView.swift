@@ -74,12 +74,12 @@ struct ResolvedStoryEntryView: View {
         case let .nodes(nodes):
             StoryNodeSequenceView(nodes: nodes, inlineTextStyle: inlineTextStyle)
         case let .heading(level, nodes):
-            StoryNodeChildrenView(
-                children: nodes,
-                inlineTextStyle: StoryHeadingPresentation.textStyle(for: level.rawValue)
+            let style = StoryBlockTextStyle.heading(
+                level: level.rawValue, inheriting: inlineTextStyle
             )
-            .font(StoryHeadingPresentation.font(for: level.rawValue))
-            .addingStoryHeadingTrait()
+            StoryNodeChildrenView(children: nodes, inlineTextStyle: style.inlineTextStyle)
+                .font(style.font)
+                .addingStoryHeadingTrait()
         case let .modified(modifiers, entry):
             ModifiedResolvedStoryEntryView(
                 modifiers: modifiers, entry: entry, cardCatalog: cardCatalog
@@ -326,6 +326,7 @@ private struct StoryReferenceText: View {
 
 private struct StoryFlavorTextModifier: ViewModifier {
     let modifiers: [FlavorTextModifier]
+    @Environment(\.storyEntryInlineTextStyle) private var inheritedTextStyle
 
     func body(content: Content) -> some View {
         let layers = StoryFlavorPanelLayout.layers(for: modifiers)
@@ -373,7 +374,7 @@ private struct StoryFlavorTextModifier: ViewModifier {
 
     private var font: Font? {
         if modifiers.contains(.plainText) {
-            return .body
+            return StoryBlockTextStyle.plainText(inheriting: inheritedTextStyle).font
         }
         if modifiers.contains(.checkpointEntry) || modifiers.contains(.resolutionEntry) {
             return .headline
@@ -713,6 +714,7 @@ enum StoryInlineTextRenderer {
 private struct StoryNodeView: View {
     let node: StoryNode
     var inlineTextStyle: StoryInlineTextStyle = .body
+    @Environment(\.storyEntryInlineTextStyle) private var entryTextStyle
 
     var body: some View {
         switch node {
@@ -727,11 +729,10 @@ private struct StoryNodeView: View {
                 StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
             }
         case let .heading(level, children):
-            StoryNodeChildrenView(
-                children: children, inlineTextStyle: StoryHeadingPresentation.textStyle(for: level)
-            )
-            .font(StoryHeadingPresentation.font(for: level))
-            .addingStoryHeadingTrait()
+            let style = StoryBlockTextStyle.heading(level: level, inheriting: entryTextStyle)
+            StoryNodeChildrenView(children: children, inlineTextStyle: style.inlineTextStyle)
+                .font(style.font)
+                .addingStoryHeadingTrait()
         case let .emphasis(style, children):
             emphasized(children, style: style)
         case let .list(ordered, items):
@@ -1079,21 +1080,32 @@ enum StoryWebGlyphFontMetrics {
     }
 #endif
 
-private enum StoryHeadingPresentation {
-    static func font(for level: Int) -> Font {
-        switch level {
-        case 1: .title2
-        case 2: .title3
-        default: .headline
+/// Heading and PlainText metrics relative to the entry's inherited inline text style
+/// (`storyEntryInlineTextStyle`). The body default keeps the story's heading sizes and
+/// `.body`; a footnote's caption scales a heading to caption semibold and PlainText to
+/// caption, matching the icons and `[^N]` markers sized from the same style.
+struct StoryBlockTextStyle: Equatable {
+    let font: Font
+    let inlineTextStyle: StoryInlineTextStyle
+
+    static func heading(level: Int, inheriting inherited: StoryInlineTextStyle) -> Self {
+        guard inherited == .body else {
+            return Self(
+                font: .system(inherited.swiftUITextStyle, weight: .semibold),
+                inlineTextStyle: inherited
+            )
+        }
+        return switch level {
+        case 1: Self(font: .title2, inlineTextStyle: .title2)
+        case 2: Self(font: .title3, inlineTextStyle: .title3)
+        default: Self(font: .headline, inlineTextStyle: .headline)
         }
     }
 
-    static func textStyle(for level: Int) -> StoryInlineTextStyle {
-        switch level {
-        case 1: .title2
-        case 2: .title3
-        default: .headline
-        }
+    static func plainText(inheriting inherited: StoryInlineTextStyle) -> Self {
+        inherited == .body
+            ? Self(font: .body, inlineTextStyle: .body)
+            : Self(font: .system(inherited.swiftUITextStyle), inlineTextStyle: inherited)
     }
 }
 

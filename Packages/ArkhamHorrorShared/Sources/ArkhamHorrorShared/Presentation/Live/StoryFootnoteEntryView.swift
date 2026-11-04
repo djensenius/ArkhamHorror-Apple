@@ -68,7 +68,7 @@ struct StoryFootnoteEntryPresentation: Equatable {
         case let .text(value):
             value
         case let .nodes(nodes), let .heading(_, nodes):
-            StoryNodePresentation.accessibilityLabel(for: nodes)
+            spokenText(for: nodes)
         case let .modified(modifiers, entry):
             // `ModifiedResolvedStoryEntryView` labels a valid/invalid entry with an icon.
             joined([
@@ -96,6 +96,50 @@ struct StoryFootnoteEntryPresentation: Equatable {
         }
         return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// The block-aware VoiceOver text of a note body's nodes. Prose reads exactly as
+    /// ``StoryNodePresentation/accessibilityLabel(for:)``; a table (silent in
+    /// ``StoryNode/spokenText``) reads its header rows, then each body row, with ", " between
+    /// cells and ". " between rows, set off from neighbouring text by a space.
+    static func spokenText(for nodes: [StoryNode]) -> String {
+        var result = ""
+        var followsTable = false
+        for node in nodes {
+            let isTable = if case .table = node {
+                true
+            } else {
+                false
+            }
+            let part = spokenText(for: node)
+            if isTable || followsTable, !part.isEmpty, let last = result.last, !last.isWhitespace {
+                result += " "
+            }
+            result += part
+            followsTable = isTable && !part.isEmpty
+        }
+        return result
+    }
+
+    private static func spokenText(for node: StoryNode) -> String {
+        switch node {
+        case let .table(head, body):
+            (head + body).map { row in
+                row.cells
+                    .map { spokenText(for: $0.children).trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: ", ")
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
+        case let .paragraph(children), let .group(children), let .heading(_, children),
+             let .emphasis(_, children), let .cardReference(_, children):
+            spokenText(for: children)
+        case let .list(_, items):
+            items.map { spokenText(for: $0) }.joined(separator: " ")
+        case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker, .image, .rule:
+            node.spokenText
+        }
+    }
 }
 
 /// A ``ResolvedStoryEntry/footnote(number:entry:)`` in body order where the server placed it.
@@ -117,16 +161,23 @@ struct StoryFootnoteEntryView: View {
                 .font(.system(size: presentation.marker.pointSize, weight: .bold))
                 .italic(false)
                 .baselineOffset(presentation.marker.baselineOffset)
-            ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
-                .font(.system(StoryFootnoteEntryPresentation.textStyle.swiftUITextStyle))
-                .environment(
-                    \.storyEntryInlineTextStyle, StoryFootnoteEntryPresentation.textStyle
-                )
+            Self.noteBody(entry: entry, cardCatalog: cardCatalog)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(.secondary)
         .padding(.top, StoryFootnoteEntryPresentation.topPadding)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
+    }
+
+    /// The note body in caption metrics: the caption font for its text, and the caption
+    /// `storyEntryInlineTextStyle` that every nested ``ResolvedStoryEntryView`` hands to its
+    /// icons, `[^N]` markers, headings and PlainText. The wiring test renders this too.
+    static func noteBody(
+        entry: ResolvedStoryEntry, cardCatalog: CardCatalogSnapshot?
+    ) -> some View {
+        ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
+            .font(.system(StoryFootnoteEntryPresentation.textStyle.swiftUITextStyle))
+            .environment(\.storyEntryInlineTextStyle, StoryFootnoteEntryPresentation.textStyle)
     }
 }
