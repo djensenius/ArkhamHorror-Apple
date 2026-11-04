@@ -1213,7 +1213,8 @@ extension BasicChoicePromptPresentation {
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let spoken = semanticSpokenLabel(trimmed)
+        // Removing emphasis markers can leave edge whitespace or nothing at all (`_ _`).
+        let spoken = semanticSpokenLabel(trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
         return spoken.isEmpty ? nil : spoken
     }
 

@@ -115,6 +115,33 @@ struct GameLogOutlineTests {
         #expect(StoryInlineTextRenderer.namedIconGlyph("future-symbol", iconFonts: loaded) == nil)
     }
 
+    @Test("Log runes fall back to the spoken rune name; codex/day/night use web glyphs")
+    func logRuneFallbackAndLabelGlyphs() {
+        let renderer = GameLogPartRenderer(resolver: nil)
+        let rune = renderer.render(.text("Chamber [tdc_rune_m]"))
+        #expect(rune == [.text("Chamber "), .icon("rune-M")])
+        #expect(StoryInlineTextRenderer.namedIconGlyph(
+            "rune-M", iconFonts: WebIconFontAvailability()
+        ) == nil)
+        #expect(StoryNodePresentation.accessibilityLabel(for: rune) == "Chamber rune m")
+
+        let slim = WebIconFontAvailability(registrations: [
+            .arkhamSlim: .init(
+                family: .arkhamSlim, postScriptName: "arkhamslim",
+                supportedScalars: [0x68, 0x69, 0x6A]
+            ),
+        ])
+        for (name, glyph) in [("codex", "h"), ("day", "i"), ("night", "j")] {
+            #expect(renderer.render(.icon(name)) == [.icon(name)])
+            #expect(StoryInlineTextRenderer.namedIconGlyph(name, iconFonts: slim) == .webGlyph(
+                iconName: name, fontName: "arkhamslim", glyph: glyph
+            ))
+            #expect(StoryInlineTextRenderer.namedIconGlyph(
+                name, iconFonts: WebIconFontAvailability()
+            ) == nil)
+        }
+    }
+
     private func entry(
         _ seq: Int,
         kind: String = "Mechanic",

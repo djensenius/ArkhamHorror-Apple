@@ -70,7 +70,31 @@ enum StoryIconInlineParser {
     static func nodes(for text: String) -> [StoryNode]? {
         let atoms = formattedAtoms(text)
         guard atoms.contains(where: \.isMarkup) else { return nil }
-        return storyNodes(atoms)
+        let nodes = trimmingTextEdges(storyNodes(atoms))
+        return nodes.isEmpty ? nil : nodes
+    }
+
+    /// Removing markers can leave whitespace at the edges (`__ Hello`), so the outer text
+    /// nodes are trimmed to match the trimmed title.
+    private static func trimmingTextEdges(_ nodes: [StoryNode]) -> [StoryNode] {
+        var nodes = nodes
+        if case let .text(text)? = nodes.first {
+            let trimmed = String(text.drop(while: \.isWhitespace))
+            if trimmed.isEmpty {
+                nodes.removeFirst()
+            } else {
+                nodes[0] = .text(trimmed)
+            }
+        }
+        if case let .text(text)? = nodes.last {
+            let trimmed = String(text.reversed().drop(while: \.isWhitespace).reversed())
+            if trimmed.isEmpty {
+                nodes.removeLast()
+            } else {
+                nodes[nodes.count - 1] = .text(trimmed)
+            }
+        }
+        return nodes
     }
 
     /// The spoken/plain form of `text`: the same formatting as ``nodes(for:)`` with each
@@ -131,13 +155,23 @@ enum StoryIconInlineParser {
 
     private static let runeTokenPrefix = Array("[tdc_rune_")
 
+    /// The longest braced name ``WebIconPlaceholder(placeholderName:)`` accepts: a
+    /// ``WebIconName`` or `runeX`.
+    static let maxPlaceholderNameLength = WebIconName.allCases
+        .map(\.rawValue.count)
+        .reduce("runeX".count, max)
+
     private static func placeholder(
         in characters: [Character],
         at index: Int
     ) -> (WebIconPlaceholder, Int)? {
         switch characters[index] {
         case "{":
-            guard let close = characters[(index + 1)...].firstIndex(of: "}"),
+            // No placeholder name is longer than `maxPlaceholderNameLength`, so the search
+            // for `}` is bounded and a long run of `{` stays linear.
+            let searchEnd = min(characters.count, index + maxPlaceholderNameLength + 2)
+            guard index + 1 < searchEnd,
+                  let close = characters[(index + 1) ..< searchEnd].firstIndex(of: "}"),
                   let placeholder = WebIconPlaceholder(
                       placeholderName: String(characters[(index + 1) ..< close])
                   )

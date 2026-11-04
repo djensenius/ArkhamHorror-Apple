@@ -288,6 +288,22 @@ extension WebIconFontGlyphMappingTests {
         )
     }
 
+    @Test("A long run of braces parses in linear time and stays literal")
+    func longBraceRunStaysLiteralAndLinear() throws {
+        #expect(StoryIconInlineParser.maxPlaceholderNameLength == "elderThing".count)
+        let braces = String(repeating: "{", count: 10000) + "}"
+        let spoken: (WebIconPlaceholder) -> String = { $0.glyphKey }
+        let start = ContinuousClock.now
+        #expect(StoryIconInlineParser.nodes(for: braces) == nil)
+        #expect(StoryIconInlineParser.plainText(for: braces, spokenName: spoken) == braces)
+        let withIcon = String(repeating: "{", count: 10000) + "skull}"
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: withIcon))
+                == [.text(String(repeating: "{", count: 9999)), .semanticIcon(.chaosToken(.skull))]
+        )
+        #expect(ContinuousClock.now - start < .seconds(1))
+    }
+
     @Test("Named web icons render with the runtime font or fall back honestly")
     func namedWebIconRendersRuntimeGlyphOrFallsBack() {
         let arkham = WebIconFontAvailability(registrations: [

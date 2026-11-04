@@ -321,6 +321,32 @@ struct BasicChoiceSemanticPresentationTests {
         }
     }
 
+    @Test("Titles are trimmed again after emphasis markers are removed")
+    func titlesTrimAfterMarkerRemoval() throws {
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let blank = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "_ _")
+        ))
+        let blankChoice = try #require(blank.choices.first)
+        let blankResolved = blank.resolvedChoiceLabel(for: blankChoice, in: projection)
+        #expect(blankResolved.title == "Choice 1")
+        #expect(blankResolved.accessibilityLabel == "Choice 1")
+        #expect(blankResolved.titleNodes == nil)
+
+        let hello = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "__ Hello")
+        ))
+        let helloChoice = try #require(hello.choices.first)
+        let helloResolved = hello.resolvedChoiceLabel(for: helloChoice, in: projection)
+        #expect(helloResolved.title == "Hello")
+        #expect(helloResolved.accessibilityLabel == "Hello")
+        #expect(helloResolved.titleNodes == [.text("Hello")])
+    }
+
     @Test("Spoken icon names cover the web vocabulary with the 1.22.2 chaos names unchanged")
     func spokenIconNameTable() throws {
         let prompt = try singleChoicePrompt(choice: .init(
