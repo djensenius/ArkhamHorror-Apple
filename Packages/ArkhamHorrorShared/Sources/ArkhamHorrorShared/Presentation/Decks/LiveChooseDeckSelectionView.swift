@@ -53,6 +53,7 @@ struct LiveChooseDeckSelectionView: View {
     let gameID: GameID
     let promptKey: BasicChoicePromptKey
     let heading: String
+    let headingFootnote: BasicChoiceFootnotedText?
 
     @State private var viewModel: LobbyDeckSelectionViewModel
     @State private var submissionState = LiveChooseDeckSubmissionState()
@@ -62,13 +63,15 @@ struct LiveChooseDeckSelectionView: View {
         profile: ServerProfile,
         gameID: GameID,
         promptKey: BasicChoicePromptKey,
-        heading: String = BasicChoicePromptPresentation.liveChooseDeckGenericHeading()
+        heading: String = BasicChoicePromptPresentation.liveChooseDeckGenericHeading(),
+        headingFootnote: BasicChoiceFootnotedText? = nil
     ) {
         self.model = model
         self.profile = profile
         self.gameID = gameID
         self.promptKey = promptKey
         self.heading = heading
+        self.headingFootnote = headingFootnote
         _viewModel = State(
             initialValue: LobbyDeckSelectionViewModel(
                 profile: profile,
@@ -87,9 +90,17 @@ struct LiveChooseDeckSelectionView: View {
     var body: some View {
         ArkhamCard {
             VStack(alignment: .leading, spacing: 10) {
-                Text(heading)
+                if let headingFootnote {
+                    FootnotedInlineText(
+                        text: heading, footnote: headingFootnote, textStyle: .headline
+                    )
                     .font(.headline)
                     .foregroundStyle(ArkhamTheme.bone)
+                } else {
+                    Text(heading)
+                        .font(.headline)
+                        .foregroundStyle(ArkhamTheme.bone)
+                }
                 content
                 if let restrictionNotice {
                     Text(restrictionNotice)

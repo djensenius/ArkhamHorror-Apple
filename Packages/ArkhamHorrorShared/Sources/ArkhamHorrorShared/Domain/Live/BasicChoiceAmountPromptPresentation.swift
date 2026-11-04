@@ -12,6 +12,8 @@ struct BasicChoiceAmountPrompt: Sendable, Equatable {
     let legend: String
     let rows: [BasicChoiceAmountPromptRow]
     let target: QuestionPresentation.AmountTarget?
+    /// Set only when the legend carries a `[^N]` footnote (TASK-1.22.12).
+    var legendFootnote: BasicChoiceFootnotedText?
 
     var visibleRows: [BasicChoiceAmountPromptRow] {
         rows.filter(\.isVisible)
@@ -181,6 +183,13 @@ struct BasicChoiceAmountPromptRow: Sendable, Equatable, Identifiable {
     let minBound: Int
     let maxBound: Int
     let labelUnavailableReason: StoryUnavailableReason?
+    /// Set only when the title carries a `[^N]` footnote (TASK-1.22.12).
+    var titleFootnote: BasicChoiceFootnotedText?
+
+    /// The title VoiceOver reads: "footnote N" for a footnoted title, else `title`.
+    var spokenTitle: String {
+        titleFootnote?.accessibilityLabel ?? title
+    }
 
     var isVisible: Bool {
         maxBound != 0
@@ -305,10 +314,17 @@ extension BasicChoicePromptPresentation {
                             key: amountChoicePromptLabelKey(choice.choiceID),
                             labelText: choice.label,
                             upperBound: choice.maxBound
+                        ),
+                        titleFootnote: promptLabelFootnote(
+                            key: amountChoicePromptLabelKey(choice.choiceID),
+                            labelText: choice.label
                         )
                     )
                 },
-                target: presentation.target
+                target: presentation.target,
+                legendFootnote: promptLabelFootnote(
+                    key: "label", labelText: presentation.label?.text
+                )
             )
         case .paymentAmounts:
             guard let choices = presentation.paymentChoices else { return nil }
@@ -340,10 +356,17 @@ extension BasicChoicePromptPresentation {
                             key: paymentChoicePromptLabelKey(choice.choiceID),
                             labelText: choice.title.text,
                             upperBound: choice.max
+                        ),
+                        titleFootnote: promptLabelFootnote(
+                            key: paymentChoicePromptLabelKey(choice.choiceID),
+                            labelText: choice.title.text
                         )
                     )
                 },
-                target: presentation.target
+                target: presentation.target,
+                legendFootnote: promptLabelFootnote(
+                    key: "label", labelText: presentation.label?.text
+                )
             )
         case .singleChoice, .exchangeAmounts, .deck, .standaloneSettings, .campaignSettings,
              .pickDestiny, .campaignSpecific, .scenarioSpecific, .continueCampaign:

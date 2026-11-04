@@ -37,40 +37,69 @@ struct ScarletKeysTravelPromptView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(location.title ?? scarletKeysTravelLocalized(
-                        "scarletKeysTravel.locationTextUnavailable",
-                        "Location text unavailable"
-                    ))
+                    FootnotedInlineText(
+                        text: location.title ?? scarletKeysTravelLocalized(
+                            "scarletKeysTravel.locationTextUnavailable",
+                            "Location text unavailable"
+                        ),
+                        footnote: location.titleFootnote,
+                        textStyle: .headline
+                    )
                     .font(.headline)
                     if let subtitle = location.subtitle {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                        FootnotedInlineText(
+                            text: subtitle,
+                            footnote: location.subtitleFootnote,
+                            textStyle: .caption
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
                 let travelTimeLabel = prompt.travelTimeLabel
                 if let travelTime = location.travelTime, let travelTimeLabel {
-                    Text("\(travelTimeLabel): \(travelTime)")
+                    if let footnote = prompt.travelTimeLabelFootnote {
+                        FootnotedInlineText(
+                            text: travelTimeLabel,
+                            footnote: footnote,
+                            textStyle: .caption,
+                            suffix: ": \(travelTime)"
+                        )
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(.secondary)
-                        .accessibilityLabel("\(travelTimeLabel): \(travelTime)")
+                    } else {
+                        Text("\(travelTimeLabel): \(travelTime)")
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .accessibilityLabel("\(travelTimeLabel): \(travelTime)")
+                    }
                 }
             }
 
             let shouldShowCurrentLocationLabel = location.isCurrent && location.actions.isEmpty
             if shouldShowCurrentLocationLabel {
                 if let currentLocationTitle = prompt.currentLocationTitle {
-                    Label(currentLocationTitle, systemImage: "mappin.circle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    FootnotedInlineLabel(
+                        text: currentLocationTitle,
+                        footnote: prompt.currentLocationTitleFootnote,
+                        systemImage: "mappin.circle.fill",
+                        textStyle: .caption
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
 
             if let lockedTitle = location.lockedTitle {
-                Label(lockedTitle, systemImage: "lock.fill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                FootnotedInlineLabel(
+                    text: lockedTitle,
+                    footnote: location.lockedTitleFootnote,
+                    systemImage: "lock.fill",
+                    textStyle: .caption
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             if !location.actions.isEmpty {
@@ -101,14 +130,18 @@ struct ScarletKeysTravelPromptView: View {
         )
         let control = SemanticActionControl(
             accessibilityLabel: Text(Self.actionAccessibilityLabel(
-                title: title,
-                locationTitle: action.locationTitle
+                title: action.spokenTitle ?? title,
+                locationTitle: action.spokenLocationTitle
             )),
             semanticFocusID: focusID,
             onOutcome: { controller.handle(focusID: $0, $1) },
             label: {
-                Label(title, systemImage: systemImage(for: action.kind))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                FootnotedInlineLabel(
+                    text: title,
+                    footnote: action.titleFootnote,
+                    systemImage: systemImage(for: action.kind)
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         )
         .focused(focusBinding, equals: focusID)
