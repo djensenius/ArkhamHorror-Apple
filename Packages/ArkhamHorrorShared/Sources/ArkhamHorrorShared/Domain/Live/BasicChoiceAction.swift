@@ -99,10 +99,14 @@ enum BasicChoiceServerFeedbackSource: Sendable, Equatable {
 struct BasicChoiceResolvedLabelText: Sendable, Equatable {
     let title: String
     let inlineNodes: [StoryNode]?
+    /// The VoiceOver form of `title`, set only when the label carries a split `[^N]`
+    /// footnote reference (`1927[^5]` displays "19275" but reads "1927 footnote 5").
+    let accessibilityTitle: String?
 
-    init(title: String, inlineNodes: [StoryNode]? = nil) {
+    init(title: String, inlineNodes: [StoryNode]? = nil, accessibilityTitle: String? = nil) {
         self.title = title
         self.inlineNodes = inlineNodes
+        self.accessibilityTitle = accessibilityTitle
     }
 }
 
@@ -128,6 +132,11 @@ enum BasicChoiceLabelResolution: Sendable, Equatable {
     var inlineNodes: [StoryNode]? {
         guard case let .resolved(label) = self else { return nil }
         return label.inlineNodes
+    }
+
+    var accessibilityTitle: String? {
+        guard case let .resolved(label) = self else { return nil }
+        return label.accessibilityTitle
     }
 
     var unavailableReason: StoryUnavailableReason? {
