@@ -601,7 +601,18 @@ extension BasicChoicePromptPresentation {
         )
         let isCatalogTitle = Self.legacyTitleIsCatalogText(choice)
             && labelResolution?.title == title
-        if isCatalogTitle, let nodes = labelResolution?.inlineNodes {
+        guard isCatalogTitle else {
+            // Names and fixed strings stay literal on screen.
+            return BasicChoiceResolvedChoiceLabel(
+                title: title,
+                subtitle: nil,
+                systemImage: choice.systemImage,
+                // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
+                // reads their spoken names instead.
+                accessibilityLabel: semanticInlineLabel(title) ?? title
+            )
+        }
+        if let nodes = labelResolution?.inlineNodes {
             // Rendered catalog nodes already carry their plain-text title; spoken-izing it
             // again could strip literal `*x*`, `_x_` or `{icon}` text the nodes still show.
             return BasicChoiceResolvedChoiceLabel(
@@ -612,9 +623,10 @@ extension BasicChoicePromptPresentation {
                 accessibilityLabel: title
             )
         }
-        if isCatalogTitle, let spokenTitle = semanticInlineLabel(title) {
-            // A raw catalog title is spoken-ized and parsed into icon and emphasis nodes;
-            // names and fixed strings below stay literal.
+        let hasRawPlaceholder = StoryIconInlineParser.containsRawPlaceholder(title)
+        if hasRawPlaceholder, let spokenTitle = semanticInlineLabel(title) {
+            // A catalog title still holding raw placeholders is spoken-ized and parsed into
+            // icon and emphasis nodes.
             return BasicChoiceResolvedChoiceLabel(
                 title: spokenTitle,
                 titleNodes: semanticRawLabelNodes(title, title: spokenTitle),
@@ -623,13 +635,12 @@ extension BasicChoicePromptPresentation {
                 accessibilityLabel: spokenTitle
             )
         }
+        // The catalog already rendered this title, so its `*x*` or `_x_` is literal text.
         return BasicChoiceResolvedChoiceLabel(
             title: title,
             subtitle: nil,
             systemImage: choice.systemImage,
-            // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
-            // reads their spoken names instead.
-            accessibilityLabel: semanticInlineLabel(title) ?? title
+            accessibilityLabel: title
         )
     }
 

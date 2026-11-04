@@ -136,6 +136,64 @@ struct LegacyChoiceTitleInlineIconTests {
         #expect(resolved.accessibilityLabel == "Spend *all* Per player clues")
     }
 
+    private func catalogResolver(_ nodes: [LocaleCatalogNode]) -> LocaleCatalogResolver {
+        let digest = String(repeating: "a", count: 64)
+        let manifest = LocaleCatalogManifest(
+            catalogRevision: "1.synthetic000000000000000000000000",
+            defaultLocale: "en",
+            locales: [LocaleCatalogLocaleRecord(
+                locale: "en", fallback: nil,
+                chunks: [LocaleCatalogChunkDescriptor(
+                    pack: "story", path: LocaleCatalogGrammar.chunkPath(forDigest: digest),
+                    bytes: 1, sha256: digest, keys: 1, unsupportedKeys: 0
+                )],
+                keys: 1, bytes: 1
+            )],
+            languageResolution: ["en": "en"],
+            totals: LocaleCatalogTotals(
+                locales: 1, chunks: 1, bytes: 1, keys: 1, unsupportedKeys: 0
+            )
+        )
+        let chunk = LocaleCatalogChunk(
+            locale: "en", fallback: nil, pack: "story",
+            entries: ["label.doneWithMulligan": .message(nodes: nodes, variables: [])]
+        )
+        return LocaleCatalogResolver(snapshot: LocaleCatalogSnapshot(
+            identity: LocaleCatalogIdentity(
+                endpoint: URL(string: "https://catalog.example.test/locale-catalog/manifest.json")!,
+                catalogRevision: manifest.catalogRevision,
+                locale: "en",
+                manifestSha256: String(repeating: "b", count: 64)
+            ),
+            manifest: manifest,
+            chunks: [LocaleCatalogChunkKey(locale: "en", pack: "story"): chunk]
+        ))
+    }
+
+    @Test("Icon-free titles rendered by the production resolver keep their literal text")
+    func productionRenderedLiteralTitlesAreNotReparsed() throws {
+        let question = try fixtureQuestion()
+        // Catalog text is already rendered: literal `*all*` text, a bold node that flattens
+        // to plain text, and a literal `*` (the web's `{asterisk}` escape, already applied).
+        let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+            "$label.doneWithMulligan",
+            resolver: catalogResolver([
+                .text("Spend *all* clues, "),
+                .emphasis(style: .bold, children: [.text("_now_")]),
+                .text(" *"),
+            ]),
+            catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        #expect(label == BasicChoiceResolvedLabelText(title: "Spend *all* clues, _now_ *"))
+
+        let resolved = prompt(question, resolutions: [0: .resolved(label)])
+            .resolvedChoiceLabel(for: question.choices[0], in: projection())
+
+        #expect(resolved.title == "Spend *all* clues, _now_ *")
+        #expect(resolved.titleNodes == nil)
+        #expect(resolved.accessibilityLabel == "Spend *all* clues, _now_ *")
+    }
+
     @Test("Legacy location names keep their literal * and _ characters and no nodes")
     func nonCatalogLegacyTitlesStayLiteral() throws {
         let question = try fixtureQuestion()
