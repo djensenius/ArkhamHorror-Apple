@@ -187,18 +187,21 @@ select_signed_application() {
   return 0
 }
 
-# Runs a command that could block on a keychain or key-access prompt. macOS
-# has no timeout(1), so perl arms SIGALRM and execs the command; after
-# keychain_step_timeout seconds the command dies with exit 142 (128 + SIGALRM),
-# which fails the self-test naming the step. Otherwise it returns the
-# command's own exit status.
+# Runs a command that could block on a keychain or key-access prompt:
+#   bounded <step description> <log path> <command> [arguments...]
+# macOS has no timeout(1), so perl arms SIGALRM and execs the command; after keychain_step_timeout seconds the command dies with exit 142
+# (128 + SIGALRM), which fails the self-test naming the step. Only the command's
+# own output goes to the log, so that failure and any cleanup warnings still
+# reach the caller's stdout and stderr. Otherwise it returns the command's own
+# exit status.
 readonly keychain_step_timeout=120
 bounded() {
   local step="$1"
-  shift
+  local log_path="$2"
+  shift 2
   local status=0
   /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' \
-    "$keychain_step_timeout" "$@" || status=$?
+    "$keychain_step_timeout" "$@" >"$log_path" 2>&1 || status=$?
   if [[ "$status" == 142 ]]; then
     fail "$step timed out after ${keychain_step_timeout}s (a keychain or key-access prompt may be waiting)"
   fi
@@ -260,14 +263,13 @@ append_selfsigned_keychain_to_search_list() {
 }
 
 sign_selfsigned_fixture() {
-  bounded "signing the fixture with codesign" \
+  bounded "signing the fixture with codesign" "$selfsigned_log" \
     /usr/bin/codesign --force \
     --sign "$selfsigned_fingerprint" \
     --keychain "$selfsigned_keychain" \
     --identifier com.apple.dt.Xcode \
     --timestamp=none \
-    "$selfsigned_xcode_fixture" \
-    >"$selfsigned_log" 2>&1
+    "$selfsigned_xcode_fixture"
 }
 
 cleanup() {
@@ -313,9 +315,8 @@ cleanup() {
     # Subshells keep a fail() inside these helpers from skipping the rest of
     # cleanup.
     if [[ -e "$selfsigned_keychain" ]] &&
-      ! (bounded "security delete-keychain (cleanup)" \
-        /usr/bin/security delete-keychain "$selfsigned_keychain" \
-        >/dev/null 2>&1)
+      ! (bounded "security delete-keychain (cleanup)" /dev/null \
+        /usr/bin/security delete-keychain "$selfsigned_keychain")
     then
       printf 'FAIL: could not delete self-test keychain %s\n' "$selfsigned_keychain" >&2
       cleanup_failed=1
@@ -619,9 +620,9 @@ EOF
   # Set before create-keychain, which adds the keychain to the search list,
   # so an interruption in between still reaches the cleanup backstop.
   created_selfsigned_keychain=1
-  bounded "security create-keychain" \
+  bounded "security create-keychain" "$selfsigned_log" \
     /usr/bin/security create-keychain -p "$keychain_password" \
-    "$selfsigned_keychain" >"$selfsigned_log" 2>&1 || keychain_status=$?
+    "$selfsigned_keychain" || keychain_status=$?
   if [[ "$keychain_status" != 0 ]]; then
     /bin/cat "$selfsigned_log" >&2
     fail "could not create the self-test keychain"
@@ -637,32 +638,30 @@ EOF
     keychain_status=0
     case "$keychain_step" in
       settings)
-        bounded "security set-keychain-settings" \
-          /usr/bin/security set-keychain-settings "$selfsigned_keychain" \
-          >"$selfsigned_log" 2>&1 || keychain_status=$?
+        bounded "security set-keychain-settings" "$selfsigned_log" \
+          /usr/bin/security set-keychain-settings "$selfsigned_keychain" ||
+          keychain_status=$?
         ;;
       unlock)
-        bounded "security unlock-keychain" \
+        bounded "security unlock-keychain" "$selfsigned_log" \
           /usr/bin/security unlock-keychain -p "$keychain_password" \
-          "$selfsigned_keychain" >"$selfsigned_log" 2>&1 || keychain_status=$?
+          "$selfsigned_keychain" || keychain_status=$?
         ;;
       import)
-        bounded "security import" \
+        bounded "security import" "$selfsigned_log" \
           /usr/bin/security import "$selfsigned_root/identity.p12" \
           -k "$selfsigned_keychain" \
           -f pkcs12 \
           -P "$pkcs12_password" \
-          -T /usr/bin/codesign \
-          >"$selfsigned_log" 2>&1 || keychain_status=$?
+          -T /usr/bin/codesign || keychain_status=$?
         ;;
       partition)
-        bounded "security set-key-partition-list" \
+        bounded "security set-key-partition-list" "$selfsigned_log" \
           /usr/bin/security set-key-partition-list \
           -S apple-tool:,apple:,codesign: \
           -s \
           -k "$keychain_password" \
-          "$selfsigned_keychain" \
-          >"$selfsigned_log" 2>&1 || keychain_status=$?
+          "$selfsigned_keychain" || keychain_status=$?
         /usr/bin/sed 's/^/  set-key-partition-list: /' "$selfsigned_log"
         ;;
     esac
@@ -720,9 +719,8 @@ EOF
   expect_signature_verdict 3 "$launcher_requirement" "$selfsigned_xcode_fixture" \
     "launcher signature requirement accepted a self-signed com.apple.dt.Xcode signature carrying the App Store leaf OID"
 
-  if ! bounded "security delete-keychain" \
-    /usr/bin/security delete-keychain "$selfsigned_keychain" \
-    >"$selfsigned_log" 2>&1
+  if ! bounded "security delete-keychain" "$selfsigned_log" \
+    /usr/bin/security delete-keychain "$selfsigned_keychain"
   then
     /bin/cat "$selfsigned_log" >&2
     fail "could not delete the self-test keychain"
