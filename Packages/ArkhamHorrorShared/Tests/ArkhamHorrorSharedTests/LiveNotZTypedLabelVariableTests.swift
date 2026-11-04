@@ -140,6 +140,31 @@ struct LiveNotZTypedLabelVariableTests {
         #expect(prompt.isChoiceActionable(choice, in: projection))
     }
 
+    @Test("A catalog $ label left unsplit by a raw variable placeholder still formats [^N]")
+    @MainActor
+    func catalogLabelFootnoteWithRawVariablePlaceholderFormats() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0, with: "$label.footnoteNote place=s:\"{asterisk}\""
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        // The resolver leaves the label unsplit (`footnotedChoiceLabel`'s guard); the
+        // semantic prompt formats it like `legacyChoiceLabel` does.
+        #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
+            title: "Read Wormius 1927[^5] at {asterisk}"
+        )))
+        #expect(resolved.title == "Read Wormius 19275 at *")
+        #expect(resolved.titleNodes == [
+            .text("Read Wormius 1927"), .footnoteMarker("5"), .text(" at *"),
+        ])
+        #expect(resolved.accessibilityLabel == "Read Wormius 1927 footnote 5 at *")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+    }
+
     @Test("Out-of-enum icon variable values leave choice labels unresolved and unpressable")
     @MainActor
     func outOfEnumIconVariableChoiceLabelValueRemainsUnresolved() async throws {

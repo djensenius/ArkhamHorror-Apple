@@ -1183,7 +1183,8 @@ extension BasicChoicePromptPresentation {
         fallback: String?
     ) -> String {
         if let title = labelResolution?.title {
-            return title
+            return semanticUnsplitFootnotedLabel(labelResolution).flatMap(semanticInlineLabel)
+                ?? title
         }
         if let text = descriptor.label?.text {
             if let inline = semanticInlineLabel(text) {
@@ -1212,8 +1213,28 @@ extension BasicChoicePromptPresentation {
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
+        let unsplit = semanticUnsplitFootnotedLabel(labelResolution)
+        if let nodes = unsplit.flatMap({ semanticRawLabelNodes($0, title: title) }) {
+            return nodes
+        }
         guard let labelText = descriptor.label?.text else { return nil }
         return semanticRawLabelNodes(labelText, title: title)
+    }
+
+    /// A resolved catalog title the resolver left unsplit because a text variable put a raw
+    /// `{icon}` or escape beside a `[^N]` reference (`footnotedChoiceLabel`). Like
+    /// `legacyChoiceLabel`, it is then formatted as a raw label; `nil` for any other title,
+    /// so labels without a footnote reference keep their resolved text.
+    private func semanticUnsplitFootnotedLabel(
+        _ labelResolution: BasicChoiceLabelResolution?
+    ) -> String? {
+        guard let title = labelResolution?.title, labelResolution?.inlineNodes == nil,
+              StoryNode.splittingFootnoteMarkers(in: title).contains(where: { node in
+                  guard case .footnoteMarker = node else { return false }
+                  return true
+              })
+        else { return nil }
+        return title
     }
 
     /// Inline icon and emphasis nodes for a raw label whose spoken form is `title`, or `nil`
@@ -1317,6 +1338,7 @@ extension BasicChoicePromptPresentation {
             return spoken
         }
         let rawSources = [
+            semanticUnsplitFootnotedLabel(labelResolution),
             descriptor.label?.text,
             descriptor.tooltip,
             descriptor.flavorText?.title,
