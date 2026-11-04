@@ -220,13 +220,43 @@ struct LegacyChoiceTitleInlineIconTests {
         #expect(resolved.accessibilityLabel == "Done at Chamber of Records Rune M Per player")
     }
 
-    @Test("Raw placeholder detection covers icons, runes and escapes but not emphasis")
+    @Test("A footnote in a resolved text variable renders a marker and speaks \"footnote N\"")
+    func productionVariableFootnoteIsParsed() throws {
+        let question = try fixtureQuestion()
+        let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+            "$label.doneWithMulligan name=s:\"Wormius 1927[^5] {perPlayer}\"",
+            resolver: catalogResolver([
+                .text("Done at "),
+                .variable(name: "name", source: .named, role: .text),
+            ]),
+            catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        #expect(label == BasicChoiceResolvedLabelText(
+            title: "Done at Wormius 1927[^5] {perPlayer}"
+        ))
+
+        let resolved = prompt(question, resolutions: [0: .resolved(label)])
+            .resolvedChoiceLabel(for: question.choices[0], in: projection())
+
+        #expect(resolved.title == "Done at Wormius 19275 Per player")
+        #expect(resolved.titleNodes == [
+            .text("Done at Wormius 1927"), .footnoteMarker("5"), .text(" "),
+            .icon("perPlayer"),
+        ])
+        #expect(
+            resolved.accessibilityLabel == "Done at Wormius 1927 footnote 5 Per player"
+        )
+    }
+
+    @Test("Raw placeholder detection covers icons, runes, escapes and footnotes, not emphasis")
     func rawPlaceholderDetection() {
         let cases: [(String, Bool)] = [
             ("Reveal {skull}", true),
             ("At [tdc_rune_m]", true),
             ("Take 1 {asterisk}", true),
             ("Keep {underscore}", true),
+            ("Wrote 1927[^5]", true),
+            ("Keep [^x] and [^]", false),
             ("Choose {neutral}", false),
             ("Spend *a* clue", false),
             ("Keep a_b", false),
