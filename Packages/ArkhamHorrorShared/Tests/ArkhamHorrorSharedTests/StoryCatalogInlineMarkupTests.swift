@@ -103,6 +103,31 @@ struct StoryCatalogInlineMarkupTests {
         ) == .resolved(ResolvedStory(title: nil, body: [.nodes(nodes)])))
     }
 
+    @Test("A footnote number interpolated from a variable still splits into a marker")
+    func interpolatedFootnoteNumberSplitsAcrossTextSiblings() async throws {
+        let resolver = try await Self.interpolationResolver()
+        let variables: JSONValue = .object(["number": .string("5")])
+        // The resolver keeps the interpolated value as its own text sibling.
+        #expect(resolver.render(key: "story.noteNumber", variables: variables)
+            == .success([.text("Note[^"), .text("5"), .text("].")]))
+
+        let nodes = try Self.narrativeNodes("story.noteNumber", variables, resolver)
+        #expect(nodes == [.text("Note"), .footnoteMarker("5"), .text(".")])
+        #expect(nodes.map(\.plainText).joined() == "Note5.")
+        #expect(StoryNodePresentation.accessibilityLabel(for: nodes) == "Note footnote 5.")
+    }
+
+    @Test("Non-digit interpolations and text split by emphasis keep their literal siblings")
+    func nonFootnoteInterpolationsStayLiteralAndUnmerged() async throws {
+        let resolver = try await Self.interpolationResolver()
+        let name: JSONValue = .object(["name": .string("x")])
+        #expect(try Self.narrativeNodes("story.noteName", name, resolver)
+            == [.text("Note[^"), .text("x"), .text("].")])
+
+        #expect(try Self.narrativeNodes("story.noteEmphasis", .object([:]), resolver)
+            == [.text("Note[^"), .emphasis(.bold, [.text("5")]), .text("].")])
+    }
+
     @Test("VoiceOver announces a footnote marker as a separate footnote number")
     func spokenLabelSeparatesFootnoteMarkers() {
         let paragraph: [StoryNode] = [.paragraph([
@@ -115,6 +140,44 @@ struct StoryCatalogInlineMarkupTests {
         )
         // Flattening (titles) keeps the bare number, like the web's `<sup>` text content.
         #expect(paragraph.map(\.plainText).joined() == "Olaus wrote1 in 19275")
+    }
+
+    static func interpolationResolver() async throws -> LocaleCatalogResolver {
+        try await resolver(
+            entryKeys: ["story.noteNumber", "story.noteName", "story.noteEmphasis"],
+            chunkEntries: """
+            {"story.noteNumber":{"form":"message","nodes":[\
+            {"type":"text","value":"Note[^"},\
+            {"type":"var","name":"number","source":"named","role":"text"},\
+            {"type":"text","value":"]."}],\
+            "variables":[{"name":"number","source":"named","role":"text"}]},\
+            "story.noteName":{"form":"message","nodes":[\
+            {"type":"text","value":"Note[^"},\
+            {"type":"var","name":"name","source":"named","role":"text"},\
+            {"type":"text","value":"]."}],\
+            "variables":[{"name":"name","source":"named","role":"text"}]},\
+            "story.noteEmphasis":{"form":"message","nodes":[\
+            {"type":"text","value":"Note[^"},\
+            {"type":"emphasis","style":"bold","children":[{"type":"text","value":"5"}]},\
+            {"type":"text","value":"]."}],"variables":[]}}
+            """
+        )
+    }
+
+    /// The narrative (story text) nodes for catalog `key`, after footnote splitting.
+    static func narrativeNodes(
+        _ key: String, _ variables: JSONValue, _ resolver: LocaleCatalogResolver
+    ) throws -> [StoryNode] {
+        let resolution = try StoryNarrativeLocalization.resolveProductionCatalogEntry(
+            key,
+            variables: variables,
+            resolver: resolver,
+            catalogUnavailability: .catalog(.transportFailure),
+            makeFallback: { .text($0) },
+            makeResolved: { .nodes($0.nodes) }
+        ).get()
+        guard case let .nodes(nodes) = resolution.entry else { return [] }
+        return nodes
     }
 
     static func resolver(

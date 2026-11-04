@@ -670,34 +670,68 @@ private extension [StoryNode] {
     }
 
     /// Every text node with its `[^N]` footnote references split out, at any depth.
+    ///
+    /// `LocaleCatalogResolver` emits an interpolated variable value as its own plain `.text`
+    /// sibling (`Note[^{number}].` arrives as "Note[^", "5", "]."), and like the web, which
+    /// applies `formatContent` after interpolation, the reference must still split. So each
+    /// level scans its consecutive `.text` siblings as one run. `.text` carries no styling
+    /// or variable marker, and every other node (emphasis, icons, card references) ends a
+    /// run. A run without a footnote keeps its original nodes.
     var splittingFootnoteMarkers: [StoryNode] {
-        flatMap { node -> [StoryNode] in
-            switch node {
-            case let .text(text):
-                StoryNode.splittingFootnoteMarkers(in: text)
-            case let .group(children):
-                [.group(children.splittingFootnoteMarkers)]
-            case let .paragraph(children):
-                [.paragraph(children.splittingFootnoteMarkers)]
-            case let .heading(level, children):
-                [.heading(level: level, children: children.splittingFootnoteMarkers)]
-            case let .emphasis(style, children):
-                [.emphasis(style, children.splittingFootnoteMarkers)]
-            case let .cardReference(code, children):
-                [.cardReference(code: code, children: children.splittingFootnoteMarkers)]
-            case let .list(ordered, items):
-                [.list(ordered: ordered, items: items.map(\.splittingFootnoteMarkers))]
-            case let .table(head, body):
-                [.table(
-                    head: head.map(\.splittingFootnoteMarkers),
-                    body: body.map(\.splittingFootnoteMarkers)
-                )]
-            case .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker:
-                [node]
+        var result: [StoryNode] = []
+        var run: [String] = []
+        func flushRun() {
+            guard !run.isEmpty else { return }
+            let split = StoryNode.splittingFootnoteMarkers(in: run.joined())
+            let hasMarker = split.contains { node in
+                guard case .footnoteMarker = node else { return false }
+                return true
+            }
+            result += hasMarker ? split : run.map(StoryNode.text)
+            run = []
+        }
+        for node in self {
+            if case let .text(text) = node {
+                run.append(text)
+            } else {
+                flushRun()
+                result.append(node.splittingNestedFootnoteMarkers)
             }
         }
+        flushRun()
+        return result
     }
+}
 
+private extension StoryNode {
+    /// `self` with footnote references split inside its children. Text is split by the
+    /// enclosing sibling run, so a bare `.text` is returned unchanged.
+    var splittingNestedFootnoteMarkers: StoryNode {
+        switch self {
+        case let .group(children):
+            .group(children.splittingFootnoteMarkers)
+        case let .paragraph(children):
+            .paragraph(children.splittingFootnoteMarkers)
+        case let .heading(level, children):
+            .heading(level: level, children: children.splittingFootnoteMarkers)
+        case let .emphasis(style, children):
+            .emphasis(style, children.splittingFootnoteMarkers)
+        case let .cardReference(code, children):
+            .cardReference(code: code, children: children.splittingFootnoteMarkers)
+        case let .list(ordered, items):
+            .list(ordered: ordered, items: items.map(\.splittingFootnoteMarkers))
+        case let .table(head, body):
+            .table(
+                head: head.map(\.splittingFootnoteMarkers),
+                body: body.map(\.splittingFootnoteMarkers)
+            )
+        case .text, .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker:
+            self
+        }
+    }
+}
+
+private extension [StoryNode] {
     var trimmedTextEdges: [StoryNode] {
         var nodes = self
         while let first = nodes.first, case let .text(text) = first {
