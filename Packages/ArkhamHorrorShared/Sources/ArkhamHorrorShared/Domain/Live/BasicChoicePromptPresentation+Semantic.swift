@@ -601,13 +601,23 @@ extension BasicChoicePromptPresentation {
         )
         let isCatalogTitle = Self.legacyTitleIsCatalogText(choice)
             && labelResolution?.title == title
+        if isCatalogTitle, let nodes = labelResolution?.inlineNodes {
+            // Rendered catalog nodes already carry their plain-text title; spoken-izing it
+            // again could strip literal `*x*`, `_x_` or `{icon}` text the nodes still show.
+            return BasicChoiceResolvedChoiceLabel(
+                title: title,
+                titleNodes: nodes,
+                subtitle: nil,
+                systemImage: choice.systemImage,
+                accessibilityLabel: title
+            )
+        }
         if isCatalogTitle, let spokenTitle = semanticInlineLabel(title) {
-            // Catalog text keeps web icons and emphasis as inline nodes, like the
-            // presentation path; names and fixed strings below stay literal.
+            // A raw catalog title is spoken-ized and parsed into icon and emphasis nodes;
+            // names and fixed strings below stay literal.
             return BasicChoiceResolvedChoiceLabel(
                 title: spokenTitle,
-                titleNodes: labelResolution?.inlineNodes
-                    ?? semanticRawLabelNodes(title, title: spokenTitle),
+                titleNodes: semanticRawLabelNodes(title, title: spokenTitle),
                 subtitle: nil,
                 systemImage: choice.systemImage,
                 accessibilityLabel: spokenTitle

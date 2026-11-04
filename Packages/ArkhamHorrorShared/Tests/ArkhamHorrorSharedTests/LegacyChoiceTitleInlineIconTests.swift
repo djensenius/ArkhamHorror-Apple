@@ -2,8 +2,8 @@
 import Foundation
 import Testing
 
-/// Choice prompts without the server's question presentation (the legacy path) render
-/// catalog-sourced titles like the presentation path and leave names untouched.
+/// Choice prompts without the server's question presentation (the legacy path) speak and
+/// parse catalog-sourced titles into icon nodes and leave names untouched.
 @Suite("Legacy choice title inline icons")
 struct LegacyChoiceTitleInlineIconTests {
     private let ownerID = BoardTestFixtures.playerID()
@@ -62,8 +62,8 @@ struct LegacyChoiceTitleInlineIconTests {
         )
     }
 
-    @Test("Catalog legacy titles match the presentation path's title, nodes and spoken label")
-    func catalogLegacyTitlesMatchPresentationPath() throws {
+    @Test("Catalog legacy titles are spoken-ized and parsed into icon and emphasis nodes")
+    func catalogLegacyTitlesAreSpokenAndParsed() throws {
         struct Case {
             let label: String
             let title: String
@@ -119,6 +119,23 @@ struct LegacyChoiceTitleInlineIconTests {
         #expect(resolved.accessibilityLabel == "Spend Per player clues")
     }
 
+    @Test("Resolved inline nodes keep their plain title even when it looks like markup")
+    func resolvedInlineNodesKeepTheirPlainTitle() throws {
+        let question = try fixtureQuestion()
+        let nodes: [StoryNode] = [.text("Spend *all* "), .icon("perPlayer"), .text(" clues")]
+        let resolved = prompt(
+            question,
+            resolutions: [0: .resolved(BasicChoiceResolvedLabelText(
+                title: "Spend *all* Per player clues",
+                inlineNodes: nodes
+            ))]
+        ).resolvedChoiceLabel(for: question.choices[0], in: projection())
+
+        #expect(resolved.title == "Spend *all* Per player clues")
+        #expect(resolved.titleNodes == nodes)
+        #expect(resolved.accessibilityLabel == "Spend *all* Per player clues")
+    }
+
     @Test("Legacy location names keep their literal * and _ characters and no nodes")
     func nonCatalogLegacyTitlesStayLiteral() throws {
         let question = try fixtureQuestion()
@@ -141,21 +158,16 @@ struct LegacyChoiceTitleInlineIconTests {
         #expect(resolved.titleNodes == nil)
     }
 
-    @Test("Prompt identity and actionability do not depend on the legacy title")
-    func identityAndActionabilityAreUnchanged() throws {
+    @Test("Prompts differing only in legacy title share a prompt key and stay actionable")
+    func legacyTitleDoesNotChangePromptKeyOrActionability() throws {
         let question = try fixtureQuestion()
         let projection = projection()
         let raw = prompt(question, resolutions: [0: .resolved("Done at [tdc_rune_m] {perPlayer}")])
         let plain = prompt(question, resolutions: [0: .resolved("Done replacing cards")])
-        let expectedKey = BasicChoicePromptKey(
-            gameID: BoardTestFixtures.gameID(),
-            ownerID: ownerID,
-            questionVersion: 4,
-            rawQuestion: question.rawValue
-        )
 
-        #expect(raw.identity.promptKey == expectedKey)
-        #expect(plain.identity.promptKey == expectedKey)
+        #expect(raw.displayTitle(for: question.choices[0], in: projection)
+            != plain.displayTitle(for: question.choices[0], in: projection))
+        #expect(raw.identity.promptKey == plain.identity.promptKey)
         #expect(raw.isChoiceActionable(question.choices[0], in: projection))
         #expect(plain.isChoiceActionable(question.choices[0], in: projection))
         #expect(raw.displayTitle(for: question.choices[0], in: projection)
