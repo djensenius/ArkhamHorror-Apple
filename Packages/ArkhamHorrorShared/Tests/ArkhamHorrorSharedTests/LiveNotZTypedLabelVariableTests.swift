@@ -165,7 +165,7 @@ struct LiveNotZTypedLabelVariableTests {
         #expect(prompt.isChoiceActionable(choice, in: projection))
     }
 
-    @Test("A catalog $ label with an icon, [^N] and a raw variable placeholder splits [^N]")
+    @Test("A catalog $ label with an icon, [^N] and a raw variable placeholder formats both")
     @MainActor
     func catalogLabelFootnoteWithIconAndRawVariablePlaceholderSplits() async throws {
         let fixture = try Self.fixture().replacingChoiceLabel(
@@ -176,20 +176,21 @@ struct LiveNotZTypedLabelVariableTests {
         let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
         let choice = try #require(prompt.choices.first { $0.index == 0 })
         let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
-        // The icon node is kept and the variable's `{asterisk}` stays verbatim text.
+        // The icon node is kept, the marker is raised and the variable's `{asterisk}`
+        // is formatted as `*` (TASK-1.22.14).
         let nodes: [StoryNode] = [
             .text("Spend "), .icon("action"), .text(" on 1927"), .footnoteMarker("5"),
-            .text(" at {asterisk}"),
+            .text(" at *"),
         ]
 
         #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
-            title: "Spend action on 19275 at {asterisk}",
+            title: "Spend action on 19275 at *",
             inlineNodes: nodes,
-            accessibilityTitle: "Spend action on 1927 footnote 5 at {asterisk}"
+            accessibilityTitle: "Spend action on 1927 footnote 5 at *"
         )))
-        #expect(resolved.title == "Spend action on 19275 at {asterisk}")
+        #expect(resolved.title == "Spend action on 19275 at *")
         #expect(resolved.titleNodes == nodes)
-        #expect(resolved.accessibilityLabel == "Spend action on 1927 footnote 5 at {asterisk}")
+        #expect(resolved.accessibilityLabel == "Spend action on 1927 footnote 5 at *")
         #expect(prompt.isChoiceActionable(choice, in: projection))
     }
 
@@ -237,7 +238,7 @@ struct LiveNotZTypedLabelVariableTests {
     }
 
     @MainActor
-    private static func prompt(
+    static func prompt(
         for fixture: TypedLabelFixture,
         labelModel: AppModel
     ) throws -> BasicChoicePromptPresentation {
@@ -272,7 +273,7 @@ struct LiveNotZTypedLabelVariableTests {
     }
 
     @MainActor
-    private static func productionLabelModel() async throws -> AppModel {
+    static func productionLabelModel() async throws -> AppModel {
         let documents = try SyntheticLocaleCatalogDocuments.make(
             pack: "label",
             entryKeys: [
@@ -281,6 +282,8 @@ struct LiveNotZTypedLabelVariableTests {
                 "label.discardCardsWithMatchingIcons",
                 "label.footnoteNote",
                 "label.footnoteIconNote",
+                "label.iconPlaceNote",
+                "label.placeNote",
                 "label.takeDamageAndHorror",
                 "label.test",
                 "label.webIconGlyphs",
@@ -305,7 +308,7 @@ struct LiveNotZTypedLabelVariableTests {
         return model
     }
 
-    private static func fixture() throws -> TypedLabelFixture {
+    static func fixture() throws -> TypedLabelFixture {
         let url = try #require(Bundle.module.url(
             forResource: "roland-c01142-q16-typed-label-vars",
             withExtension: "json",
@@ -378,6 +381,27 @@ struct LiveNotZTypedLabelVariableTests {
         ],
         "variables":[{"name":"place","source":"named","role":"text"}]
       },
+      "label.iconPlaceNote": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Spend "},
+          {"type":"var","name":"action","source":"named","role":"icon"},
+          {"type":"text","value":" at "},
+          {"type":"var","name":"place","source":"named","role":"text"}
+        ],
+        "variables":[
+          {"name":"action","source":"named","role":"icon"},
+          {"name":"place","source":"named","role":"text"}
+        ]
+      },
+      "label.placeNote": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Investigate "},
+          {"type":"var","name":"place","source":"named","role":"text"}
+        ],
+        "variables":[{"name":"place","source":"named","role":"text"}]
+      },
       "label.takeDamageAndHorror": {
         "form":"message",
         "nodes":[
@@ -426,7 +450,7 @@ struct LiveNotZTypedLabelVariableTests {
     """#
 }
 
-private struct TypedLabelFixture: Decodable, Sendable {
+struct TypedLabelFixture: Decodable, Sendable {
     let source: Source
     let expectedTitles: [String]
     let rawQuestion: JSONValue
