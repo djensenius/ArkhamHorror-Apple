@@ -6,9 +6,15 @@ import Testing
 struct LocaleCatalogFixtureProvenanceTests {
     private let expectedDigests = [
         "Contract/capabilities-locale-catalog.json":
-            "5c9acf970b89020e323a31a41064ce2f76ccd488f6f255fa60a457c9037bed87",
+            "7d6d3f581a2358d6a8028018183957fc6f5e7c84f38bc69d1749fcc288157eb9",
         "Contract/locale-catalog-backend-registry.json":
-            "dd5499efa098c6b99492115fc06f55bc21b8d46d4434f9b5fa94bb1aa104180e",
+            "8a3bd549d7553a248a9b8c5996c811183060ce823d8b1ad391b5006d6886b642",
+        // swiftlint:disable:next line_length
+        "Contract/locale-catalog-chunk-0aa7e0e3622e1963b538fcb506184809a9f3caffea917e97d7b78098c277f1f1.json":
+            "0aa7e0e3622e1963b538fcb506184809a9f3caffea917e97d7b78098c277f1f1",
+        // swiftlint:disable:next line_length
+        "Contract/locale-catalog-chunk-0d670d111cf4f1a3b23c24db076fb2d687383ff9f29043295bd50aa907992746.json":
+            "0d670d111cf4f1a3b23c24db076fb2d687383ff9f29043295bd50aa907992746",
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448.json":
             "2efb9d458b5dd9b7ae9a284c277ca68e47a40212c95ce85da5b50f598d9fc448",
@@ -16,23 +22,28 @@ struct LocaleCatalogFixtureProvenanceTests {
         "Contract/locale-catalog-chunk-309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488.json":
             "309d63c6b0ab62a2fc4bc993860a820b05c156f2e7d67439a24b487839df1488",
         // swiftlint:disable:next line_length
+        "Contract/locale-catalog-chunk-97c056d4405e800061cff060f996eff82dde0f84fb396321448bd4e58e6a3640.json":
+            "97c056d4405e800061cff060f996eff82dde0f84fb396321448bd4e58e6a3640",
+        // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-9a30c62c45fb06a929d13506b454d5b9637c5bf3eeb986243ddb007a856cb1a5.json":
             "9a30c62c45fb06a929d13506b454d5b9637c5bf3eeb986243ddb007a856cb1a5",
         // swiftlint:disable:next line_length
         "Contract/locale-catalog-chunk-d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693.json":
             "d951fedc2b5f0644bb126beb77f6e03a2abad3627c274985e9b8a42b09116693",
         "Contract/locale-catalog-manifest.json":
-            "13428276de187f2aa87e16fb9942a5fd16f85530eb6719b6d89bb86961066501",
+            "6cf596192d97f4c7f40e3cfa51da04ce8fbec211dce1eac6875654348c6687fe",
         "Contract/locale-catalog-owned-files.json":
-            "13924d3a1d159fabdd0aaf65a3701da379d8641fb9164089463e6281ddef6e6c",
+            "7c129ffb77c646515bc2b721f8938dbad21f02cec2a5ffa3c4f6c0708e702191",
         "Contract/locale-catalog-source-de.json":
-            "1d60ade53a4b4d7241c88ce8f0cab1b4027e81cd25f10f1ad815948e198fd0bb",
+            "db5a6b0626844d9e3a9b575d2916f721bfde2afe7d27c9e78ec542f893def86d",
         "Contract/locale-catalog-source-en.json":
-            "879de3d794fa5da6202243d3c2b5a37f7e59f7e2582affc4c94d5e9ebb4ff2dd",
+            "0b66ca261b697a4fd3cb8375c694562730d3d02678efcaad2fed46db0eb6afed",
+        "Contract/locale-catalog-source-pl.json":
+            "5ac380c4d12470b9f8357dccbab9df599d26adb8fac27ed35a242357e504e195",
         "Contract/locale-catalog-source-pt-BR.json":
             "cd7593ead3708918f8d8df4dea9775659a78351d90c485f3c82ad8fe69f4f241",
         "Contract/manifest.json":
-            "75e58dcb69d945ecbc8983092b9a6fb47dd4bcfdbea3213588384502c62c0b4c",
+            "9d5d4a40296a4e5b3c88c7ebfdc3eb0be8214c682ad97a4f26af2afc07178232",
         "Schemas/capabilities.schema.json":
             "a71638283a94b4e68c29c1a705dba0f007a3b5a28de324fecdcfdbd179430658",
         "Schemas/chunk.schema.json":

@@ -44,7 +44,7 @@ struct ArkhamDBCapabilityTests {
             ServerCapabilities.self,
             from: fixtureData("capabilities-arkhamdb")
         )
-        #expect(enabled.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 57))
+        #expect(enabled.schemaRevision == ContractRevision(major: 0, minor: 1, patch: 63))
         #expect(enabled.capabilities.contains("arkhamdb.write-back.v1"))
         let compatibility = ServerCompatibility.modern(capabilities: enabled.capabilities)
         #expect(compatibility.supportsArkhamDBWriteBack)
