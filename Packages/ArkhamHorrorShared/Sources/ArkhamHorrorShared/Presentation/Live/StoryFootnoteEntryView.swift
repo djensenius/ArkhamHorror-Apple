@@ -101,30 +101,53 @@ struct StoryFootnoteEntryPresentation: Equatable {
     /// ``StoryNodePresentation/accessibilityLabel(for:)``; a table (silent in
     /// ``StoryNode/spokenText``) reads its header rows, then each body row, with ", " between
     /// cells and ". " between rows. It is set off from preceding text by a space and ends with
-    /// ". " before following text, never doubling punctuation or spaces.
+    /// ". " before following text, never doubling punctuation or spaces, also when it starts
+    /// or ends a list item.
     static func spokenText(for nodes: [StoryNode]) -> String {
-        var result = ""
-        var followsTable = false
-        for node in spokenLeaves(nodes) {
-            let isTable = if case .table = node {
-                true
-            } else {
-                false
-            }
-            let part = spokenText(for: node)
-            guard !part.isEmpty else { continue }
-            if followsTable {
-                if let last = result.last, !spokenPunctuation.contains(last) {
-                    result += "."
+        spokenRun(for: nodes).text
+    }
+
+    /// Spoken text plus whether its first or last non-empty part is a table, so a table at
+    /// the edge of a list item keeps its pauses in the enclosing sequence.
+    private struct SpokenRun {
+        var text = ""
+        var startsWithTable = false
+        var endsWithTable = false
+    }
+
+    private static func spokenRun(for nodes: [StoryNode]) -> SpokenRun {
+        joinedRuns(spokenLeaves(nodes).map(spokenRun(for:)), separator: "")
+    }
+
+    /// The one table-boundary rule for node sequences (`separator` "") and list items
+    /// (`separator` " "): after a table, a non-empty part follows ". " (or a space after
+    /// punctuation, nothing extra before leading whitespace) and empty parts are skipped;
+    /// before a table, a space unless whitespace is already there. Without tables, parts are
+    /// joined with `separator` exactly as before.
+    private static func joinedRuns(_ runs: [SpokenRun], separator: String) -> SpokenRun {
+        var result = SpokenRun()
+        for (index, run) in runs.enumerated() {
+            if result.endsWithTable {
+                guard !run.text.isEmpty else { continue }
+                if let last = result.text.last, !spokenPunctuation.contains(last) {
+                    result.text += "."
                 }
-                if part.first?.isWhitespace == false {
-                    result += " "
+                if run.text.first?.isWhitespace == false {
+                    result.text += " "
                 }
-            } else if isTable, let last = result.last, !last.isWhitespace {
-                result += " "
+            } else if run.startsWithTable {
+                if let last = result.text.last, !last.isWhitespace {
+                    result.text += " "
+                }
+            } else if index > 0 {
+                result.text += separator
             }
-            result += part
-            followsTable = isTable
+            guard !run.text.isEmpty else { continue }
+            if result.text.allSatisfy(\.isWhitespace) {
+                result.startsWithTable = run.startsWithTable
+            }
+            result.text += run.text
+            result.endsWithTable = run.endsWithTable
         }
         return result
     }
@@ -162,22 +185,25 @@ struct StoryFootnoteEntryPresentation: Equatable {
             }
     }
 
-    private static func spokenText(for node: StoryNode) -> String {
+    private static func spokenRun(for node: StoryNode) -> SpokenRun {
         switch node {
         case let .table(head, body):
-            spokenJoined(
+            let text = spokenJoined(
                 (head + body).map { row in
                     spokenJoined(row.cells.map { spokenText(for: $0.children) }, separator: ",")
                 },
                 separator: "."
             )
+            return SpokenRun(
+                text: text, startsWithTable: !text.isEmpty, endsWithTable: !text.isEmpty
+            )
         case let .paragraph(children), let .group(children), let .heading(_, children),
              let .emphasis(_, children), let .cardReference(_, children):
-            spokenText(for: children)
+            return spokenRun(for: children)
         case let .list(_, items):
-            items.map { spokenText(for: $0) }.joined(separator: " ")
+            return joinedRuns(items.map { spokenRun(for: $0) }, separator: " ")
         case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker, .image, .rule:
-            node.spokenText
+            return SpokenRun(text: node.spokenText)
         }
     }
 }
