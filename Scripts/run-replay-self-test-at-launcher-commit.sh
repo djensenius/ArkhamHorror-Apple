@@ -48,6 +48,11 @@ fi
 
 scratch_root="$(/usr/bin/mktemp -d /private/tmp/arkham-replay-selftest.XXXXXX)"
 readonly scratch_root
+# Cleanup may rm -rf inside this directory, so accept only the exact shape
+# mktemp was asked for; anything else fails closed before the trap is set.
+[[ "$scratch_root" =~ ^/private/tmp/arkham-replay-selftest\.[A-Za-z0-9]{6,}$ &&
+  -d "$scratch_root" && ! -L "$scratch_root" ]] ||
+  fail "unexpected scratch directory from mktemp: $scratch_root"
 /bin/chmod 700 "$scratch_root"
 readonly replay_worktree="$scratch_root/checkout"
 readonly graft_index="$scratch_root/index"
@@ -62,7 +67,7 @@ cleanup() {
   if [[ -e "$replay_worktree" ]]; then
     "$git_bin" worktree remove --force "$replay_worktree" >/dev/null 2>&1
     if [[ -e "$replay_worktree" &&
-      "$replay_worktree" == /private/tmp/arkham-replay-selftest.*/checkout ]]
+      "$replay_worktree" == "$scratch_root/checkout" ]]
     then
       /bin/rm -rf -- "$replay_worktree"
     fi
