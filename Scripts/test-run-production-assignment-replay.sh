@@ -44,6 +44,7 @@ readonly scenario_log="$harness_root/scenario.log"
 readonly production_log="$harness_root/production-launch.log"
 readonly signature_log="$harness_root/signature.log"
 readonly adhoc_xcode_fixture="$harness_root/signature-fixture/Xcode.app"
+readonly tampered_xcode_fixture="$harness_root/signature-tampered/Xcode.app"
 readonly fake_package_root="$harness_root/fake-package"
 readonly fake_package_launcher="$fake_package_root/Scripts/run-production-assignment-replay.sh"
 readonly fake_package_launcher_hop="$fake_package_root/launcher-hop"
@@ -119,8 +120,13 @@ leaf_signing_authority() {
 
 # Sets selected_application to the first candidate of the given kind
 # (app-store or developer-id) that is not signed as Xcode and whose signature
-# verifies on its own, or to "" when none qualifies. Cheap signature metadata
-# is checked first; only remaining candidates are verified.
+# is valid, or to "" when none qualifies. Cheap signature metadata is checked
+# first; each remaining candidate gets one deep verify against the launcher's
+# anchor clause:
+#   kind          exit 0             exit 1           exit 3             other
+#   app-store     select             skip (invalid)   FAIL               FAIL
+#   developer-id  FAIL               skip (invalid)   select             FAIL
+# so a selected app has already proven its anchor-clause verdict.
 selected_application=""
 select_signed_application() {
   local kind="$1"
@@ -145,17 +151,35 @@ select_signed_application() {
       continue
     fi
     status=0
-    /usr/bin/codesign --verify --deep --strict "$candidate" \
+    /usr/bin/codesign --verify --deep --strict \
+      -R="$anchor_requirement" \
+      "$candidate" \
       >"$signature_log" 2>&1 || status=$?
-    if [[ "$status" != 0 ]]; then
-      printf 'note: skipping %s: its signature does not verify (codesign exit %s)\n' \
-        "$candidate" \
-        "$status"
-      continue
-    fi
-    selected_application="$candidate"
-    return 0
+    case "$kind:$status" in
+      app-store:0 | developer-id:3)
+        selected_application="$candidate"
+        return 0
+        ;;
+      *:1)
+        printf 'note: skipping %s: its signature does not verify (codesign exit 1)\n' \
+          "$candidate"
+        continue
+        ;;
+      app-store:3)
+        /bin/cat "$signature_log" >&2
+        fail "anchor clause rejected an App Store Xcode-family app: $candidate"
+        ;;
+      developer-id:0)
+        /bin/cat "$signature_log" >&2
+        fail "anchor clause accepted Developer ID: $candidate"
+        ;;
+      *)
+        /bin/cat "$signature_log" >&2
+        fail "unexpected anchor-clause verdict for $kind application $candidate (codesign exit $status)"
+        ;;
+    esac
   done
+  return 0
 }
 
 cleanup() {
@@ -344,6 +368,15 @@ expect_signature_verdict 3 "$anchor_requirement" "$adhoc_xcode_fixture" \
   "launcher anchor clause accepted an ad-hoc signature"
 printf 'PASS: launcher signature requirement rejects an ad-hoc re-signed com.apple.dt.Xcode copy\n'
 
+# A damaged bundle must be reported as an invalid signature (exit 1), which
+# select_signed_application skips, not as a requirement mismatch (exit 3).
+/bin/mkdir -p "$(/usr/bin/dirname -- "$tampered_xcode_fixture")"
+/bin/cp -R "$adhoc_xcode_fixture" "$tampered_xcode_fixture"
+printf 'x' >>"$tampered_xcode_fixture/Contents/MacOS/Xcode"
+expect_signature_verdict 1 "$anchor_requirement" "$tampered_xcode_fixture" \
+  "a damaged com.apple.dt.Xcode bundle was not reported as an invalid signature"
+printf 'PASS: a damaged signed bundle is an invalid signature (exit 1), not a requirement mismatch\n'
+
 [[ -d "$apple_platform_application" ]] ||
   fail "Apple platform application fixture is missing: $apple_platform_application"
 expect_signature_verdict 0 "$anchor_requirement" "$apple_platform_application" \
@@ -356,8 +389,7 @@ printf 'PASS: Apple-signed %s satisfies the anchor clause but not the Xcode iden
 select_signed_application app-store /Applications/*.app
 readonly mas_application="$selected_application"
 if [[ -n "$mas_application" ]]; then
-  expect_signature_verdict 0 "$anchor_requirement" "$mas_application" \
-    "launcher anchor clause rejected Mac App Store application $mas_application"
+  # Selection already proved the anchor clause holds (codesign exit 0).
   expect_signature_verdict 3 "$launcher_requirement" "$mas_application" \
     "launcher signature requirement accepted non-Xcode Mac App Store application $mas_application"
   printf 'PASS: Mac App Store %s satisfies the anchor clause but not the Xcode identifier\n' \
@@ -369,8 +401,7 @@ fi
 select_signed_application developer-id /Applications/*.app
 readonly developer_id_application="$selected_application"
 if [[ -n "$developer_id_application" ]]; then
-  expect_signature_verdict 3 "$anchor_requirement" "$developer_id_application" \
-    "launcher anchor clause accepted Developer ID application $developer_id_application"
+  # Selection already proved the anchor clause rejects it (codesign exit 3).
   expect_signature_verdict 3 "$launcher_requirement" "$developer_id_application" \
     "launcher signature requirement accepted Developer ID application $developer_id_application"
   printf 'PASS: launcher anchor clause rejects Developer ID %s\n' \
