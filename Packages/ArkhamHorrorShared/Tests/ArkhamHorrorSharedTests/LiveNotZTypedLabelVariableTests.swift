@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 @testable import ArkhamHorrorShared
 import Foundation
 import Testing
@@ -90,6 +91,29 @@ struct LiveNotZTypedLabelVariableTests {
         )
     }
 
+    @Test("Catalog web icon nodes keep their glyph in choice titles")
+    @MainActor
+    func catalogWebIconNodesKeepGlyphInChoiceTitles() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(at: 0, with: "$label.webIconGlyphs")
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Spend action at rune m neutral")
+        #expect(resolved.accessibilityLabel == "Spend action at rune m neutral")
+        #expect(resolved.titleNodes == [
+            .text("Spend "),
+            .icon("action"),
+            .text(" at "),
+            .icon("rune-M"),
+            .text(" neutral"),
+        ])
+        #expect(resolved.titleNodes.map { $0.map(\.plainText).joined() } == resolved.title)
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+    }
+
     @Test("Out-of-enum icon variable values leave choice labels unresolved and unpressable")
     @MainActor
     func outOfEnumIconVariableChoiceLabelValueRemainsUnresolved() async throws {
@@ -178,6 +202,7 @@ struct LiveNotZTypedLabelVariableTests {
                 "label.discardCardsWithMatchingIcons",
                 "label.takeDamageAndHorror",
                 "label.test",
+                "label.webIconGlyphs",
             ],
             chunkEntries: Self.productionLabelChunkEntries
         )
@@ -277,6 +302,22 @@ struct LiveNotZTypedLabelVariableTests {
         "variables":[
           {"name":"skill","source":"named","role":"iconVariable"},
           {"name":"count","source":"named","role":"text"}
+        ]
+      },
+      "label.webIconGlyphs": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Spend "},
+          {"type":"var","name":"action","source":"named","role":"icon"},
+          {"type":"text","value":" at "},
+          {"type":"var","name":"runeM","source":"named","role":"icon"},
+          {"type":"text","value":" "},
+          {"type":"var","name":"neutral","source":"named","role":"icon"}
+        ],
+        "variables":[
+          {"name":"action","source":"named","role":"icon"},
+          {"name":"runeM","source":"named","role":"icon"},
+          {"name":"neutral","source":"named","role":"icon"}
         ]
       }
     }

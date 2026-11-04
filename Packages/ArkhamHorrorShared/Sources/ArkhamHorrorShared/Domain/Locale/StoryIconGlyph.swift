@@ -135,7 +135,19 @@ extension StoryIconGlyph {
         return StoryIconGlyph(iconName: name, cssClass: name, family: .arkhamSlim, scalar: scalar)
     }
 
-    static let all = storyGlyphs + logGlyphs
+    /// The remaining web `iconClasses` glyphs (`frontend/src/arkham/icons.ts:41-44`), mirrored
+    /// from fork commit 858b8a094611a766ed3e7b6ecc6168ab331feb17,
+    /// `frontend/src/styles/icons.css`: codex/day/night (`:216-238`), per player (`:275-281`).
+    /// A font missing any of these keeps its other glyphs; the registrar keeps only the
+    /// codepoints the font actually has, so each one falls back on its own.
+    static let labelGlyphs: [StoryIconGlyph] = [
+        glyph("codex", "codex-icon", .arkhamSlim, "\u{0068}"),
+        glyph("day", "day-icon", .arkhamSlim, "\u{0069}"),
+        glyph("night", "night-icon", .arkhamSlim, "\u{006A}"),
+        glyph("perPlayer", "per-player", .arkhamIcons, "\u{E915}"),
+    ]
+
+    static let all = storyGlyphs + logGlyphs + labelGlyphs
 
     private static func glyph(
         _ iconName: String,

@@ -164,7 +164,13 @@ extension StoryNarrativeLocalization {
             let trimmed = rendered.nodes.map(\.plainText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
-            let nodes = rendered.nodes.containsSemanticIcon ? rendered.nodes.trimmedTextEdges : nil
+            // Catalog `.icon` nodes for web icons keep their glyph in the choice title
+            // instead of flattening to a word; `runeM` uses the glyph key `rune-M`.
+            // Normalizing turns unknown icons into text nodes but does not merge them;
+            // `trimmedTextEdges` then trims the edges and coalesces adjacent text.
+            let nodes = rendered.nodes.containsSemanticIcon
+                ? rendered.nodes.normalizingWebIconNames.trimmedTextEdges
+                : nil
             return .success(BasicChoiceResolvedLabelText(title: trimmed, inlineNodes: nodes))
         }
     }
@@ -621,13 +627,38 @@ private extension [StoryNode] {
             switch node {
             case .semanticIcon:
                 true
+            case let .icon(name):
+                WebIconPlaceholder(placeholderName: name) != nil
             case let .group(children), let .paragraph(children), let .heading(_, children),
                  let .emphasis(_, children), let .cardReference(_, children):
                 children.containsSemanticIcon
             case let .list(_, items):
                 items.contains { $0.containsSemanticIcon }
-            case .text, .lineBreak, .rule, .image, .icon, .table:
+            case .text, .lineBreak, .rule, .image, .table:
                 false
+            }
+        }
+    }
+
+    var normalizingWebIconNames: [StoryNode] {
+        map { node in
+            switch node {
+            case let .icon(name):
+                // A name the web does not treat as an icon stays the word it flattened to.
+                WebIconPlaceholder(placeholderName: name).map { .icon($0.glyphKey) }
+                    ?? .text(StoryNode.spokenIconLabel(name))
+            case let .group(children):
+                .group(children.normalizingWebIconNames)
+            case let .paragraph(children):
+                .paragraph(children.normalizingWebIconNames)
+            case let .heading(level, children):
+                .heading(level: level, children: children.normalizingWebIconNames)
+            case let .emphasis(style, children):
+                .emphasis(style, children.normalizingWebIconNames)
+            case let .cardReference(code, children):
+                .cardReference(code: code, children: children.normalizingWebIconNames)
+            case .text, .lineBreak, .rule, .image, .table, .list, .semanticIcon:
+                node
             }
         }
     }

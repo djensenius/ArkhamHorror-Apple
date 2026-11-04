@@ -195,6 +195,149 @@ struct WebIconFontGlyphMappingTests {
     }
 }
 
+extension WebIconFontGlyphMappingTests {
+    @Test("Remaining web icon glyphs match the task-1.22.3 icons.css fixture")
+    func labelGlyphTableMatchesIconsCSSFixture() throws {
+        let fixture = try JSONDecoder().decode(
+            Fixture.self,
+            from: fixtureData(named: "web-icons-css-task-1.22.3")
+        )
+        #expect(
+            fixture.provenance
+                == "fork 858b8a094611a766ed3e7b6ecc6168ab331feb17 frontend/src/styles/icons.css"
+        )
+        #expect(StoryIconGlyph.labelGlyphs.map(WebIconFontFixtureMapping.init(glyph:)) == [
+            .init(
+                iconName: "codex", cssClass: "codex-icon", family: "ArkhamSlim", codepoint: "0068"
+            ),
+            .init(iconName: "day", cssClass: "day-icon", family: "ArkhamSlim", codepoint: "0069"),
+            .init(
+                iconName: "night", cssClass: "night-icon", family: "ArkhamSlim", codepoint: "006A"
+            ),
+            .init(
+                iconName: "perPlayer", cssClass: "per-player", family: "ArkhamIcons",
+                codepoint: "E915"
+            ),
+        ])
+        #expect(StoryIconGlyph.labelGlyphs.map(WebIconFontFixtureMapping.init(glyph:))
+            == fixture.mappings)
+        // Every web `iconClasses` name except the homebrew moon has a glyph.
+        let missing = WebIconName.allCases.filter { StoryIconGlyph.byIconName[$0.rawValue] == nil }
+        #expect(missing == [.moon])
+    }
+
+    @Test("Raw labels parse every web icon name and both rune forms; unknown names stay literal")
+    func rawLabelParserCoversWebIconNamesAndRunes() throws {
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "Gain {action}"))
+                == [.text("Gain "), .icon("action")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{runeM} gate"))
+                == [.icon("rune-M"), .text(" gate")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "Chamber [tdc_rune_m]"))
+                == [.text("Chamber "), .icon("rune-M")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "Spend {perPlayer} {moon}"))
+                == [.text("Spend "), .icon("perPlayer"), .text(" "), .icon("moon")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{sealA}{blood}"))
+                == [.semanticIcon(.seal(.sealA)), .semanticIcon(.chaosToken(.blood))]
+        )
+        #expect(StoryIconInlineParser.nodes(for: "{neutral}") == nil)
+        #expect(StoryIconInlineParser.nodes(for: "{future}") == nil)
+        #expect(StoryIconInlineParser.nodes(for: "{rune-M} {runem} [tdc_rune_mm]") == nil)
+        #expect(StoryIconInlineParser.nodes(for: "tdc_rune_m") == nil)
+        #expect(StoryIconInlineParser.nodes(for: "a_b") == nil)
+    }
+
+    @Test("Raw labels follow formatContent emphasis and escapes")
+    func rawLabelParserFollowsFormatContentEmphasisAndEscapes() throws {
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "Take _1_ {asterisk}"))
+                == [.text("Take "), .emphasis(.bold, [.text("1")]), .text(" *")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "*Gain {fast}* {underscore}"))
+                == [.emphasis(.italic, [.text("Gain "), .icon("fast")]), .text(" _")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "_[tdc_rune_m]_"))
+                == [.emphasis(.bold, [.icon("rune-M")])]
+        )
+        let spoken: (WebIconPlaceholder) -> String = { "<\($0.glyphKey)>" }
+        #expect(StoryIconInlineParser.plainText(for: "__", spokenName: spoken).isEmpty)
+        #expect(StoryIconInlineParser.plainText(for: "**", spokenName: spoken).isEmpty)
+        #expect(
+            StoryIconInlineParser.plainText(for: "Take _1_ {asterisk}", spokenName: spoken)
+                == "Take 1 *"
+        )
+        #expect(
+            StoryIconInlineParser.plainText(for: "tdc_rune_m a_b", spokenName: spoken)
+                == "tdc_rune_m a_b"
+        )
+        #expect(
+            StoryIconInlineParser.plainText(
+                for: "{codex} [tdc_rune_q] {neutral}",
+                spokenName: spoken
+            ) == "<codex> <rune-Q> {neutral}"
+        )
+    }
+
+    @Test("A long run of braces parses in linear time and stays literal")
+    func longBraceRunStaysLiteralAndLinear() throws {
+        #expect(StoryIconInlineParser.maxPlaceholderNameLength == "elderThing".count)
+        let braces = String(repeating: "{", count: 10000) + "}"
+        let spoken: (WebIconPlaceholder) -> String = { $0.glyphKey }
+        let start = ContinuousClock.now
+        #expect(StoryIconInlineParser.nodes(for: braces) == nil)
+        #expect(StoryIconInlineParser.plainText(for: braces, spokenName: spoken) == braces)
+        let withIcon = String(repeating: "{", count: 10000) + "skull}"
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: withIcon))
+                == [.text(String(repeating: "{", count: 9999)), .semanticIcon(.chaosToken(.skull))]
+        )
+        #expect(ContinuousClock.now - start < .seconds(1))
+    }
+
+    @Test("Named web icons render with the runtime font or fall back honestly")
+    func namedWebIconRendersRuntimeGlyphOrFallsBack() {
+        let arkham = WebIconFontAvailability(registrations: [
+            .arkham: registration(.arkham, postScriptName: "AHLCG"),
+        ])
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("action", iconFonts: arkham)
+                == .webGlyph(iconName: "action", fontName: "AHLCG", glyph: "I")
+        )
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("action", iconFonts: WebIconFontAvailability())
+                == nil
+        )
+        let slim = WebIconFontAvailability(registrations: [
+            .arkhamSlim: registration(
+                .arkhamSlim, postScriptName: "arkhamslim", excluding: ["day"]
+            ),
+            .arkhamIcons: registration(.arkhamIcons, postScriptName: "arkhamicons"),
+        ])
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("codex", iconFonts: slim)
+                == .webGlyph(iconName: "codex", fontName: "arkhamslim", glyph: "h")
+        )
+        #expect(StoryInlineTextRenderer.namedIconGlyph("day", iconFonts: slim) == nil)
+        #expect(
+            StoryInlineTextRenderer.namedIconGlyph("perPlayer", iconFonts: slim)
+                == .webGlyph(iconName: "perPlayer", fontName: "arkhamicons", glyph: "\u{E915}")
+        )
+        #expect(StoryInlineTextRenderer.namedIconGlyph("moon", iconFonts: slim) == nil)
+        #expect(StoryNode.spokenIconLabel("rune-M") == "rune m")
+        #expect(StoryNode.spokenIconLabel("perPlayer") == "per player")
+    }
+}
+
 private struct WebIconFontFixtureMapping: Decodable, Equatable {
     let iconName: String
     let cssClass: String

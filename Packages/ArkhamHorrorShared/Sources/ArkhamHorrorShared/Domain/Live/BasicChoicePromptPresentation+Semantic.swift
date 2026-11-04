@@ -566,7 +566,9 @@ extension BasicChoicePromptPresentation {
                 title: title,
                 subtitle: nil,
                 systemImage: choice.systemImage,
-                accessibilityLabel: title
+                // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
+                // reads their spoken names instead.
+                accessibilityLabel: semanticInlineLabel(title) ?? title
             )
         }
         guard let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index) else {
@@ -1211,23 +1213,66 @@ extension BasicChoicePromptPresentation {
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return semanticReplacingChaosTokenPlaceholders(in: trimmed)
+        // Removing emphasis markers can leave edge whitespace or nothing at all (`_ _`).
+        let spoken = semanticSpokenLabel(trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+        return spoken.isEmpty ? nil : spoken
     }
 
-    private func semanticReplacingChaosTokenPlaceholders(in text: String) -> String {
-        let replacements = [
-            "{skull}": "Skull",
-            "{cultist}": "Cultist",
-            "{tablet}": "Tablet",
-            "{elderThing}": "Elder Thing",
-            "{autoFail}": "Auto-fail",
-            "{elderSign}": "Elder Sign",
-            "{curse}": "Curse",
-            "{bless}": "Bless",
-            "{frost}": "Frost",
-        ]
-        return replacements.reduce(text) { partial, replacement in
-            partial.replacingOccurrences(of: replacement.key, with: replacement.value)
+    /// A raw label formatted like the web's `formatContent`, with every icon placeholder
+    /// replaced by its spoken name (``semanticIconSpokenName(_:)``) and emphasis markers
+    /// removed, so VoiceOver never reads a raw `{icon}` placeholder.
+    func semanticSpokenLabel(_ text: String) -> String {
+        StoryIconInlineParser.plainText(for: text, spokenName: semanticIconSpokenName)
+    }
+
+    // The one name -> spoken-name table for inline icons in choice titles.
+    // swiftlint:disable:next cyclomatic_complexity
+    func semanticIconSpokenName(_ placeholder: WebIconPlaceholder) -> String {
+        let name: WebIconName
+        switch placeholder {
+        case let .rune(letter):
+            return semanticLocalized(
+                "semantic.icon.rune",
+                value: "Rune \(String(letter))",
+                arguments: [String(letter)]
+            )
+        case let .named(named):
+            name = named
+        }
+        switch name {
+        case .skull: return semanticLocalized("semantic.icon.skull", value: "Skull")
+        case .cultist: return semanticLocalized("semantic.icon.cultist", value: "Cultist")
+        case .tablet: return semanticLocalized("semantic.icon.tablet", value: "Tablet")
+        case .elderThing: return semanticLocalized("semantic.icon.elderThing", value: "Elder Thing")
+        case .autoFail: return semanticLocalized("semantic.icon.autoFail", value: "Auto-fail")
+        case .elderSign: return semanticLocalized("semantic.icon.elderSign", value: "Elder Sign")
+        case .curse: return semanticLocalized("semantic.icon.curse", value: "Curse")
+        case .bless: return semanticLocalized("semantic.icon.bless", value: "Bless")
+        case .frost: return semanticLocalized("semantic.icon.frost", value: "Frost")
+        case .blood: return semanticLocalized("semantic.icon.blood", value: "Blood")
+        case .willpower: return semanticLocalized("semantic.icon.willpower", value: "Willpower")
+        case .intellect: return semanticLocalized("semantic.icon.intellect", value: "Intellect")
+        case .combat: return semanticLocalized("semantic.icon.combat", value: "Combat")
+        case .agility: return semanticLocalized("semantic.icon.agility", value: "Agility")
+        case .wild: return semanticLocalized("semantic.icon.wild", value: "Wild")
+        case .sealA: return semanticLocalized("semantic.icon.sealA", value: "Seal A")
+        case .sealB: return semanticLocalized("semantic.icon.sealB", value: "Seal B")
+        case .sealC: return semanticLocalized("semantic.icon.sealC", value: "Seal C")
+        case .sealD: return semanticLocalized("semantic.icon.sealD", value: "Seal D")
+        case .sealE: return semanticLocalized("semantic.icon.sealE", value: "Seal E")
+        case .action: return semanticLocalized("semantic.icon.action", value: "Action")
+        case .fast: return semanticLocalized("semantic.icon.fast", value: "Fast")
+        case .reaction: return semanticLocalized("semantic.icon.reaction", value: "Reaction")
+        case .guardian: return semanticLocalized("semantic.icon.guardian", value: "Guardian")
+        case .seeker: return semanticLocalized("semantic.icon.seeker", value: "Seeker")
+        case .rogue: return semanticLocalized("semantic.icon.rogue", value: "Rogue")
+        case .mystic: return semanticLocalized("semantic.icon.mystic", value: "Mystic")
+        case .survivor: return semanticLocalized("semantic.icon.survivor", value: "Survivor")
+        case .codex: return semanticLocalized("semantic.icon.codex", value: "Codex")
+        case .day: return semanticLocalized("semantic.icon.day", value: "Day")
+        case .night: return semanticLocalized("semantic.icon.night", value: "Night")
+        case .perPlayer: return semanticLocalized("semantic.icon.perPlayer", value: "Per player")
+        case .moon: return semanticLocalized("semantic.icon.moon", value: "Moon")
         }
     }
 
