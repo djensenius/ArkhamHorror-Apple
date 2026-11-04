@@ -51,14 +51,22 @@ readonly scratch_root
 /bin/chmod 700 "$scratch_root"
 readonly replay_worktree="$scratch_root/checkout"
 readonly graft_index="$scratch_root/index"
-worktree_added=0
 
 cleanup() {
   local exit_status=$?
   trap - EXIT HUP INT TERM
   set +e
-  if [[ "$worktree_added" == 1 ]]; then
-    "$git_bin" worktree remove --force "$replay_worktree" >/dev/null 2>&1 ||
+  # Covers an interrupted or failed `worktree add` too: remove through git
+  # when it registered the worktree, otherwise delete the partial checkout,
+  # but only inside our private scratch directory under /private/tmp.
+  if [[ -e "$replay_worktree" ]]; then
+    "$git_bin" worktree remove --force "$replay_worktree" >/dev/null 2>&1
+    if [[ -e "$replay_worktree" &&
+      "$replay_worktree" == /private/tmp/arkham-replay-selftest.*/checkout ]]
+    then
+      /bin/rm -rf -- "$replay_worktree"
+    fi
+    [[ ! -e "$replay_worktree" ]] ||
       printf 'warning: could not remove %s\n' "$replay_worktree" >&2
   fi
   "$git_bin" worktree prune >/dev/null 2>&1
@@ -121,5 +129,4 @@ printf '  launcher commit:  %s\n' "$launcher_revision"
 printf '  self-test from:   %s (HEAD)\n' "$head_revision"
 
 "$git_bin" worktree add --detach "$replay_worktree" "$run_revision"
-worktree_added=1
 env -u DEVELOPER_DIR "$replay_worktree/$selftest_path"
