@@ -117,6 +117,60 @@ struct SemanticRawPlaceholderLabelTests {
         #expect(try Self.legacyLabel(#require(resolution)) == semantic)
     }
 
+    @Test("A variable run holding an icon and [^N] formats both and raises the marker")
+    @MainActor
+    func variableRunWithIconAndFootnoteRaisesMarker() async throws {
+        let (resolution, semantic) = try await Self.semanticLabel(
+            "$label.iconPlaceNote place=s:\"{skull} 1927[^5]\""
+        )
+        let nodes: [StoryNode] = [
+            .text("Spend "), .icon("action"), .text(" at "),
+            .semanticIcon(.chaosToken(.skull)), .text(" 1927"), .footnoteMarker("5"),
+        ]
+        // A spoken title is set only when the label carries a split marker (`hasMarker`).
+        #expect(resolution == .resolved(.init(
+            title: "Spend action at skull 19275",
+            inlineNodes: nodes,
+            accessibilityTitle: "Spend action at skull 1927 footnote 5"
+        )))
+        #expect(semantic == Rendered(
+            title: "Spend action at skull 19275",
+            titleNodes: nodes,
+            accessibilityLabel: "Spend action at skull 1927 footnote 5"
+        ))
+        #expect(try Self.legacyLabel(#require(resolution)) == semantic)
+    }
+
+    @Test("Adjacent variable icons and whitespace-only values keep their exact spacing")
+    @MainActor
+    func adjacentIconsAndWhitespaceValuesKeepSpacing() async throws {
+        let cases: [(String, BasicChoiceResolvedLabelText)] = [
+            ("{skull}{fast}", .init(title: "Spend action at skullfast", inlineNodes: [
+                .text("Spend "), .icon("action"), .text(" at "),
+                .semanticIcon(.chaosToken(.skull)), .icon("fast"),
+            ])),
+            ("{skull} {fast}", .init(title: "Spend action at skull fast", inlineNodes: [
+                .text("Spend "), .icon("action"), .text(" at "),
+                .semanticIcon(.chaosToken(.skull)), .text(" "), .icon("fast"),
+            ])),
+            // No raw placeholder: the run is untouched and only the label edge is trimmed.
+            ("   ", .init(title: "Spend action at", inlineNodes: [
+                .text("Spend "), .icon("action"), .text(" at"),
+            ])),
+        ]
+        for (value, expected) in cases {
+            let (resolution, semantic) = try await Self.semanticLabel(
+                "$label.iconPlaceNote place=s:\"\(value)\""
+            )
+            #expect(resolution == .resolved(expected), Comment(rawValue: value))
+            #expect(semantic == Rendered(
+                title: expected.title,
+                titleNodes: expected.inlineNodes,
+                accessibilityLabel: expected.title
+            ), Comment(rawValue: value))
+        }
+    }
+
     @Test("Labels without raw placeholders keep their resolved title, nodes and spoken label")
     @MainActor
     func labelsWithoutRawPlaceholdersAreUnchanged() async throws {

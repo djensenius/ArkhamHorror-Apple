@@ -67,6 +67,36 @@ struct StoryCatalogWrappedIconLabelTests {
         }
     }
 
+    @Test("A paragraph-wrapped icon label formats a variable's raw icon and renders inline")
+    func wrappedIconLabelFormatsVariableRawIcon() async throws {
+        let resolver = try await StoryCatalogInlineMarkupTests.resolver(
+            entryKeys: ["label.paragraphIconPlace"],
+            chunkEntries: """
+            {"label.paragraphIconPlace":{"form":"message","nodes":[\
+            {"type":"paragraph","styles":[],"children":[{"type":"text","value":"Spend "},\
+            {"type":"var","name":"action","source":"named","role":"icon"},\
+            {"type":"text","value":" at "},\
+            {"type":"var","name":"place","source":"named","role":"text"}]}],\
+            "variables":[{"name":"action","source":"named","role":"icon"},\
+            {"name":"place","source":"named","role":"text"}]}}
+            """
+        )
+        let label = try Self.label("$label.paragraphIconPlace place=s:\"{skull} gate\"", resolver)
+        let nodes: [StoryNode] = [
+            .text("Spend "), .icon("action"), .text(" at "),
+            .semanticIcon(.chaosToken(.skull)), .text(" gate"),
+        ]
+        #expect(label == BasicChoiceResolvedLabelText(
+            title: "Spend action at skull gate", inlineNodes: nodes
+        ))
+        #expect(
+            StoryNodePresentation.accessibilityLabel(for: nodes) == "Spend action at skull gate"
+        )
+        #expect(StoryInlineTextRenderer.text(
+            for: label.inlineNodes ?? [.paragraph([])], textStyle: .body
+        ) != nil)
+    }
+
     @Test("Unwrapped icon labels and icon-less, marker-less wrapped labels are unchanged")
     func unwrappedAndPlainLabelsAreUnchanged() async throws {
         let resolver = try await Self.resolver()
