@@ -105,7 +105,7 @@ struct StoryFootnoteEntryPresentation: Equatable {
     static func spokenText(for nodes: [StoryNode]) -> String {
         var result = ""
         var followsTable = false
-        for node in nodes {
+        for node in spokenLeaves(nodes) {
             let isTable = if case .table = node {
                 true
             } else {
@@ -127,6 +127,22 @@ struct StoryFootnoteEntryPresentation: Equatable {
             followsTable = isTable
         }
         return result
+    }
+
+    /// The nodes with every wrapper that ``StoryNode/spokenText`` joins transparently
+    /// (paragraph, group, heading, emphasis, card reference) replaced by its children, so a
+    /// wrapped table gets the same pauses as a bare one.
+    private static func spokenLeaves(_ nodes: [StoryNode]) -> [StoryNode] {
+        nodes.flatMap { node -> [StoryNode] in
+            switch node {
+            case let .paragraph(children), let .group(children), let .heading(_, children),
+                 let .emphasis(_, children), let .cardReference(_, children):
+                spokenLeaves(children)
+            case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker, .image, .rule, .list,
+                 .table:
+                [node]
+            }
+        }
     }
 
     /// Punctuation after which a table separator or pause adds only a space.

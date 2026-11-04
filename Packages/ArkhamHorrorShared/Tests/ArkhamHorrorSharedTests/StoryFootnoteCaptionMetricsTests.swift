@@ -133,6 +133,33 @@ struct StoryFootnoteCaptionMetricsTests {
             == "Woods, 2. River, Done! Then continue.")
     }
 
+    @Test("A table inside a group reads with the same pauses as a bare table")
+    func footnoteTableInsideGroupKeepsSeparators() {
+        let table: StoryNode = .table(
+            head: [StoryTableRow(cells: [cell("Path"), cell("Cost")])], body: []
+        )
+        let nodes: [StoryNode] = [.text("Before"), .group([table]), .text("after")]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == "Before Path, Cost. after")
+        let bare: [StoryNode] = [.text("Before"), table, .text("after")]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == StoryFootnoteEntryPresentation.spokenText(for: bare))
+    }
+
+    @Test("A table two wrappers deep reads with the same pauses as a bare table")
+    func footnoteTableTwoWrappersDeepKeepsSeparators() {
+        let table: StoryNode = .table(
+            head: [StoryTableRow(cells: [cell("Path"), cell("Cost")])],
+            body: [StoryTableRow(cells: [cell("Woods"), cell("2")])]
+        )
+        let nodes: [StoryNode] = [
+            .paragraph([.text("Record the result:"), .group([table])]),
+            .paragraph([.text("Then continue.")]),
+        ]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == "Record the result: Path, Cost. Woods, 2. Then continue.")
+    }
+
     @Test("A footnote marker after a table follows the pause with one space")
     func footnoteTableFollowedByMarker() {
         let nodes: [StoryNode] = [
