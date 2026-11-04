@@ -2,7 +2,8 @@
 import Foundation
 import Testing
 
-/// TASK-1.2.23: `cardNameVar` / `investigatorNameVar` labels swap the server's English name
+/// TASK-1.2.23: `cardNameVar` / `investigatorNameVar` labels (and, since TASK-1.42, catalog
+/// i18n entries) swap the server's English name
 /// for the catalog's `cardNames.<code>`, like the web's `handleI18n`. The card names come from
 /// the vendored 0.1.63 en/de/pl `cardNames` packs; the label entries are synthetic (see
 /// `Fixtures/LegacyContract/PROVENANCE.md`).
@@ -59,8 +60,8 @@ struct LabelCardNameSubstitutionTests {
     }
 
     /// The vendored 0.1.63 manifest and every vendored chunk on `locale`'s chain, plus the
-    /// synthetic label chunks.
-    private static func resolver(locale: String) throws -> LocaleCatalogResolver {
+    /// synthetic label chunks. Shared with the game-log card name tests.
+    static func resolver(locale: String) throws -> LocaleCatalogResolver {
         let capabilities = try ContractJSON.decode(
             ServerCapabilities.self, from: fixture("capabilities-locale-catalog")
         )
@@ -180,5 +181,48 @@ struct LabelCardNameSubstitutionTests {
         let plain = try Self.label(#"$label.noSuchLabel name=s:"Swarm of Rats""#, locale: "de")
         #expect(substituted == plain)
         #expect(throws: StoryUnavailableReason.self) { try substituted.get() }
+    }
+
+    // MARK: - TASK-1.42: catalog i18n entries
+
+    private static func entryText(
+        _ variables: JSONValue, locale: String
+    ) throws -> Result<String, StoryUnavailableReason> {
+        try StoryNarrativeLocalization.resolveProductionEntry(
+            .i18n(key: "drew", variables: variables),
+            resolver: resolver(locale: locale),
+            catalogUnavailability: .catalog(.transportFailure)
+        ).map { resolution in
+            guard case let .nodes(nodes) = resolution.entry else { return "unexpected entry" }
+            return nodes.map(\.plainText).joined()
+        }
+    }
+
+    private static let skidsDrewSwarmVariables: JSONValue = .object([
+        "__iname": .string("01003"), "__name": .string("01159"),
+        "iname": .string("\"Skids\" O'Toole"), "name": .string("Swarm of Rats"),
+    ])
+
+    @Test("A catalog i18n entry swaps name and iname for the locale's card names")
+    func catalogEntrySubstitutesNames() throws {
+        #expect(try Self.entryText(Self.skidsDrewSwarmVariables, locale: "en")
+            == .success("\"Skids\" O'Toole drew Swarm of Rats"))
+        #expect(try Self.entryText(Self.skidsDrewSwarmVariables, locale: "de")
+            == .success("„Skids“ O’Toole zog Rattenschwarm"))
+        // The en card name differs from the server name, so en is substituted too.
+        #expect(try Self.entryText(.object([
+            "__name": .string("90001"), "iname": .string("Roland Banks"),
+            "name": .string("Server Name"),
+        ]), locale: "en") == .success("Roland Banks drew Synthetic English Only"))
+    }
+
+    @Test("A catalog i18n entry with a number __name keeps the server name")
+    func catalogEntryNumberCodeKeepsServerName() throws {
+        let variables: JSONValue = .object([
+            "__name": .number(.integer(1159)),
+            "iname": .string("Roland Banks"), "name": .string("Swarm of Rats"),
+        ])
+        #expect(try Self.entryText(variables, locale: "de")
+            == .success("Roland Banks zog Swarm of Rats"))
     }
 }

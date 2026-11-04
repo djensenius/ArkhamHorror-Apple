@@ -484,6 +484,9 @@ extension StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?,
         catalogUnavailability: StoryUnavailableReason
     ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
+        // Same `name`/`iname` card name swap as choice labels (the web's FormattedEntry
+        // does not do it); an unresolved key still fails exactly as before.
+        let variables = localizingCardNameVariables(variables, resolver: resolver)
         if let chrome = chromeVocabulary[key] {
             guard let text = substituteVariables(chrome, variables: variables) else {
                 return .failure(.missingVariable)

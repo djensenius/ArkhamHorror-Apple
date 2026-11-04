@@ -18,6 +18,20 @@ extension StoryNarrativeLocalization {
         resolver: LocaleCatalogResolver?
     ) -> JSONValue {
         guard let resolver, case var .object(values) = variables else { return variables }
+        for (nameKey, localized) in localizedCardNames(in: values, resolver: resolver) {
+            values[nameKey] = .string(localized)
+        }
+        return .object(values)
+    }
+
+    /// The localized replacement for each `name`/`iname` variable that
+    /// `localizingCardNameVariables` would substitute, keyed by that variable's name. Shared
+    /// with the game log, which also has to replace the variable's rich value.
+    static func localizedCardNames(
+        in values: [String: JSONValue],
+        resolver: LocaleCatalogResolver
+    ) -> [String: String] {
+        var result: [String: String] = [:]
         for (nameKey, codeKey) in [("name", "__name"), ("iname", "__iname")] {
             guard case let .string(name)? = values[nameKey], !name.isEmpty,
                   case let .string(code)? = values[codeKey], !code.isEmpty,
@@ -28,9 +42,9 @@ extension StoryNarrativeLocalization {
             let localized = nodes.map(\.plainText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !localized.isEmpty {
-                values[nameKey] = .string(localized)
+                result[nameKey] = localized
             }
         }
-        return .object(values)
+        return result
     }
 }
