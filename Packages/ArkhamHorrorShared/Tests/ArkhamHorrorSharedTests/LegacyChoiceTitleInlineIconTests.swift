@@ -194,6 +194,52 @@ struct LegacyChoiceTitleInlineIconTests {
         #expect(resolved.accessibilityLabel == "Spend *all* clues, _now_ *")
     }
 
+    @Test("Raw placeholders in a resolved text variable render as icons with spoken names")
+    func productionVariableRawPlaceholdersAreParsed() throws {
+        let question = try fixtureQuestion()
+        let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+            "$label.doneWithMulligan name=s:\"Chamber of Records [tdc_rune_m] {perPlayer}\"",
+            resolver: catalogResolver([
+                .text("Done at "),
+                .variable(name: "name", source: .named, role: .text),
+            ]),
+            catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        #expect(label == BasicChoiceResolvedLabelText(
+            title: "Done at Chamber of Records [tdc_rune_m] {perPlayer}"
+        ))
+
+        let resolved = prompt(question, resolutions: [0: .resolved(label)])
+            .resolvedChoiceLabel(for: question.choices[0], in: projection())
+
+        #expect(resolved.title == "Done at Chamber of Records Rune M Per player")
+        #expect(resolved.titleNodes == [
+            .text("Done at Chamber of Records "), .icon("rune-M"), .text(" "),
+            .icon("perPlayer"),
+        ])
+        #expect(resolved.accessibilityLabel == "Done at Chamber of Records Rune M Per player")
+    }
+
+    @Test("Raw placeholder detection covers icons, runes and escapes but not emphasis")
+    func rawPlaceholderDetection() {
+        let cases: [(String, Bool)] = [
+            ("Reveal {skull}", true),
+            ("At [tdc_rune_m]", true),
+            ("Take 1 {asterisk}", true),
+            ("Keep {underscore}", true),
+            ("Choose {neutral}", false),
+            ("Spend *a* clue", false),
+            ("Keep a_b", false),
+            ("Done replacing cards", false),
+        ]
+        for (text, expected) in cases {
+            #expect(
+                StoryIconInlineParser.containsRawPlaceholder(text) == expected,
+                Comment(rawValue: text)
+            )
+        }
+    }
+
     @Test("Legacy location names keep their literal * and _ characters and no nodes")
     func nonCatalogLegacyTitlesStayLiteral() throws {
         let question = try fixtureQuestion()

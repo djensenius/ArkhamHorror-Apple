@@ -75,7 +75,8 @@ enum StoryIconInlineParser {
     }
 
     /// Whether `text` still holds an unrendered web placeholder: a braced or bracketed icon,
-    /// or the `{asterisk}` / `{underscore}` escape. Catalog-rendered text never does.
+    /// or the `{asterisk}` / `{underscore}` escape. Catalog message text never contains
+    /// these; text variable values may.
     static func containsRawPlaceholder(_ text: String) -> Bool {
         unescaped(text) != text || iconAtoms(text).contains {
             if case .icon = $0 {
