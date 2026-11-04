@@ -176,7 +176,7 @@ extension StoryNarrativeLocalization {
         // so named variables still bind normally and unbound placeholders still fail closed.
         switch resolveKey(
             invocation.key,
-            variables: invocation.variables,
+            variables: localizingCardNameVariables(invocation.variables, resolver: resolver),
             resolver: resolver,
             catalogUnavailability: catalogUnavailability,
             imageFallback: false,
