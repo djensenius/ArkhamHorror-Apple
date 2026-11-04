@@ -6,11 +6,16 @@ import SwiftUI
 struct BoardLinkedChoiceMenuChoicePresentation: Sendable, Equatable {
     let id: SemanticFocusID
     let title: String
+    /// Inline nodes rendering a `[^N]` footnote as a marker; `nil` shows `title`.
+    let titleNodes: [StoryNode]?
+    let accessibilityLabel: String
     let isFocused: Bool
 
     init(choice: BoardLinkedChoice, focusedID: SemanticFocusID?) {
         id = BoardFocusID.linkedChoiceMenuChoice(choice.choiceIndex)
         title = choice.title
+        titleNodes = choice.displayNodes
+        accessibilityLabel = choice.spokenTitle
         isFocused = focusedID == id
     }
 }
@@ -140,12 +145,15 @@ struct BoardLinkedChoiceMenuModalView: View {
             focusedID: focusedID
         )
         return SemanticActionControl(
-            accessibilityLabel: Text(presentation.title),
+            accessibilityLabel: Text(presentation.accessibilityLabel),
             semanticFocusID: presentation.id,
             onOutcome: onOutcome,
             label: {
                 HStack {
-                    Text(presentation.title)
+                    StoryInlineTextLabel(
+                        fallbackText: presentation.title,
+                        nodes: presentation.titleNodes
+                    )
                     Spacer()
                 }
                 .padding(.horizontal, 8)
