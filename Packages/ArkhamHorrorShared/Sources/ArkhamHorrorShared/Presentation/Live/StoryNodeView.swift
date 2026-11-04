@@ -372,10 +372,12 @@ private struct StoryInlineTextView: View {
     let nodes: [StoryNode]
     var textStyle: StoryInlineTextStyle = .body
     @Environment(\.storyIconFontAvailability) private var iconFontAvailability
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if let text = StoryInlineTextRenderer.text(
-            for: nodes, iconFonts: iconFontAvailability, textStyle: textStyle
+            for: nodes, iconFonts: iconFontAvailability, textStyle: textStyle,
+            dynamicTypeSize: dynamicTypeSize
         ) {
             text.accessibilityLabel(StoryNodePresentation.accessibilityLabel(for: nodes))
         }
@@ -387,6 +389,7 @@ struct StoryInlineTextLabel: View {
     let nodes: [StoryNode]?
     var textStyle: StoryInlineTextStyle = .body
     @Environment(\.storyIconFontAvailability) private var iconFontAvailability
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         if let renderedText {
@@ -401,7 +404,8 @@ struct StoryInlineTextLabel: View {
         return StoryInlineTextRenderer.text(
             for: nodes,
             iconFonts: iconFontAvailability,
-            textStyle: textStyle
+            textStyle: textStyle,
+            dynamicTypeSize: dynamicTypeSize
         )
     }
 }
@@ -420,12 +424,14 @@ enum StoryInlineTextRenderer {
     static func text(
         for nodes: [StoryNode],
         iconFonts: WebIconFontAvailability = WebIconFontAvailability(),
-        textStyle: StoryInlineTextStyle = .body
+        textStyle: StoryInlineTextStyle = .body,
+        dynamicTypeSize: DynamicTypeSize = .large
     ) -> Text? {
         var result = Text("")
         for node in nodes {
             guard let fragment = text(
-                for: node, iconFonts: iconFonts, textStyle: textStyle
+                for: node, iconFonts: iconFonts, textStyle: textStyle,
+                dynamicTypeSize: dynamicTypeSize
             ) else { return nil }
             result = Text("\(result)\(fragment)")
         }
@@ -462,17 +468,22 @@ enum StoryInlineTextRenderer {
     private static func text(
         for node: StoryNode,
         iconFonts: WebIconFontAvailability,
-        textStyle: StoryInlineTextStyle
+        textStyle: StoryInlineTextStyle,
+        dynamicTypeSize: DynamicTypeSize
     ) -> Text? {
         switch node {
         case let .text(text):
             Text(verbatim: text)
         case let .group(children):
-            text(for: children, iconFonts: iconFonts, textStyle: textStyle)
+            text(
+                for: children, iconFonts: iconFonts, textStyle: textStyle,
+                dynamicTypeSize: dynamicTypeSize
+            )
         case let .emphasis(style, children):
             text(
                 for: children, iconFonts: iconFonts,
-                textStyle: textStyle.applying(emphasis: style)
+                textStyle: textStyle.applying(emphasis: style),
+                dynamicTypeSize: dynamicTypeSize
             ).map { emphasized($0, style: style) }
         case .lineBreak:
             Text("\n")
@@ -481,9 +492,14 @@ enum StoryInlineTextRenderer {
         case let .semanticIcon(icon):
             semanticIconText(for: icon, iconFonts: iconFonts, textStyle: textStyle)
         case let .footnoteMarker(number):
-            footnoteMarkerText(number, textStyle: textStyle)
+            footnoteMarkerText(StoryFootnoteMarkerMetrics.run(
+                number, textStyle: textStyle, dynamicTypeSize: dynamicTypeSize
+            ))
         case let .cardReference(_, children):
-            text(for: children, iconFonts: iconFonts, textStyle: textStyle).map {
+            text(
+                for: children, iconFonts: iconFonts, textStyle: textStyle,
+                dynamicTypeSize: dynamicTypeSize
+            ).map {
                 Text(
                     "\(Image(systemName: "rectangle.portrait.on.rectangle.portrait")) \($0)"
                 )
@@ -524,14 +540,12 @@ enum StoryInlineTextRenderer {
 
     /// The web's `.footnote-ref` (`FormattedEntry.vue:354-360`): 0.7em, bold, upright,
     /// raised like `vertical-align: super`, after 1px of leading padding (a hair space).
-    private static func footnoteMarkerText(
-        _ number: String, textStyle: StoryInlineTextStyle
-    ) -> Text {
-        let size = StoryFootnoteMarkerMetrics.pointSize(for: textStyle)
-        let marker = Text(verbatim: number)
-            .font(.system(size: size, weight: .bold))
+    /// The run's sizes are already scaled for the environment's Dynamic Type size.
+    private static func footnoteMarkerText(_ run: StoryFootnoteMarkerRun) -> Text {
+        let marker = Text(verbatim: run.number)
+            .font(.system(size: run.pointSize, weight: .bold))
             .italic(false)
-            .baselineOffset(StoryFootnoteMarkerMetrics.baselineOffset(for: textStyle))
+            .baselineOffset(run.baselineOffset)
         return Text("\(Text(verbatim: "\u{200A}"))\(marker)")
     }
 
@@ -824,19 +838,35 @@ enum StoryContentSizeCategoryProbe {
     case accessibilityExtraExtraExtraLarge
 }
 
-/// Sizes for the web's `[^N]` footnote reference relative to the surrounding text.
+/// A `[^N]` footnote reference sized for its enclosing text.
+struct StoryFootnoteMarkerRun: Equatable {
+    let number: String
+    let pointSize: CGFloat
+    let baselineOffset: CGFloat
+}
+
+/// Sizes for the web's `[^N]` footnote reference relative to the enclosing text: the
+/// enclosing style's point size at the current Dynamic Type size (a `small` span's
+/// `.caption`, a heading's style), so the marker scales and shrinks with its parent.
 enum StoryFootnoteMarkerMetrics {
     /// `font-size: 0.7em`.
     static let fontScale: CGFloat = 0.7
     /// `vertical-align: super` raises the baseline by about a third of the parent font size.
     static let baselineScale: CGFloat = 1.0 / 3.0
 
-    static func pointSize(for textStyle: StoryInlineTextStyle) -> CGFloat {
-        StoryWebGlyphFontMetrics.platformPreferredPointSize(for: textStyle) * fontScale
-    }
-
-    static func baselineOffset(for textStyle: StoryInlineTextStyle) -> CGFloat {
-        StoryWebGlyphFontMetrics.platformPreferredPointSize(for: textStyle) * baselineScale
+    static func run(
+        _ number: String,
+        textStyle: StoryInlineTextStyle,
+        dynamicTypeSize: DynamicTypeSize,
+        parentPointSize: (StoryInlineTextStyle, DynamicTypeSize) -> CGFloat
+            = StoryWebGlyphFontMetrics.scaledPointSize
+    ) -> StoryFootnoteMarkerRun {
+        let parent = parentPointSize(textStyle, dynamicTypeSize)
+        return StoryFootnoteMarkerRun(
+            number: number,
+            pointSize: parent * fontScale,
+            baselineOffset: parent * baselineScale
+        )
     }
 }
 
@@ -857,6 +887,26 @@ enum StoryWebGlyphFontMetrics {
 
     static func platformPreferredPointSize(for textStyle: StoryInlineTextStyle) -> CGFloat {
         platformPreferredPointSize(for: textStyle, currentContentSizeCategory: .large)
+    }
+
+    /// The text style's point size at `dynamicTypeSize`, which is what a SwiftUI text-style
+    /// font resolves to. macOS has no Dynamic Type, so there it is the preferred size.
+    static func scaledPointSize(
+        for textStyle: StoryInlineTextStyle,
+        dynamicTypeSize: DynamicTypeSize
+    ) -> CGFloat {
+        #if os(macOS)
+            NSFont.preferredFont(forTextStyle: textStyle.nsFontTextStyle).pointSize
+        #elseif os(iOS) || os(tvOS) || os(visionOS)
+            UIFont.preferredFont(
+                forTextStyle: textStyle.uiFontTextStyle,
+                compatibleWith: UITraitCollection(
+                    preferredContentSizeCategory: UIContentSizeCategory(dynamicTypeSize)
+                )
+            ).pointSize
+        #else
+            17
+        #endif
     }
 
     static func platformPreferredPointSize(

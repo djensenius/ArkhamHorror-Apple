@@ -321,14 +321,6 @@ extension WebIconFontGlyphMappingTests {
         #expect(StoryNode.footnoteMarker("12").plainText == "12")
         #expect(!StoryNode.footnoteMarker("12").losesInstructionWhenFlattened)
         #expect(StoryNodePresentation.isInline(.footnoteMarker("1")))
-        #expect(
-            StoryFootnoteMarkerMetrics.pointSize(for: .body)
-                == StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .body) * 0.7
-        )
-        #expect(
-            StoryFootnoteMarkerMetrics.baselineOffset(for: .body)
-                == StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .body) / 3
-        )
         #expect(StoryInlineTextRenderer.text(for: [.text("a"), .footnoteMarker("1")]) != nil)
     }
 
