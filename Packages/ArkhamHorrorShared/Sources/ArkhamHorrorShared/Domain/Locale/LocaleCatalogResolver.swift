@@ -582,7 +582,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
             .emphasis(style, children.map { transformText($0, transform) })
         case let .list(ordered, items):
             .list(ordered: ordered, items: items.map { $0.map { transformText($0, transform) } })
-        case .lineBreak, .rule, .image, .icon, .semanticIcon:
+        case .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker:
             node
         case let .cardReference(code, children):
             .cardReference(code: code, children: children.map { transformText($0, transform) })

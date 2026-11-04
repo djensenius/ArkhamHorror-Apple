@@ -58,14 +58,15 @@ enum WebIconPlaceholder: Sendable, Equatable, Hashable {
 /// literal `{iconName}` placeholders. Catalog-rendered story text already arrives as nodes;
 /// this parser exists only for non-catalog label strings. It follows the web's
 /// `formatContent` (fork `frontend/src/arkham/helpers.ts:229-246`) in order: icons and both
-/// rune forms, then `_bold_`, then `*italic*`, then the `{asterisk}` -> `*` and
-/// `{underscore}` -> `_` escapes. Raw labels follow the web's unescaped `replaceIcons`, so
-/// `{{skull}}` renders as a literal `{`, the skull icon, and a literal `}`.
+/// rune forms, then `_bold_`, then `*italic*`, then `[^N]` footnote references, then the
+/// `{asterisk}` -> `*` and `{underscore}` -> `_` escapes. Raw labels follow the web's
+/// unescaped `replaceIcons`, so `{{skull}}` renders as a literal `{`, the skull icon, and a
+/// literal `}`.
 ///
 /// One deliberate difference: an underscore inside a word (`a_b`, `tdc_rune_m`) never opens
 /// or closes bold, so identifiers stay literal.
 enum StoryIconInlineParser {
-    /// Inline nodes for `text`, or `nil` when it has no icon and no emphasis (the plain
+    /// Inline nodes for `text`, or `nil` when it has no icon, emphasis or footnote (the plain
     /// title then renders as is).
     static func nodes(for text: String) -> [StoryNode]? {
         let atoms = formattedAtoms(text)
@@ -98,7 +99,8 @@ enum StoryIconInlineParser {
     }
 
     /// The spoken/plain form of `text`: the same formatting as ``nodes(for:)`` with each
-    /// icon replaced by its spoken name and emphasis markers removed.
+    /// icon replaced by its spoken name, emphasis markers removed and each footnote
+    /// reference reduced to its number.
     static func plainText(
         for text: String,
         spokenName: (WebIconPlaceholder) -> String
@@ -110,6 +112,7 @@ enum StoryIconInlineParser {
         case character(Character)
         case icon(WebIconPlaceholder)
         case emphasis(LocaleCatalogEmphasis, [Atom])
+        case footnote(String)
 
         var isMarkup: Bool {
             if case .character = self {
@@ -134,7 +137,32 @@ enum StoryIconInlineParser {
     }
 
     private static func formattedAtoms(_ text: String) -> [Atom] {
-        italicized(emphasized(iconAtoms(text), delimiter: "_", style: .bold, intraword: false))
+        footnoted(italicized(
+            emphasized(iconAtoms(text), delimiter: "_", style: .bold, intraword: false)
+        ))
+    }
+
+    /// The web's `/\[\^(\d+)\]/g` -> `<sup class="footnote-ref">`, applied after emphasis.
+    private static func footnoted(_ atoms: [Atom]) -> [Atom] {
+        var result: [Atom] = []
+        var index = 0
+        while index < atoms.count {
+            if case let .emphasis(style, children) = atoms[index] {
+                result.append(.emphasis(style, footnoted(children)))
+                index += 1
+            } else if let marker = StoryNode.footnoteMarker(at: index, character: { position in
+                guard atoms.indices.contains(position),
+                      case let .character(character) = atoms[position] else { return nil }
+                return character
+            }) {
+                result.append(.footnote(marker.number))
+                index += marker.length
+            } else {
+                result.append(atoms[index])
+                index += 1
+            }
+        }
+        return result
     }
 
     private static func iconAtoms(_ text: String) -> [Atom] {
@@ -254,6 +282,9 @@ enum StoryIconInlineParser {
                 if !inner.isEmpty {
                     nodes.append(.emphasis(style, inner))
                 }
+            case let .footnote(number):
+                appendText(unescaped(buffer), to: &nodes)
+                nodes.append(.footnoteMarker(number))
             }
             buffer = ""
         }
@@ -276,6 +307,8 @@ enum StoryIconInlineParser {
                 result += unescaped(buffer) + spokenName(placeholder)
             case let .emphasis(_, children):
                 result += unescaped(buffer) + plainText(children, spokenName: spokenName)
+            case let .footnote(number):
+                result += unescaped(buffer) + number
             }
             buffer = ""
         }

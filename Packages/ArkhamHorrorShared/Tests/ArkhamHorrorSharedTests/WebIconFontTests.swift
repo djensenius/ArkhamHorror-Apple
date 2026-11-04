@@ -288,6 +288,50 @@ extension WebIconFontGlyphMappingTests {
         )
     }
 
+    @Test("Raw labels render [^N] footnote references like formatContent")
+    func rawLabelParserSplitsFootnoteMarkers() throws {
+        #expect(try #require(StoryIconInlineParser.nodes(for: "[^1]")) == [.footnoteMarker("1")])
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "Read the note[^12]."))
+                == [.text("Read the note"), .footnoteMarker("12"), .text(".")]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "_Bold[^2]_ and *italic[^3]*"))
+                == [
+                    .emphasis(.bold, [.text("Bold"), .footnoteMarker("2")]),
+                    .text(" and "),
+                    .emphasis(.italic, [.text("italic"), .footnoteMarker("3")]),
+                ]
+        )
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "{action}[^1][tdc_rune_m][^2]"))
+                == [.icon("action"), .footnoteMarker("1"), .icon("rune-M"), .footnoteMarker("2")]
+        )
+        #expect(StoryIconInlineParser.nodes(for: "[^x] [^] [^1a] [1] ^1") == nil)
+        #expect(
+            try #require(StoryIconInlineParser.nodes(for: "[^[^4]]"))
+                == [.text("[^"), .footnoteMarker("4"), .text("]")]
+        )
+        let spoken: (WebIconPlaceholder) -> String = { "<\($0.glyphKey)>" }
+        #expect(
+            StoryIconInlineParser.plainText(for: "_Note_[^7] {codex}", spokenName: spoken)
+                == "Note7 <codex>"
+        )
+        #expect(StoryIconInlineParser.plainText(for: "[^x]", spokenName: spoken) == "[^x]")
+        #expect(StoryNode.footnoteMarker("12").plainText == "12")
+        #expect(!StoryNode.footnoteMarker("12").losesInstructionWhenFlattened)
+        #expect(StoryNodePresentation.isInline(.footnoteMarker("1")))
+        #expect(
+            StoryFootnoteMarkerMetrics.pointSize(for: .body)
+                == StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .body) * 0.7
+        )
+        #expect(
+            StoryFootnoteMarkerMetrics.baselineOffset(for: .body)
+                == StoryWebGlyphFontMetrics.platformPreferredPointSize(for: .body) / 3
+        )
+        #expect(StoryInlineTextRenderer.text(for: [.text("a"), .footnoteMarker("1")]) != nil)
+    }
+
     @Test("A long run of braces parses in linear time and stays literal")
     func longBraceRunStaysLiteralAndLinear() throws {
         #expect(StoryIconInlineParser.maxPlaceholderNameLength == "elderThing".count)

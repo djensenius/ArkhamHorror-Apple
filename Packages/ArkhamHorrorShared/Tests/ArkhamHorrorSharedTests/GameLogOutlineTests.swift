@@ -137,6 +137,9 @@ struct GameLogOutlineTests {
         ))
         #expect(StoryNodePresentation.accessibilityLabel(for: [.icon("runeM")]) == "rune m")
 
+        // The web log never runs formatContent, so `[^N]` stays literal text there.
+        #expect(renderer.render(.text("See note [^1]")) == [.text("See note [^1]")])
+
         let slim = WebIconFontAvailability(registrations: [
             .arkhamSlim: .init(
                 family: .arkhamSlim, postScriptName: "arkhamslim",

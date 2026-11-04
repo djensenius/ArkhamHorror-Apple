@@ -48,7 +48,7 @@ enum StoryNodePresentation {
 
     static func isInline(_ node: StoryNode) -> Bool {
         switch node {
-        case .text, .lineBreak, .icon, .semanticIcon:
+        case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker:
             true
         case let .group(children), let .emphasis(_, children),
              let .cardReference(_, children):
@@ -480,6 +480,8 @@ enum StoryInlineTextRenderer {
             namedIconText(name, iconFonts: iconFonts, textStyle: textStyle)
         case let .semanticIcon(icon):
             semanticIconText(for: icon, iconFonts: iconFonts, textStyle: textStyle)
+        case let .footnoteMarker(number):
+            footnoteMarkerText(number, textStyle: textStyle)
         case let .cardReference(_, children):
             text(for: children, iconFonts: iconFonts, textStyle: textStyle).map {
                 Text(
@@ -518,6 +520,19 @@ enum StoryInlineTextRenderer {
             ))
         }
         return Text("\(Image(systemName: "seal.fill")) \(StoryNode.spokenIconLabel(name))")
+    }
+
+    /// The web's `.footnote-ref` (`FormattedEntry.vue:354-360`): 0.7em, bold, upright,
+    /// raised like `vertical-align: super`, after 1px of leading padding (a hair space).
+    private static func footnoteMarkerText(
+        _ number: String, textStyle: StoryInlineTextStyle
+    ) -> Text {
+        let size = StoryFootnoteMarkerMetrics.pointSize(for: textStyle)
+        let marker = Text(verbatim: number)
+            .font(.system(size: size, weight: .bold))
+            .italic(false)
+            .baselineOffset(StoryFootnoteMarkerMetrics.baselineOffset(for: textStyle))
+        return Text("\(Text(verbatim: "\u{200A}"))\(marker)")
     }
 
     private static func semanticIconText(
@@ -564,7 +579,7 @@ private struct StoryNodeView: View {
 
     var body: some View {
         switch node {
-        case .text, .lineBreak, .icon, .semanticIcon:
+        case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker:
             StoryInlineTextView(nodes: [node], textStyle: inlineTextStyle)
         case let .paragraph(children):
             StoryNodeChildrenView(children: children, inlineTextStyle: inlineTextStyle)
@@ -807,6 +822,22 @@ enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
 enum StoryContentSizeCategoryProbe {
     case large
     case accessibilityExtraExtraExtraLarge
+}
+
+/// Sizes for the web's `[^N]` footnote reference relative to the surrounding text.
+enum StoryFootnoteMarkerMetrics {
+    /// `font-size: 0.7em`.
+    static let fontScale: CGFloat = 0.7
+    /// `vertical-align: super` raises the baseline by about a third of the parent font size.
+    static let baselineScale: CGFloat = 1.0 / 3.0
+
+    static func pointSize(for textStyle: StoryInlineTextStyle) -> CGFloat {
+        StoryWebGlyphFontMetrics.platformPreferredPointSize(for: textStyle) * fontScale
+    }
+
+    static func baselineOffset(for textStyle: StoryInlineTextStyle) -> CGFloat {
+        StoryWebGlyphFontMetrics.platformPreferredPointSize(for: textStyle) * baselineScale
+    }
 }
 
 enum StoryWebGlyphFontMetrics {

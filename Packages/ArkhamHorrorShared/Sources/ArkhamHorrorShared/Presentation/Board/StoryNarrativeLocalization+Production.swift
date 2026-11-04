@@ -444,8 +444,14 @@ extension StoryNarrativeLocalization {
             imageFallback: true
         ) {
         case let .success(rendered):
+            // Story prose goes through the web's `formatContent`, which turns `[^N]` into a
+            // footnote reference; the game log does not, so only the narrative layer splits.
+            let footnoted = LocaleCatalogRenderedNodes(
+                nodes: rendered.nodes.splittingFootnoteMarkers,
+                degradedReason: rendered.degradedReason
+            )
             return .success(ProductionEntryResolution(
-                entry: makeResolved(rendered),
+                entry: makeResolved(footnoted),
                 degradedReason: rendered.degradedReason
             ))
         case let .failure(reason):
@@ -634,7 +640,7 @@ private extension [StoryNode] {
                 children.containsSemanticIcon
             case let .list(_, items):
                 items.contains { $0.containsSemanticIcon }
-            case .text, .lineBreak, .rule, .image, .table:
+            case .text, .lineBreak, .rule, .image, .table, .footnoteMarker:
                 false
             }
         }
@@ -657,8 +663,37 @@ private extension [StoryNode] {
                 .emphasis(style, children.normalizingWebIconNames)
             case let .cardReference(code, children):
                 .cardReference(code: code, children: children.normalizingWebIconNames)
-            case .text, .lineBreak, .rule, .image, .table, .list, .semanticIcon:
+            case .text, .lineBreak, .rule, .image, .table, .list, .semanticIcon, .footnoteMarker:
                 node
+            }
+        }
+    }
+
+    /// Every text node with its `[^N]` footnote references split out, at any depth.
+    var splittingFootnoteMarkers: [StoryNode] {
+        flatMap { node -> [StoryNode] in
+            switch node {
+            case let .text(text):
+                StoryNode.splittingFootnoteMarkers(in: text)
+            case let .group(children):
+                [.group(children.splittingFootnoteMarkers)]
+            case let .paragraph(children):
+                [.paragraph(children.splittingFootnoteMarkers)]
+            case let .heading(level, children):
+                [.heading(level: level, children: children.splittingFootnoteMarkers)]
+            case let .emphasis(style, children):
+                [.emphasis(style, children.splittingFootnoteMarkers)]
+            case let .cardReference(code, children):
+                [.cardReference(code: code, children: children.splittingFootnoteMarkers)]
+            case let .list(ordered, items):
+                [.list(ordered: ordered, items: items.map(\.splittingFootnoteMarkers))]
+            case let .table(head, body):
+                [.table(
+                    head: head.map(\.splittingFootnoteMarkers),
+                    body: body.map(\.splittingFootnoteMarkers)
+                )]
+            case .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker:
+                [node]
             }
         }
     }
@@ -695,6 +730,16 @@ private extension [StoryNode] {
                 result.append(node)
             }
         }
+    }
+}
+
+private extension StoryTableRow {
+    var splittingFootnoteMarkers: StoryTableRow {
+        StoryTableRow(cells: cells.map { cell in
+            StoryTableCell(
+                isHeader: cell.isHeader, children: cell.children.splittingFootnoteMarkers
+            )
+        })
     }
 }
 
