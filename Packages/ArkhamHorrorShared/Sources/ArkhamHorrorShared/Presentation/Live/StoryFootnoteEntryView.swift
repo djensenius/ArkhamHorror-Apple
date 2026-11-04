@@ -44,57 +44,75 @@ struct StoryFootnoteEntryPresentation: Equatable {
         )
     }
 
-    // The VoiceOver text of a resolved note body, matching what `ResolvedStoryEntryView`
-    // shows for each entry.
-    // swiftlint:disable:next cyclomatic_complexity
+    /// The VoiceOver text of a resolved note body, matching what `ResolvedStoryEntryView`
+    /// shows for each entry.
     static func spokenText(
         for entry: ResolvedStoryEntry, cardCatalog: CardCatalogSnapshot?
     ) -> String {
-        func joined(_ parts: [String]) -> String {
-            parts.filter { !$0.isEmpty }.joined(separator: " ")
+        spokenRun(for: entry, cardCatalog: cardCatalog).text
+    }
+
+    // The trimmed spoken run of a resolved entry. Sibling entries join with a space, except
+    // that a table at an entry's edge keeps the same pauses as a table in a node sequence.
+    // swiftlint:disable:next cyclomatic_complexity
+    private static func spokenRun(
+        for entry: ResolvedStoryEntry, cardCatalog: CardCatalogSnapshot?
+    ) -> SpokenRun {
+        func joined(_ runs: [SpokenRun]) -> SpokenRun {
+            joinedRuns(runs.filter { !$0.text.isEmpty }, separator: " ")
         }
-        func spokenEntries(_ entries: [ResolvedStoryEntry]) -> String {
-            joined(entries.map { spokenText(for: $0, cardCatalog: cardCatalog) })
+        func spokenEntries(_ entries: [ResolvedStoryEntry]) -> SpokenRun {
+            joined(entries.map { spokenRun(for: $0, cardCatalog: cardCatalog) })
         }
-        func spokenItems(_ items: [ResolvedStoryListItem]) -> String {
+        func spokenItems(_ items: [ResolvedStoryListItem]) -> SpokenRun {
             joined(items.map { item in
                 joined([
-                    spokenText(for: item.entry, cardCatalog: cardCatalog),
+                    spokenRun(for: item.entry, cardCatalog: cardCatalog),
                     spokenItems(item.nested),
                 ])
             })
         }
-        let text: String = switch entry {
+        let run: SpokenRun = switch entry {
         case let .text(value):
-            value
+            SpokenRun(text: value)
         case let .nodes(nodes), let .heading(_, nodes):
-            spokenText(for: nodes)
+            spokenRun(for: nodes)
         case let .modified(modifiers, entry):
             // `ModifiedResolvedStoryEntryView` labels a valid/invalid entry with an icon.
             joined([
-                StoryFlavorEntryStatus.status(for: modifiers)?.accessibilityLabel ?? "",
-                spokenText(for: entry, cardCatalog: cardCatalog),
+                SpokenRun(
+                    text: StoryFlavorEntryStatus.status(for: modifiers)?.accessibilityLabel ?? ""
+                ),
+                spokenRun(for: entry, cardCatalog: cardCatalog),
             ])
         case let .composite(entries), let .columns(entries):
             spokenEntries(entries)
         case let .list(items):
             spokenItems(items)
         case let .cardReference(cardCode, _):
-            cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
+            SpokenRun(text: cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)")
         case let .tarotReference(arcana):
-            "Tarot \(arcana)"
+            SpokenRun(text: "Tarot \(arcana)")
         case let .chaosTokenReference(face):
-            "Chaos token \(face.rawValue)"
+            SpokenRun(text: "Chaos token \(face.rawValue)")
         case let .chaosTokenMorph(from, target):
-            "Chaos token \(from.rawValue) to \(target.rawValue)"
+            SpokenRun(text: "Chaos token \(from.rawValue) to \(target.rawValue)")
         case .divider:
-            ""
+            SpokenRun()
         case let .footnote(number, entry):
-            accessibilityLabel(
-                number: number, body: spokenText(for: entry, cardCatalog: cardCatalog)
-            )
+            footnoteRun(number: number, body: spokenRun(for: entry, cardCatalog: cardCatalog))
         }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return run.trimmed
+    }
+
+    /// A nested note's label keeps its body's closing table only where the localized label
+    /// ends with the body.
+    private static func footnoteRun(number: Int, body: SpokenRun) -> SpokenRun {
+        let label = accessibilityLabel(number: number, body: body.text)
+        return SpokenRun(
+            text: label,
+            endsWithTable: body.endsWithTable && !body.text.isEmpty && label.hasSuffix(body.text)
+        )
     }
 
     /// The block-aware VoiceOver text of a note body's nodes. Prose reads exactly as
@@ -113,17 +131,27 @@ struct StoryFootnoteEntryPresentation: Equatable {
         var text = ""
         var startsWithTable = false
         var endsWithTable = false
+
+        /// Without surrounding whitespace; the table edges are unaffected.
+        var trimmed: SpokenRun {
+            let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return SpokenRun(
+                text: text,
+                startsWithTable: startsWithTable && !text.isEmpty,
+                endsWithTable: endsWithTable && !text.isEmpty
+            )
+        }
     }
 
     private static func spokenRun(for nodes: [StoryNode]) -> SpokenRun {
         joinedRuns(spokenLeaves(nodes).map(spokenRun(for:)), separator: "")
     }
 
-    /// The one table-boundary rule for node sequences (`separator` "") and list items
-    /// (`separator` " "): after a table, a non-empty part follows ". " (or a space after
-    /// punctuation, nothing extra before leading whitespace) and empty parts are skipped;
-    /// before a table, a space unless whitespace is already there. Without tables, parts are
-    /// joined with `separator` exactly as before.
+    /// The one table-boundary rule for node sequences (`separator` "") and for node list
+    /// items and non-empty resolved entries (`separator` " "): after a table, a non-empty
+    /// part follows ". " (or a space after punctuation, nothing extra before leading
+    /// whitespace) and empty parts are skipped; before a table, a space unless whitespace is
+    /// already there. Without tables, parts are joined with `separator` exactly as before.
     private static func joinedRuns(_ runs: [SpokenRun], separator: String) -> SpokenRun {
         var result = SpokenRun()
         for (index, run) in runs.enumerated() {
