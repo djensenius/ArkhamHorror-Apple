@@ -87,14 +87,8 @@ enum StoryIconInlineParser {
     /// the `{asterisk}` / `{underscore}` escape, or a `[^N]` footnote reference. Catalog
     /// choice-label text never contains these; text variable values may.
     static func containsRawPlaceholder(_ text: String) -> Bool {
-        unescaped(text) != text || footnoted(iconAtoms(text)).contains {
-            switch $0 {
-            case .icon, .footnote:
-                true
-            case .character, .emphasis:
-                false
-            }
-        }
+        // Flat icon atoms hold no emphasis, so any markup atom is an icon or a footnote.
+        unescaped(text) != text || footnoted(iconAtoms(text)).contains(where: \.isMarkup)
     }
 
     /// Removing markers can leave whitespace at the edges (`__ Hello`), so the outer text
