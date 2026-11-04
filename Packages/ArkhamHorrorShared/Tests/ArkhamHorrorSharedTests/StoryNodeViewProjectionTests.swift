@@ -65,6 +65,8 @@ struct StoryNodeViewProjectionTests {
         #expect(StoryReturnToEntryPresentation.colorHex == 0x2D6A62)
         #expect(StoryReturnToEntryPresentation.ruleWidth == 3)
         #expect(StoryReturnToEntryPresentation.leadingInset == 10)
+        // Text starts 13 from the edge: 10 clear of the 3pt rule, matching the web.
+        #expect(StoryReturnToEntryPresentation.effectiveLeadingPadding == 13)
         #expect(StoryReturnToEntryPresentation.verticalInset == 2)
         #expect(StoryReturnToEntryPresentation.washOpacity == 0.10)
         #expect(StoryReturnToEntryPresentation.washEnd == 0.75)

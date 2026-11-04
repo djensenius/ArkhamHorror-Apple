@@ -196,7 +196,7 @@ enum StoryFlavorEntryStatus: Equatable {
 
 /// The faint "Return to" wash for `ReturnToEntry` setup lines, mirroring the web
 /// `.return-to` class (FormattedEntry.vue): a 3pt dark-teal leading rule, a teal wash
-/// fading to clear, square leading corners and rounded trailing corners. Text colour
+/// fading to transparent teal, square leading corners and rounded trailing corners. Text colour
 /// and font are left alone so it composes with every other modifier.
 enum StoryReturnToEntryPresentation {
     static let colorHex: UInt32 = 0x2D6A62
@@ -206,6 +206,12 @@ enum StoryReturnToEntryPresentation {
     static let washOpacity: Double = 0.10
     static let washEnd: CGFloat = 0.75
     static let trailingRadius: CGFloat = 4
+
+    /// The web draws the 3px rule outside its 10px padding, so text sits
+    /// `leadingInset` from the rule and `leadingInset + ruleWidth` from the edge.
+    static var effectiveLeadingPadding: CGFloat {
+        leadingInset + ruleWidth
+    }
 
     static var color: Color {
         Color(
@@ -226,7 +232,7 @@ private struct StoryReturnToEntryModifier: ViewModifier {
     func body(content: Content) -> some View {
         if isApplied {
             content
-                .padding(.leading, StoryReturnToEntryPresentation.leadingInset)
+                .padding(.leading, StoryReturnToEntryPresentation.effectiveLeadingPadding)
                 .padding(.vertical, StoryReturnToEntryPresentation.verticalInset)
                 .background(
                     LinearGradient(
@@ -236,7 +242,10 @@ private struct StoryReturnToEntryModifier: ViewModifier {
                                     .opacity(StoryReturnToEntryPresentation.washOpacity),
                                 location: 0
                             ),
-                            .init(color: .clear, location: StoryReturnToEntryPresentation.washEnd),
+                            .init(
+                                color: StoryReturnToEntryPresentation.color.opacity(0),
+                                location: StoryReturnToEntryPresentation.washEnd
+                            ),
                         ],
                         startPoint: .leading,
                         endPoint: .trailing
