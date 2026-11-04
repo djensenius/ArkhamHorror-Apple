@@ -187,6 +187,24 @@ select_signed_application() {
   return 0
 }
 
+# Runs a command that could block on a keychain or key-access prompt. macOS
+# has no timeout(1), so perl arms SIGALRM and execs the command; after
+# keychain_step_timeout seconds the command dies with exit 142 (128 + SIGALRM),
+# which fails the self-test naming the step. Otherwise it returns the
+# command's own exit status.
+readonly keychain_step_timeout=120
+bounded() {
+  local step="$1"
+  shift
+  local status=0
+  /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' \
+    "$keychain_step_timeout" "$@" || status=$?
+  if [[ "$status" == 142 ]]; then
+    fail "$step timed out after ${keychain_step_timeout}s (a keychain or key-access prompt may be waiting)"
+  fi
+  return "$status"
+}
+
 # Prints the user keychain search list, one path per line.
 user_keychain_search_list() {
   local listing
@@ -242,7 +260,8 @@ append_selfsigned_keychain_to_search_list() {
 }
 
 sign_selfsigned_fixture() {
-  /usr/bin/codesign --force \
+  bounded "signing the fixture with codesign" \
+    /usr/bin/codesign --force \
     --sign "$selfsigned_fingerprint" \
     --keychain "$selfsigned_keychain" \
     --identifier com.apple.dt.Xcode \
@@ -586,7 +605,8 @@ EOF
   [[ ! -e "$selfsigned_keychain" ]] ||
     fail "self-test keychain path already exists"
   keychain_status=0
-  /usr/bin/security create-keychain -p "$keychain_password" \
+  bounded "security create-keychain" \
+    /usr/bin/security create-keychain -p "$keychain_password" \
     "$selfsigned_keychain" >"$selfsigned_log" 2>&1 || keychain_status=$?
   if [[ "$keychain_status" == 0 || -e "$selfsigned_keychain" ]]; then
     created_selfsigned_keychain=1
@@ -606,15 +626,18 @@ EOF
     keychain_status=0
     case "$keychain_step" in
       settings)
-        /usr/bin/security set-keychain-settings "$selfsigned_keychain" \
+        bounded "security set-keychain-settings" \
+          /usr/bin/security set-keychain-settings "$selfsigned_keychain" \
           >"$selfsigned_log" 2>&1 || keychain_status=$?
         ;;
       unlock)
-        /usr/bin/security unlock-keychain -p "$keychain_password" \
+        bounded "security unlock-keychain" \
+          /usr/bin/security unlock-keychain -p "$keychain_password" \
           "$selfsigned_keychain" >"$selfsigned_log" 2>&1 || keychain_status=$?
         ;;
       import)
-        /usr/bin/security import "$selfsigned_root/identity.p12" \
+        bounded "security import" \
+          /usr/bin/security import "$selfsigned_root/identity.p12" \
           -k "$selfsigned_keychain" \
           -f pkcs12 \
           -P "$pkcs12_password" \
@@ -622,7 +645,8 @@ EOF
           >"$selfsigned_log" 2>&1 || keychain_status=$?
         ;;
       partition)
-        /usr/bin/security set-key-partition-list \
+        bounded "security set-key-partition-list" \
+          /usr/bin/security set-key-partition-list \
           -S apple-tool:,apple:,codesign: \
           -s \
           -k "$keychain_password" \
@@ -685,7 +709,8 @@ EOF
   expect_signature_verdict 3 "$launcher_requirement" "$selfsigned_xcode_fixture" \
     "launcher signature requirement accepted a self-signed com.apple.dt.Xcode signature carrying the App Store leaf OID"
 
-  if ! /usr/bin/security delete-keychain "$selfsigned_keychain" \
+  if ! bounded "security delete-keychain" \
+    /usr/bin/security delete-keychain "$selfsigned_keychain" \
     >"$selfsigned_log" 2>&1
   then
     /bin/cat "$selfsigned_log" >&2
