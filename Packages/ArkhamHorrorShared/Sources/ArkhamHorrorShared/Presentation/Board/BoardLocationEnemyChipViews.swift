@@ -10,22 +10,27 @@ struct BoardEnemyTileChipView: View {
         enemy.cardCode.flatMap { cardCatalog?.displayName(for: $0) } ?? enemy.displayName
     }
 
+    /// The VoiceOver hint for this chip's linked-choice decision; speaks a footnoted
+    /// choice's "… footnote N" title.
+    static func accessibilityHint(for decision: BoardLinkedChoicePresentationDecision) -> String {
+        BoardLinkedEnemyActionsControl.accessibilityHint(for: decision)
+    }
+
     var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        let decision = BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        switch decision {
         case .highlightOnly:
             chip(isFocused: false)
         case let .submit(choice):
             Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: false) }
                 .buttonStyle(.plain)
-                .accessibilityHint(Text(BoardLocalization.format(
-                    "board.linkedChoice.activateHint",
-                    "Activates %@",
-                    choice.title
-                )))
+                .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                    BoardLinkedChoiceMenuButton(choice: choice) {
+                        onLinkedChoice(choice.choiceIndex)
+                    }
                 }
             } label: {
                 chip(isFocused: false)
@@ -33,10 +38,7 @@ struct BoardEnemyTileChipView: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .accessibilityHint(Text(BoardLocalization.localized(
-                "board.linkedChoice.chooseHint",
-                "Choose which prompt action to take."
-            )))
+            .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
         }
     }
 
@@ -105,22 +107,27 @@ struct BoardEnemyCompactChipView: View {
         linkedChoices.filter(\.isActionable)
     }
 
+    /// The VoiceOver hint for this chip's linked-choice decision; speaks a footnoted
+    /// choice's "… footnote N" title.
+    static func accessibilityHint(for decision: BoardLinkedChoicePresentationDecision) -> String {
+        BoardLinkedEnemyActionsControl.accessibilityHint(for: decision)
+    }
+
     var body: some View {
-        switch BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices) {
+        let decision = BoardLinkedChoicePresentationPolicy.decision(for: linkedChoices)
+        switch decision {
         case .highlightOnly:
             chip(isFocused: false)
         case let .submit(choice):
             Button { onLinkedChoice(choice.choiceIndex) } label: { chip(isFocused: false) }
                 .buttonStyle(.plain)
-                .accessibilityHint(Text(BoardLocalization.format(
-                    "board.linkedChoice.activateHint",
-                    "Activates %@",
-                    choice.title
-                )))
+                .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
         case let .menu(actionableChoices):
             Menu {
                 ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                    Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                    BoardLinkedChoiceMenuButton(choice: choice) {
+                        onLinkedChoice(choice.choiceIndex)
+                    }
                 }
             } label: {
                 chip(isFocused: false)
@@ -128,10 +135,7 @@ struct BoardEnemyCompactChipView: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .menuIndicator(.hidden)
-            .accessibilityHint(Text(BoardLocalization.localized(
-                "board.linkedChoice.chooseHint",
-                "Choose which prompt action to take."
-            )))
+            .accessibilityHint(Text(Self.accessibilityHint(for: decision)))
         }
     }
 
@@ -195,7 +199,13 @@ enum BoardEnemyCompactFormatting {
                 BoardLinkedChoice(
                     choiceIndex: choice.choiceIndex,
                     title: "\(disambiguatedSummary): \(choice.title)",
-                    isActionable: choice.isActionable
+                    isActionable: choice.isActionable,
+                    displayNodes: choice.displayNodes.map {
+                        [.text("\(disambiguatedSummary): ")] + $0
+                    },
+                    accessibilityTitle: choice.accessibilityTitle.map {
+                        "\(disambiguatedSummary): \($0)"
+                    }
                 )
             }
         }

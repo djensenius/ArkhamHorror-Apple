@@ -245,7 +245,7 @@ struct BoardLinkedEnemyActionsControl: View {
             BoardLocalization.format(
                 "board.linkedChoice.activateHint",
                 "Activates %@",
-                choice.title
+                choice.spokenTitle
             )
         case .menu:
             BoardLocalization.localized(
@@ -311,13 +311,19 @@ struct BoardEnemyOverflowMenu: View {
                 case .highlightOnly:
                     Text(menuSummary(enemy, linkedChoices: linkedChoices))
                 case let .submit(choice):
-                    Button("\(menuSummary(enemy, linkedChoices: linkedChoices)): \(choice.title)") {
+                    let summary = menuSummary(enemy, linkedChoices: linkedChoices)
+                    BoardLinkedChoiceMenuButton(
+                        title: "\(summary): \(choice.menuTitle)",
+                        accessibilityTitle: "\(summary): \(choice.spokenTitle)"
+                    ) {
                         onLinkedChoice(choice.choiceIndex)
                     }
                 case let .menu(actionableChoices):
                     Menu(menuSummary(enemy, linkedChoices: linkedChoices)) {
                         ForEach(actionableChoices, id: \.choiceIndex) { choice in
-                            Button(choice.title) { onLinkedChoice(choice.choiceIndex) }
+                            BoardLinkedChoiceMenuButton(choice: choice) {
+                                onLinkedChoice(choice.choiceIndex)
+                            }
                         }
                     }
                 }

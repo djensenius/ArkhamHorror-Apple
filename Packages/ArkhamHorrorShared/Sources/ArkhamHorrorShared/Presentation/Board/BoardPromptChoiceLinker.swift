@@ -32,6 +32,61 @@ struct BoardLinkedChoice: Sendable, Equatable {
     let choiceIndex: Int
     let title: String
     let isActionable: Bool
+    /// Inline nodes for `title`, set only when the title carries a `[^N]` footnote marker
+    /// that `title` flattens to run-together digits (TASK-1.22.12); `nil` otherwise.
+    let displayNodes: [StoryNode]?
+    /// The VoiceOver form of `title` ("… footnote N"), set together with `displayNodes`.
+    let accessibilityTitle: String?
+
+    init(
+        choiceIndex: Int,
+        title: String,
+        isActionable: Bool,
+        displayNodes: [StoryNode]? = nil,
+        accessibilityTitle: String? = nil
+    ) {
+        self.choiceIndex = choiceIndex
+        self.title = title
+        self.isActionable = isActionable
+        self.displayNodes = displayNodes
+        self.accessibilityTitle = accessibilityTitle
+    }
+
+    /// What VoiceOver reads for this choice.
+    var spokenTitle: String {
+        accessibilityTitle ?? title
+    }
+
+    /// The title for native `Menu`/`Button(String)` labels, which cannot render a marker
+    /// view: footnote markers become Unicode superscript digits. Falls back to `title`
+    /// when the nodes' plain text does not match it (for example spoken icon names).
+    var menuTitle: String {
+        guard let displayNodes,
+              displayNodes.map(\.plainText).joined() == title,
+              let raised = StoryFootnoteSuperscript.title(for: displayNodes)
+        else { return title }
+        return raised
+    }
+}
+
+/// Unicode superscript digits for `[^N]` footnote markers on plain-string surfaces.
+enum StoryFootnoteSuperscript {
+    private static let digits: [Character: Character] = [
+        "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+        "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+    ]
+
+    /// The ASCII digits `number` as superscript digits (`12` -> `¹²`).
+    static func superscript(_ number: String) -> String {
+        String(number.map { digits[$0] ?? $0 })
+    }
+
+    /// The plain text of `nodes` with every footnote marker raised to superscript digits,
+    /// or `nil` when the nodes carry no footnote marker.
+    static func title(for nodes: [StoryNode]) -> String? {
+        let raised = nodes.map { $0.flattened(footnote: superscript) }.joined()
+        return raised == nodes.map(\.plainText).joined() ? nil : raised
+    }
 }
 
 struct BoardLinkedChoiceMenuRequest: Sendable, Equatable {
@@ -56,14 +111,9 @@ enum BoardPromptChoiceLinker {
                         continue
                     }
                 }
-                let linkedChoice = BoardLinkedChoice(
-                    choiceIndex: choice.index,
-                    title: title(
-                        for: elementID, choice: choice, prompt: prompt, projection: projection
-                    ),
-                    isActionable: isActionable
-                )
-                result[elementID, default: []].append(linkedChoice)
+                result[elementID, default: []].append(linkedChoice(
+                    for: choice, isActionable: isActionable, prompt: prompt, projection: projection
+                ))
             }
         }
         return result
@@ -105,13 +155,28 @@ enum BoardPromptChoiceLinker {
         }
     }
 
-    private static func title(
-        for _: BoardPromptElementID,
-        choice: BasicChoice,
+    private static func linkedChoice(
+        for choice: BasicChoice,
+        isActionable: Bool,
         prompt: BasicChoicePromptPresentation,
         projection: BoardProjection
-    ) -> String {
-        prompt.displayTitle(for: choice, in: projection)
+    ) -> BoardLinkedChoice {
+        let label = prompt.resolvedChoiceLabel(for: choice, in: projection)
+        // Only a footnoted title carries nodes and a spoken form; others stay as before.
+        guard let nodes = label.titleNodes,
+              StoryFootnoteSuperscript.title(for: nodes) != nil
+        else {
+            return BoardLinkedChoice(
+                choiceIndex: choice.index, title: label.title, isActionable: isActionable
+            )
+        }
+        return BoardLinkedChoice(
+            choiceIndex: choice.index,
+            title: label.title,
+            isActionable: isActionable,
+            displayNodes: nodes,
+            accessibilityTitle: label.accessibilityLabel
+        )
     }
 
     private static func semanticElementID(
