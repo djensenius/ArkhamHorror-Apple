@@ -74,6 +74,18 @@ enum StoryIconInlineParser {
         return nodes.isEmpty ? nil : nodes
     }
 
+    /// Whether `text` still holds an unrendered web placeholder: a braced or bracketed icon,
+    /// or the `{asterisk}` / `{underscore}` escape. Catalog message text never contains
+    /// these; text variable values may.
+    static func containsRawPlaceholder(_ text: String) -> Bool {
+        unescaped(text) != text || iconAtoms(text).contains {
+            if case .icon = $0 {
+                return true
+            }
+            return false
+        }
+    }
+
     /// Removing markers can leave whitespace at the edges (`__ Hello`), so the outer text
     /// nodes are trimmed to match the trimmed title.
     private static func trimmingTextEdges(_ nodes: [StoryNode]) -> [StoryNode] {
