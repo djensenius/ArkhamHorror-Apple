@@ -100,7 +100,8 @@ struct StoryFootnoteEntryPresentation: Equatable {
     /// The block-aware VoiceOver text of a note body's nodes. Prose reads exactly as
     /// ``StoryNodePresentation/accessibilityLabel(for:)``; a table (silent in
     /// ``StoryNode/spokenText``) reads its header rows, then each body row, with ", " between
-    /// cells and ". " between rows, set off from neighbouring text by a space.
+    /// cells and ". " between rows. It is set off from preceding text by a space and ends with
+    /// ". " before following text, never doubling punctuation or spaces.
     static func spokenText(for nodes: [StoryNode]) -> String {
         var result = ""
         var followsTable = false
@@ -111,26 +112,49 @@ struct StoryFootnoteEntryPresentation: Equatable {
                 false
             }
             let part = spokenText(for: node)
-            if isTable || followsTable, !part.isEmpty, let last = result.last, !last.isWhitespace {
+            guard !part.isEmpty else { continue }
+            if followsTable {
+                if let last = result.last, !spokenPunctuation.contains(last) {
+                    result += "."
+                }
+                if part.first?.isWhitespace == false {
+                    result += " "
+                }
+            } else if isTable, let last = result.last, !last.isWhitespace {
                 result += " "
             }
             result += part
-            followsTable = isTable && !part.isEmpty
+            followsTable = isTable
         }
         return result
+    }
+
+    /// Punctuation after which a table separator or pause adds only a space.
+    private static let spokenPunctuation: Set<Character> = [".", ",", "!", "?", ":", ";", "…"]
+
+    /// Joins trimmed, non-empty parts with `separator` and a space, or only a space when the
+    /// preceding part already ends in punctuation.
+    private static func spokenJoined(_ parts: [String], separator: String) -> String {
+        parts
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .reduce(into: "") { result, part in
+                if let last = result.last {
+                    result += spokenPunctuation.contains(last) ? " " : separator + " "
+                }
+                result += part
+            }
     }
 
     private static func spokenText(for node: StoryNode) -> String {
         switch node {
         case let .table(head, body):
-            (head + body).map { row in
-                row.cells
-                    .map { spokenText(for: $0.children).trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
-                    .joined(separator: ", ")
-            }
-            .filter { !$0.isEmpty }
-            .joined(separator: ". ")
+            spokenJoined(
+                (head + body).map { row in
+                    spokenJoined(row.cells.map { spokenText(for: $0.children) }, separator: ",")
+                },
+                separator: "."
+            )
         case let .paragraph(children), let .group(children), let .heading(_, children),
              let .emphasis(_, children), let .cardReference(_, children):
             spokenText(for: children)

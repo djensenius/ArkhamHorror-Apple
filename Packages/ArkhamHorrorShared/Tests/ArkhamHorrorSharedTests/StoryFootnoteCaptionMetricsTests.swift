@@ -33,16 +33,21 @@ struct StoryFootnoteCaptionMetricsTests {
     }
 
     /// Renders the footnote's own note body and the same entry outside a footnote. The note
-    /// body must be narrower: its `[^N]` markers (sized from the `inlineTextStyle` argument
-    /// `ResolvedStoryEntryView` passes on), its heading and its PlainText all follow the
-    /// caption `storyEntryInlineTextStyle` the footnote sets.
+    /// body must be narrower: its plain text follows the caption font, and its `[^N]` markers
+    /// (sized from the `inlineTextStyle` argument `ResolvedStoryEntryView` passes on), its
+    /// entry and node headings and its PlainText all follow the caption
+    /// `storyEntryInlineTextStyle` the footnote sets.
     @Test(
-        "The footnote body renders markers, headings and PlainText at caption size",
+        "The footnote body renders text, markers, headings and PlainText at caption size",
         arguments: [
-            ("markers", ResolvedStoryEntry.nodes(
+            ("text", ResolvedStoryEntry.text("Seal the gate before the dawn breaks")),
+            ("markers", .nodes(
                 Array(repeating: .footnoteMarker("8"), count: 24)
             )),
             ("heading", .heading(level: .level1, nodes: [.text("The Essex County Express")])),
+            ("nodeHeading", .nodes([
+                .heading(level: 1, children: [.text("The Essex County Express")]),
+            ])),
             ("plainText", .modified(
                 modifiers: [.plainText], entry: .text("Seal the gate before the dawn breaks")
             )),
@@ -85,9 +90,58 @@ struct StoryFootnoteCaptionMetricsTests {
             #expect(StoryFootnoteEntryPresentation(
                 number: 4, entry: body, dynamicTypeSize: .large
             ).accessibilityLabel
-                == "Footnote 4: Record the result: Path, Cost. Woods, 2. River, 1 footnote 3 "
+                == "Footnote 4: Record the result: Path, Cost. Woods, 2. River, 1 footnote 3. "
                 + "Then continue.")
         }
+    }
+
+    @Test("Empty table cells, rows and tables add no separators or spaces")
+    func footnoteTableSkipsEmptyCellsRowsAndTables() {
+        let emptyCell = StoryTableCell(isHeader: false, children: [])
+        let blankCell = StoryTableCell(isHeader: false, children: [.text("  ")])
+        let nodes: [StoryNode] = [
+            .text("Before"),
+            .table(head: [], body: []),
+            .table(head: [StoryTableRow(cells: [emptyCell, blankCell])], body: []),
+            .table(
+                head: [StoryTableRow(cells: [emptyCell, cell("Path"), blankCell, cell("Cost")])],
+                body: [
+                    StoryTableRow(cells: []),
+                    StoryTableRow(cells: [emptyCell, blankCell]),
+                    StoryTableRow(cells: [cell("Woods"), emptyCell, cell("2")]),
+                ]
+            ),
+            .table(head: [], body: []),
+            .text("after"),
+        ]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == "Before Path, Cost. Woods, 2. after")
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: [.table(head: [], body: [])])
+            .isEmpty)
+    }
+
+    @Test("Table separators and the closing pause never double punctuation")
+    func footnoteTableDoesNotDoublePunctuation() {
+        let nodes: [StoryNode] = [
+            .table(head: [], body: [
+                StoryTableRow(cells: [cell("Woods,"), cell("2.")]),
+                StoryTableRow(cells: [cell("River "), cell("Done!  ")]),
+            ]),
+            .text("Then continue."),
+        ]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == "Woods, 2. River, Done! Then continue.")
+    }
+
+    @Test("A footnote marker after a table follows the pause with one space")
+    func footnoteTableFollowedByMarker() {
+        let nodes: [StoryNode] = [
+            .table(head: [StoryTableRow(cells: [cell("Path"), cell("Cost")])], body: []),
+            .footnoteMarker("5"),
+            .text(" Then continue."),
+        ]
+        #expect(StoryFootnoteEntryPresentation.spokenText(for: nodes)
+            == "Path, Cost. footnote 5 Then continue.")
     }
 
     @Test("A prose footnote speaks exactly as before")
@@ -105,6 +159,10 @@ struct StoryFootnoteCaptionMetricsTests {
                 number: 2, entry: .nodes(note), dynamicTypeSize: .large
             ).accessibilityLabel == "Footnote 2: Translated as DH footnote 4.")
         }
+    }
+
+    private func cell(_ text: String) -> StoryTableCell {
+        StoryTableCell(isHeader: false, children: [.text(text)])
     }
 
     private func renderedWidth(_ view: some View) throws -> CGFloat {
