@@ -502,11 +502,18 @@ extension StoryNarrativeLocalization {
         )
     }
 
-    /// Literal story text goes through the web's `formatContent` like catalog text, so a
-    /// `[^N]` reference becomes a footnote marker; text without one stays `.text`.
+    /// Literal story text goes through the web's `formatContent` like catalog text, so
+    /// `{icon}` and rune tokens, `_bold_`, `*italic*` and `[^N]` become nodes (icons as their
+    /// catalog nodes) and `{asterisk}`/`{underscore}` unescape. Text that formats to plain
+    /// text stays `.text`, so text without markup is unchanged.
     private static func footnotedTextEntry(_ text: String) -> ResolvedStoryEntry {
-        let nodes = StoryNode.splittingFootnoteMarkers(in: text)
-        return nodes.containsFootnoteMarker ? .nodes(nodes) : .text(text)
+        let nodes = StoryIconInlineParser.runNodes(for: text, iconNode: \.catalogNode)
+        // Empty input, or markup with nothing inside it (`**`), formats to no text at all.
+        guard let first = nodes.first else { return .text("") }
+        if nodes.count == 1, case let .text(plain) = first {
+            return .text(plain)
+        }
+        return .nodes(nodes)
     }
 
     // swiftlint:disable:next function_parameter_count
