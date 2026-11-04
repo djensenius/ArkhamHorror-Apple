@@ -65,7 +65,8 @@ enum WebIconPlaceholder: Sendable, Equatable, Hashable {
 
 /// Shared inline parsing for server-provided button labels that still contain the web's
 /// literal `{iconName}` placeholders. Catalog-rendered story text already arrives as nodes;
-/// this parser exists only for non-catalog label strings. It follows the web's
+/// this parser formats non-catalog strings: raw labels, text-variable values and raw basic
+/// story text (`BasicEntry` literals and chrome words). It follows the web's
 /// `formatContent` (fork `frontend/src/arkham/helpers.ts:229-246`) in order: icons and both
 /// rune forms, then `_bold_`, then `*italic*`, then `[^N]` footnote references, then the
 /// `{asterisk}` -> `*` and `{underscore}` -> `_` escapes. Raw labels follow the web's

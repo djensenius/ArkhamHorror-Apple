@@ -459,13 +459,13 @@ extension StoryNarrativeLocalization {
     ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         guard text.hasPrefix("$") else {
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(text), degradedReason: nil
+                entry: formattedTextEntry(text), degradedReason: nil
             ))
         }
         let key = String(text.dropFirst())
         if let chrome = chromeVocabulary[key] {
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(chrome), degradedReason: nil
+                entry: formattedTextEntry(chrome), degradedReason: nil
             ))
         }
         return resolveProductionCatalogEntry(
@@ -489,7 +489,7 @@ extension StoryNarrativeLocalization {
                 return .failure(.missingVariable)
             }
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(text), degradedReason: nil
+                entry: formattedTextEntry(text), degradedReason: nil
             ))
         }
         return resolveProductionCatalogEntry(
@@ -502,11 +502,18 @@ extension StoryNarrativeLocalization {
         )
     }
 
-    /// Literal story text goes through the web's `formatContent` like catalog text, so a
-    /// `[^N]` reference becomes a footnote marker; text without one stays `.text`.
-    private static func footnotedTextEntry(_ text: String) -> ResolvedStoryEntry {
-        let nodes = StoryNode.splittingFootnoteMarkers(in: text)
-        return nodes.containsFootnoteMarker ? .nodes(nodes) : .text(text)
+    /// Literal story text goes through the web's `formatContent` like catalog text, so
+    /// `{icon}` and rune tokens, `_bold_`, `*italic*` and `[^N]` become nodes (icons as their
+    /// catalog nodes) and `{asterisk}`/`{underscore}` unescape. Text that formats to plain
+    /// text stays `.text`, so text without markup is unchanged.
+    private static func formattedTextEntry(_ text: String) -> ResolvedStoryEntry {
+        let nodes = StoryIconInlineParser.runNodes(for: text, iconNode: \.catalogNode)
+        // Empty input, or markup with nothing inside it (`**`), formats to no text at all.
+        guard let first = nodes.first else { return .text("") }
+        if nodes.count == 1, case let .text(plain) = first {
+            return .text(plain)
+        }
+        return .nodes(nodes)
     }
 
     // swiftlint:disable:next function_parameter_count
