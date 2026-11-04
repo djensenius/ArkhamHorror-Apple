@@ -106,20 +106,18 @@ hashes remain unchanged at Q33, and exercises that same strict prompt path.
 
 ### Backend replay authority
 
-As of Wednesday, October 7, 2026, this repository is pinned to backend
-contract commit `8453314123831e9fb1e7817e34190671b73b8ae0` from
-`djensenius/ArkhamHorror#140`, at contract revision `0.1.51`. That revision
-types additional locale-catalog icon-variable values on top of the
-participant-socket `AnswerRejected` envelope and presentation-v2 tooling
-update, advances the locale catalog to revision
-`1.e4136e6e101e41f49b8304df2e8c2cd7`, and publishes the exact
-negative-regression set vendored with the pinned contract. The client is
-compiled against the 0.1.51 contract but only requires server revision 0.1.48:
-older production servers do not send icon-variable catalog entries, and 0.1.48
-is the revision that introduced the answer rejection feedback needed to release
-rejected amount/payment/exchange submissions. Deploying the backend at this
-revision enables the new icon-variable catalog entries while retaining its
-0.1.50 native client floor. The authenticated Attic replay submits
+The contract pin's source of truth is `ContractPin.current` in
+`Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift`:
+the immutable backend commit, the supported contract `schemaRevision`, the
+minimum server revision, and the server's native client floor recorded at pin
+time. When this was written it pinned backend commit
+`05e537101118c5f8ceb70abae82ab7f59a355d93` at contract revision `0.1.63`, with
+a `0.1.57` native client floor; if these values ever disagree with
+`ContractPin.swift`, the Swift file wins. The client only requires server
+revision 0.1.48, the revision that introduced the answer rejection feedback
+needed to release rejected amount/payment/exchange submissions; the
+`ContractPin.current` doc comment lists how later additions stay compatible
+with older servers. The authenticated Attic replay submits
 Q34-Q70 by semantic role and validates the terminal `Over` state.
 
 Fight, Evade, Engage, the round transition, Roland's clue discovery, Cover
@@ -156,7 +154,7 @@ The governed response uses schema version 1:
      "canonicalEnvelopeSha256": "<server-computed canonical digest>",
      "validatedCheckpoint": {
        "schemaVersion": 1,
-       "contractSchemaRevision": "0.1.51",
+       "contractSchemaRevision": "<ContractPin.current revision>",
        "prompt": {
          "questionVersion": "<validated prompt version>",
          "playerId": "<validated source player UUID>",
@@ -216,10 +214,9 @@ retained-queue digests, imported bytes, build identity, and player remapping.
 
 Using the immutable backend revision above:
 
-1. Confirm `ContractPin.current` is
-   `8453314123831e9fb1e7817e34190671b73b8ae0` / `0.1.51`, then build the
-   backend replay executable and production server from that exact clean
-   revision.
+1. Read the backend commit and schema revision from `ContractPin.current`
+   (`ContractPin.swift`), then build the backend replay executable and
+   production server from that exact clean revision.
 2. Obtain a normal authenticated backend game export whose retained state can
    be replayed to the selected scenario's checkpoint: the combined enemy-attack
    assignment prompt for `assignment`, or the Q34 act-advance prompt for the

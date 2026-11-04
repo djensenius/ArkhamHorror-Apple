@@ -132,14 +132,5 @@ private func decodeSchema146GetGame(_ value: JSONValue) throws -> GetGameEnvelop
 }
 
 private func schema146FixtureValue(_ name: String) throws -> JSONValue {
-    try ContractJSON.decode(JSONValue.self, from: schema146FixtureData(name))
-}
-
-private func schema146FixtureData(_ name: String) throws -> Data {
-    let url = try #require(Bundle.module.url(
-        forResource: name,
-        withExtension: "json",
-        subdirectory: "Fixtures/Contract"
-    ))
-    return try Data(contentsOf: url)
+    try ContractJSON.decode(JSONValue.self, from: ContractFixtures.contractData(name))
 }
