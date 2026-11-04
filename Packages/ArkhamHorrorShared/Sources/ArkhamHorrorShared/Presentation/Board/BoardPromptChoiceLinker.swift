@@ -175,7 +175,7 @@ enum BoardPromptChoiceLinker {
             title: label.title,
             isActionable: isActionable,
             displayNodes: nodes,
-            accessibilityTitle: prompt.accessibilityLabel(for: choice, in: projection)
+            accessibilityTitle: label.accessibilityLabel
         )
     }
 

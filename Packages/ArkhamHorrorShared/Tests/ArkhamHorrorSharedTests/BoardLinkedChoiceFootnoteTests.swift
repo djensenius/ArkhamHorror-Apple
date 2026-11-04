@@ -41,6 +41,11 @@ struct BoardLinkedChoiceFootnoteTests {
 
         let hint = BoardLinkedEnemyActionsControl.accessibilityHint(for: .submit(choice))
         #expect(hint == "Activates See the note footnote 12")
+        #expect(BoardEnemyTileChipView.accessibilityHint(for: .submit(choice)) == hint)
+        #expect(BoardEnemyCompactChipView.accessibilityHint(for: .submit(choice)) == hint)
+        let menuHint = "Choose which prompt action to take."
+        #expect(BoardEnemyTileChipView.accessibilityHint(for: .menu([choice])) == menuHint)
+        #expect(BoardEnemyCompactChipView.accessibilityHint(for: .menu([choice])) == menuHint)
 
         let row = BoardLinkedChoiceMenuChoicePresentation(choice: choice, focusedID: nil)
         #expect(row.title == "See the note12")
