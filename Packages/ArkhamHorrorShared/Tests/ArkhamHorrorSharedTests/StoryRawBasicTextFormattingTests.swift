@@ -103,6 +103,13 @@ struct StoryRawBasicTextFormattingTests {
         ]) == Self.resolved([.text("a*b"), .text("x_y*")]))
     }
 
+    @Test("Empty emphasis formats to empty text; an unmatched asterisk stays literal")
+    func emptyEmphasisAndUnmatchedAsterisk() {
+        #expect(Self.body([.basic(text: "**"), .basic(text: "5 * 3")]) == Self.resolved([
+            .text(""), .text("5 * 3"),
+        ]))
+    }
+
     @Test("Text without markup keeps its exact .text entry")
     func markupFreeTextIsUnchanged() {
         let texts = [
@@ -120,6 +127,14 @@ struct StoryRawBasicTextFormattingTests {
             .text("Continue"), .text("Setup"), .text("Continue"),
             .modified(modifiers: [.blueEntry], entry: .text("Modified")),
         ]))
+        let combining = "Cafe\u{301}"
+        guard case let .resolved(story) = Self.body([.basic(text: combining)]),
+              case let .text(plain)? = story.body.first
+        else {
+            Issue.record("Expected a resolved .text entry")
+            return
+        }
+        #expect(Array(plain.utf8) == Array(combining.utf8))
     }
 
     @Test("Literal [^N] text keeps its TASK-1.22.7 marker split and spoken form")

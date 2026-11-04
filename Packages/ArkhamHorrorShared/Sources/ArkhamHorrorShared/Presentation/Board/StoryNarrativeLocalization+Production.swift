@@ -459,13 +459,13 @@ extension StoryNarrativeLocalization {
     ) -> Result<ProductionEntryResolution, StoryUnavailableReason> {
         guard text.hasPrefix("$") else {
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(text), degradedReason: nil
+                entry: formattedTextEntry(text), degradedReason: nil
             ))
         }
         let key = String(text.dropFirst())
         if let chrome = chromeVocabulary[key] {
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(chrome), degradedReason: nil
+                entry: formattedTextEntry(chrome), degradedReason: nil
             ))
         }
         return resolveProductionCatalogEntry(
@@ -489,7 +489,7 @@ extension StoryNarrativeLocalization {
                 return .failure(.missingVariable)
             }
             return .success(ProductionEntryResolution(
-                entry: footnotedTextEntry(text), degradedReason: nil
+                entry: formattedTextEntry(text), degradedReason: nil
             ))
         }
         return resolveProductionCatalogEntry(
@@ -506,7 +506,7 @@ extension StoryNarrativeLocalization {
     /// `{icon}` and rune tokens, `_bold_`, `*italic*` and `[^N]` become nodes (icons as their
     /// catalog nodes) and `{asterisk}`/`{underscore}` unescape. Text that formats to plain
     /// text stays `.text`, so text without markup is unchanged.
-    private static func footnotedTextEntry(_ text: String) -> ResolvedStoryEntry {
+    private static func formattedTextEntry(_ text: String) -> ResolvedStoryEntry {
         let nodes = StoryIconInlineParser.runNodes(for: text, iconNode: \.catalogNode)
         // Empty input, or markup with nothing inside it (`**`), formats to no text at all.
         guard let first = nodes.first else { return .text("") }
