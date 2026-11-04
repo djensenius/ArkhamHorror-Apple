@@ -65,13 +65,14 @@ enum StoryNodePresentation {
 struct ResolvedStoryEntryView: View {
     let entry: ResolvedStoryEntry
     var cardCatalog: CardCatalogSnapshot?
+    @Environment(\.storyEntryInlineTextStyle) private var inlineTextStyle
 
     var body: some View {
         switch entry {
         case let .text(text):
             Text(text)
         case let .nodes(nodes):
-            StoryNodeSequenceView(nodes: nodes)
+            StoryNodeSequenceView(nodes: nodes, inlineTextStyle: inlineTextStyle)
         case let .heading(level, nodes):
             StoryNodeChildrenView(
                 children: nodes,
@@ -110,6 +111,8 @@ struct ResolvedStoryEntryView: View {
             StoryReferenceText(title: "Chaos token \(from.rawValue) → \(target.rawValue)")
         case .divider:
             Divider()
+        case let .footnote(number, entry):
+            StoryFootnoteEntryView(number: number, entry: entry, cardCatalog: cardCatalog)
         }
     }
 }

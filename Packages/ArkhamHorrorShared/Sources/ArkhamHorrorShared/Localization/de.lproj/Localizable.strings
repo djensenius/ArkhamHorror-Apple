@@ -177,6 +177,7 @@
 
 "story.entryStatus.invalid" = "Ungültig";
 "story.entryStatus.valid" = "Gültig";
+"story.footnote.accessibilityLabel" = "Fußnote %d: %@";
 
 "campaign.between.title" = "Zwischen Szenarien";
 "campaign.between.finishedScenario" = "%@ wurde gerade abgeschlossen";

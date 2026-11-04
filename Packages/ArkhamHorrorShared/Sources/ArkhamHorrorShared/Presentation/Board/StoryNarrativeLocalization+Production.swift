@@ -375,6 +375,17 @@ extension StoryNarrativeLocalization {
             ))
         case .split:
             .success(ProductionEntryResolution(entry: .divider, degradedReason: nil))
+        case let .footnote(number, entry):
+            resolveProductionEntry(
+                entry,
+                resolver: resolver,
+                catalogUnavailability: catalogUnavailability
+            ).map {
+                ProductionEntryResolution(
+                    entry: .footnote(number: number, entry: $0.entry),
+                    degradedReason: $0.degradedReason
+                )
+            }
         case let .unknown(tag, text):
             .success(ProductionEntryResolution(
                 entry: .text(readableUnknownEntry(tag: tag, text: text)),

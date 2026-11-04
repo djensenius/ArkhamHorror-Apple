@@ -1601,7 +1601,7 @@ extension BasicChoicePromptPresentation {
             value
         case let .nodes(nodes), let .heading(_, nodes):
             nodes.map(node).joined()
-        case let .modified(_, entry):
+        case let .modified(_, entry), let .footnote(_, entry):
             semanticStoryEntrySummary(entry, node: node) ?? ""
         case let .composite(entries), let .columns(entries):
             entries.compactMap { semanticStoryEntrySummary($0, node: node) }

@@ -177,6 +177,7 @@
 
 "story.entryStatus.invalid" = "Invalid";
 "story.entryStatus.valid" = "Valid";
+"story.footnote.accessibilityLabel" = "Footnote %d: %@";
 
 "campaign.between.title" = "Between scenarios";
 "campaign.between.finishedScenario" = "%@ just finished";

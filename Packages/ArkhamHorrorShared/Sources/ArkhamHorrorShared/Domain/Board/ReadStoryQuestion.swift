@@ -67,6 +67,8 @@ indirect enum FlavorTextEntry: Sendable, Equatable, Hashable {
     case chaosToken(face: ChaosTokenFace)
     case chaosTokenMorph(from: ChaosTokenFace, target: ChaosTokenFace)
     case split
+    /// A story note (`FootnoteEntry`): the body `[^number]` references refer to.
+    case footnote(number: Int, entry: FlavorTextEntry)
     case unknown(tag: String, text: String?)
 }
 
@@ -187,6 +189,8 @@ extension BasicChoiceParser {
             return parseChaosTokenMorphFlavorTextEntry(object)
         case "EntrySplit":
             return .split
+        case "FootnoteEntry":
+            return parseFootnoteFlavorTextEntry(object, tag: tag)
         default:
             return parseUnknownFlavorTextEntry(object, tag: tag)
         }
@@ -314,6 +318,18 @@ extension BasicChoiceParser {
               case let .string(target)? = object["morphTo"]
         else { return nil }
         return .chaosTokenMorph(from: ChaosTokenFace(from), target: ChaosTokenFace(target))
+    }
+
+    /// A footnote without an integer `number` or a readable `entry` fails closed to an
+    /// unknown entry rather than rejecting the whole story.
+    private static func parseFootnoteFlavorTextEntry(
+        _ object: [String: JSONValue], tag: String
+    ) -> FlavorTextEntry {
+        guard let number = FlavorTextEntry.footnoteNumber(object["number"]),
+              let rawEntry = object["entry"],
+              let entry = parseFlavorTextEntry(rawEntry)
+        else { return parseUnknownFlavorTextEntry(object, tag: tag) }
+        return .footnote(number: number, entry: entry)
     }
 
     private static func parseUnknownFlavorTextEntry(

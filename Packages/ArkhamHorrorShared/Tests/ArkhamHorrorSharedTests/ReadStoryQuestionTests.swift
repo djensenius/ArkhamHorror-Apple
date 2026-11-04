@@ -144,6 +144,39 @@ struct ReadStoryQuestionTests {
         )))
     }
 
+    @Test(
+        "Malformed FootnoteEntry values fail closed to a readable unknown entry, never the whole story",
+        arguments: [
+            // number missing.
+            (#"{"tag":"FootnoteEntry","entry":{"tag":"I18nEntry","key":"story.note","variables":{}}}"#, nil),
+            // number is a string, not a JSON integer.
+            (#"{"tag":"FootnoteEntry","number":"2","entry":{"tag":"I18nEntry","key":"story.note","variables":{}}}"#, "2"),
+            // number is not whole.
+            (#"{"tag":"FootnoteEntry","number":2.5,"entry":{"tag":"I18nEntry","key":"story.note","variables":{}}}"#, nil),
+            // entry missing.
+            (#"{"tag":"FootnoteEntry","number":2}"#, nil),
+            // entry present but not a readable FlavorTextEntry.
+            (#"{"tag":"FootnoteEntry","number":2,"entry":{"tag":"I18nEntry","key":"story.note"}}"#, nil),
+        ] as [(String, String?)]
+    )
+    func malformedFootnoteEntriesFallBackToUnknown(entryJSON: String, readableText: String?) throws {
+        let bytes = Data(
+            #"{"tag":"Read","flavorText":{"title":null,"body":[\#(entryJSON)]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        let story = try #require(payload.supportedQuestion?.story)
+        #expect(payload.isUpdateRequired == false)
+        #expect(story.flavorText.body == [.unknown(tag: "FootnoteEntry", text: readableText)])
+        #expect(StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: nil,
+            catalogUnavailability: .catalog(.notAdvertised)
+        ) == .resolved(ResolvedStory(
+            title: nil,
+            body: [.text(readableText ?? "Unsupported story entry: FootnoteEntry")]
+        )))
+    }
+
     @Test("Every FlavorTextEntry constructor resolves without a catalog using server-provided fallback text")
     func allServerFlavorTextEntryConstructorsResolveWithoutCatalog() throws {
         let payload = try ContractJSON.decode(
@@ -164,10 +197,11 @@ struct ReadStoryQuestionTests {
     @Test("Every FlavorTextEntry constructor resolves with a catalog where keys are available")
     func allServerFlavorTextEntryConstructorsResolveWithCatalog() async throws {
         let documents = try SyntheticLocaleCatalogDocuments.make(
-            entryKeys: ["story.basic", "story.heading", "story.i18n", "story.listItem", "story.title"],
+            entryKeys: ["story.basic", "story.footnote", "story.heading", "story.i18n", "story.listItem", "story.title"],
             chunkEntries: """
             {"story.title":{"form":"message","nodes":[{"type":"text","value":"Catalog title"}],"variables":[]},\
             "story.basic":{"form":"message","nodes":[{"type":"text","value":"Catalog basic"}],"variables":[]},\
+            "story.footnote":{"form":"message","nodes":[{"type":"text","value":"Catalog footnote"}],"variables":[]},\
             "story.heading":{"form":"message","nodes":[{"type":"text","value":"Catalog heading"}],"variables":[]},\
             "story.i18n":{"form":"message","nodes":[{"type":"text","value":"Catalog i18n"}],"variables":[]},\
             "story.listItem":{"form":"message","nodes":[{"type":"text","value":"Catalog list item"}],"variables":[]}}
@@ -215,7 +249,7 @@ struct ReadStoryQuestionTests {
     }
 
     static var allFlavorEntriesReadQuestion: String {
-        #"{"tag":"Read","flavorText":{"title":"$story.title","body":[{"tag":"BasicEntry","text":"$story.basic"},{"tag":"HeaderEntry","level":2,"key":"story.heading"},{"tag":"I18nEntry","key":"story.i18n","variables":{"name":"Daisy"}},{"tag":"ModifyEntry","modifiers":["BlueEntry","GreenEntry","BorderedEntry","RedEntry","RightAligned","PlainText","InvalidEntry","ValidEntry","CenteredEntry","ResolutionEntry","CheckpointEntry","InterludeEntry","NestedEntry","NoUnderline","CodexEntry","HauntedEntry","TokenRevealEntry","ByDifficultyEntry"],"entry":{"tag":"BasicEntry","text":"Modified"}},{"tag":"CompositeEntry","entries":[{"tag":"BasicEntry","text":"Composite A"},{"tag":"BasicEntry","text":"Composite B"}]},{"tag":"ColumnEntry","entries":[{"tag":"BasicEntry","text":"Column A"},{"tag":"BasicEntry","text":"Column B"}]},{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"story.listItem","variables":{}},"nested":[{"entry":{"tag":"BasicEntry","text":"Nested basic"},"nested":[]}]}]},{"tag":"CardEntry","cardCode":"c01159","imageModifiers":["RemoveImage","SelectImage","SmallImage"]},{"tag":"TarotEntry","tarot":"TheFool0"},{"tag":"ChaosTokenEntry","chaosTokenFace":"Skull"},{"tag":"ChaosTokenMorphEntry","morphFrom":"Skull","morphTo":"Cultist"},{"tag":"EntrySplit"}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#
+        #"{"tag":"Read","flavorText":{"title":"$story.title","body":[{"tag":"BasicEntry","text":"$story.basic"},{"tag":"HeaderEntry","level":2,"key":"story.heading"},{"tag":"I18nEntry","key":"story.i18n","variables":{"name":"Daisy"}},{"tag":"ModifyEntry","modifiers":["BlueEntry","GreenEntry","BorderedEntry","RedEntry","RightAligned","PlainText","InvalidEntry","ValidEntry","CenteredEntry","ResolutionEntry","CheckpointEntry","InterludeEntry","NestedEntry","NoUnderline","CodexEntry","HauntedEntry","TokenRevealEntry","ByDifficultyEntry"],"entry":{"tag":"BasicEntry","text":"Modified"}},{"tag":"CompositeEntry","entries":[{"tag":"BasicEntry","text":"Composite A"},{"tag":"BasicEntry","text":"Composite B"}]},{"tag":"ColumnEntry","entries":[{"tag":"BasicEntry","text":"Column A"},{"tag":"BasicEntry","text":"Column B"}]},{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"story.listItem","variables":{}},"nested":[{"entry":{"tag":"BasicEntry","text":"Nested basic"},"nested":[]}]}]},{"tag":"CardEntry","cardCode":"c01159","imageModifiers":["RemoveImage","SelectImage","SmallImage"]},{"tag":"TarotEntry","tarot":"TheFool0"},{"tag":"ChaosTokenEntry","chaosTokenFace":"Skull"},{"tag":"ChaosTokenMorphEntry","morphFrom":"Skull","morphTo":"Cultist"},{"tag":"EntrySplit"},{"tag":"FootnoteEntry","number":2,"entry":{"tag":"I18nEntry","key":"story.footnote","variables":{}}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#
     }
 
     static var allModifiers: [FlavorTextModifier] {
@@ -249,6 +283,7 @@ struct ReadStoryQuestionTests {
             .chaosToken(face: .skull),
             .chaosTokenMorph(from: .skull, target: .cultist),
             .split,
+            .footnote(number: 2, entry: .i18n(key: "story.footnote", variables: .object([:]))),
         ]
     }
 
@@ -257,7 +292,8 @@ struct ReadStoryQuestionTests {
             basic: .text("story.basic"),
             heading: "story.heading",
             i18n: .text("story.i18n (name: Daisy)"),
-            listItem: .text("story.listItem")
+            listItem: .text("story.listItem"),
+            footnote: .text("story.footnote")
         )
     }
 
@@ -266,7 +302,8 @@ struct ReadStoryQuestionTests {
             basic: .nodes([.text("Catalog basic")]),
             heading: "Catalog heading",
             i18n: .nodes([.text("Catalog i18n")]),
-            listItem: .nodes([.text("Catalog list item")])
+            listItem: .nodes([.text("Catalog list item")]),
+            footnote: .nodes([.text("Catalog footnote")])
         )
     }
 
@@ -274,7 +311,8 @@ struct ReadStoryQuestionTests {
         basic: ResolvedStoryEntry,
         heading: String,
         i18n: ResolvedStoryEntry,
-        listItem: ResolvedStoryEntry
+        listItem: ResolvedStoryEntry,
+        footnote: ResolvedStoryEntry
     ) -> [ResolvedStoryEntry] {
         [
             basic,
@@ -297,6 +335,7 @@ struct ReadStoryQuestionTests {
             .chaosTokenReference(face: .skull),
             .chaosTokenMorph(from: .skull, target: .cultist),
             .divider,
+            .footnote(number: 2, entry: footnote),
         ]
     }
 
