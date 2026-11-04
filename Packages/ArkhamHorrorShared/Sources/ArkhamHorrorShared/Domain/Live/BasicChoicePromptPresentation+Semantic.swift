@@ -566,9 +566,9 @@ extension BasicChoicePromptPresentation {
                 title: title,
                 subtitle: nil,
                 systemImage: choice.systemImage,
-                // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
-                // reads their spoken names instead.
-                accessibilityLabel: semanticInlineLabel(title) ?? title
+                // The legacy title can still carry raw `{icon}` placeholders and `[^N]`
+                // footnote references; VoiceOver reads their spoken forms instead.
+                accessibilityLabel: semanticInlineAccessibilityLabel(title) ?? title
             )
         }
         guard let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index) else {
@@ -814,7 +814,11 @@ extension BasicChoicePromptPresentation {
             title: title,
             labelResolution: labelResolution
         )
-        let accessibilityLabel = subtitle.map { "\(title), \($0)" } ?? title
+        let spokenTitle = semanticAccessibilityText(for: title, descriptor: descriptor)
+        let spokenSubtitle = subtitle.map {
+            semanticAccessibilityText(for: $0, descriptor: descriptor)
+        }
+        let accessibilityLabel = spokenSubtitle.map { "\(spokenTitle), \($0)" } ?? spokenTitle
         return BasicChoiceResolvedChoiceLabel(
             title: title,
             titleNodes: titleNodes,
@@ -1208,14 +1212,50 @@ extension BasicChoicePromptPresentation {
     }
 
     private func semanticInlineLabel(_ text: String) -> String? {
+        semanticInlineText(text, projection: semanticSpokenLabel)
+    }
+
+    /// The VoiceOver form of ``semanticInlineLabel(_:)``: footnote references are spoken
+    /// as " footnote N" instead of running their digits into the preceding text.
+    private func semanticInlineAccessibilityLabel(_ text: String) -> String? {
+        semanticInlineText(text, projection: semanticSpokenAccessibilityLabel)
+    }
+
+    private func semanticInlineText(
+        _ text: String,
+        projection: (String) -> String
+    ) -> String? {
         if text.hasPrefix("$") {
             return nil
         }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         // Removing emphasis markers can leave edge whitespace or nothing at all (`_ _`).
-        let spoken = semanticSpokenLabel(trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+        let spoken = projection(trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
         return spoken.isEmpty ? nil : spoken
+    }
+
+    /// The VoiceOver form of a displayed choice title or subtitle `text`. When `text` was
+    /// derived from one of the descriptor's raw labels, the same raw label is re-projected
+    /// with footnote references spoken (`1927[^5]` displays "19275" but reads
+    /// "1927 footnote 5"); any other text is already its own spoken form.
+    private func semanticAccessibilityText(
+        for text: String,
+        descriptor: QuestionPresentation.Choice
+    ) -> String {
+        let rawSources = [
+            descriptor.label?.text,
+            descriptor.tooltip,
+            descriptor.flavorText?.title,
+            semanticFlavorRawBody(descriptor.flavorText),
+        ]
+        for raw in rawSources.compactMap(\.self) where semanticInlineLabel(raw) == text {
+            return semanticInlineAccessibilityLabel(raw) ?? text
+        }
+        guard let entry = choiceFlavorResolutions[descriptor.sourceIndex]?.story?.body.first,
+              semanticStoryEntrySummary(entry) == text
+        else { return text }
+        return semanticStoryEntrySummary(entry, node: { $0.spokenText }) ?? text
     }
 
     /// A raw label formatted like the web's `formatContent`, with every icon placeholder
@@ -1223,6 +1263,12 @@ extension BasicChoicePromptPresentation {
     /// removed, so VoiceOver never reads a raw `{icon}` placeholder.
     func semanticSpokenLabel(_ text: String) -> String {
         StoryIconInlineParser.plainText(for: text, spokenName: semanticIconSpokenName)
+    }
+
+    /// ``semanticSpokenLabel(_:)`` for accessibility labels: a footnote reference is
+    /// announced as " footnote N" (``StoryIconInlineParser/spokenText(for:spokenName:)``).
+    func semanticSpokenAccessibilityLabel(_ text: String) -> String {
+        StoryIconInlineParser.spokenText(for: text, spokenName: semanticIconSpokenName)
     }
 
     // The one name -> spoken-name table for inline icons in choice titles.
@@ -1484,18 +1530,23 @@ extension BasicChoicePromptPresentation {
         return semanticFlavorSummary(descriptor.flavorText)
     }
 
-    private func semanticStoryEntrySummary(_ entry: ResolvedStoryEntry) -> String? {
+    private func semanticStoryEntrySummary(
+        _ entry: ResolvedStoryEntry,
+        node: (StoryNode) -> String = { $0.plainText }
+    ) -> String? {
         let text: String = switch entry {
         case let .text(value):
             value
         case let .nodes(nodes), let .heading(_, nodes):
-            nodes.map(\.plainText).joined()
+            nodes.map(node).joined()
         case let .modified(_, entry):
-            semanticStoryEntrySummary(entry) ?? ""
+            semanticStoryEntrySummary(entry, node: node) ?? ""
         case let .composite(entries), let .columns(entries):
-            entries.compactMap(semanticStoryEntrySummary).joined(separator: "; ")
+            entries.compactMap { semanticStoryEntrySummary($0, node: node) }
+                .joined(separator: "; ")
         case let .list(items):
-            items.compactMap { semanticStoryEntrySummary($0.entry) }.joined(separator: "; ")
+            items.compactMap { semanticStoryEntrySummary($0.entry, node: node) }
+                .joined(separator: "; ")
         case let .cardReference(cardCode, _):
             cardCatalog?.displayName(for: cardCode) ?? "Card \(cardCode.rawValue)"
         case let .tarotReference(arcana):
@@ -1512,12 +1563,15 @@ extension BasicChoicePromptPresentation {
     }
 
     private func semanticFlavorSummary(_ flavorText: QuestionPresentation.FlavorText?) -> String? {
+        semanticFlavorRawBody(flavorText).flatMap(semanticInlineLabel)
+    }
+
+    private func semanticFlavorRawBody(_ flavorText: QuestionPresentation.FlavorText?) -> String? {
         guard let first = flavorText?.body.first,
               case let .object(object) = first,
-              case let .string(text)? = object["text"],
-              let inline = semanticInlineLabel(text)
+              case let .string(text)? = object["text"]
         else { return nil }
-        return inline
+        return text
     }
 
     private func semanticCardName(_ rawCardCode: String, in projection: BoardProjection) -> String? {

@@ -324,6 +324,25 @@ extension WebIconFontGlyphMappingTests {
         #expect(StoryInlineTextRenderer.text(for: [.text("a"), .footnoteMarker("1")]) != nil)
     }
 
+    @Test("Raw-label spoken text announces footnotes while plain text keeps the digits")
+    func rawLabelSpokenTextAnnouncesFootnotes() {
+        let spoken: (WebIconPlaceholder) -> String = { "<\($0.glyphKey)>" }
+        #expect(StoryIconInlineParser.plainText(for: "1927[^5]", spokenName: spoken) == "19275")
+        #expect(
+            StoryIconInlineParser.spokenText(for: "1927[^5]", spokenName: spoken)
+                == "1927 footnote 5"
+        )
+        #expect(
+            StoryIconInlineParser.spokenText(for: "_Note_[^7] {codex}", spokenName: spoken)
+                == "Note footnote 7 <codex>"
+        )
+        #expect(StoryIconInlineParser.spokenText(for: "[^x]", spokenName: spoken) == "[^x]")
+        #expect(
+            StoryIconInlineParser.spokenText(for: "1927[^5]", spokenName: spoken)
+                == StoryNode.text("1927").spokenText + StoryNode.footnoteMarker("5").spokenText
+        )
+    }
+
     @Test("A long run of braces parses in linear time and stays literal")
     func longBraceRunStaysLiteralAndLinear() throws {
         #expect(StoryIconInlineParser.maxPlaceholderNameLength == "elderThing".count)

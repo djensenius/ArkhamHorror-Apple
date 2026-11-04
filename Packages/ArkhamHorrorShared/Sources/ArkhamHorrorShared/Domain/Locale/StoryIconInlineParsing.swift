@@ -113,7 +113,20 @@ enum StoryIconInlineParser {
         for text: String,
         spokenName: (WebIconPlaceholder) -> String
     ) -> String {
-        plainText(formattedAtoms(text), spokenName: spokenName)
+        plainText(formattedAtoms(text), spokenName: spokenName, footnote: { $0 })
+    }
+
+    /// The VoiceOver form of ``plainText(for:spokenName:)``: each footnote reference is
+    /// announced as a separate " footnote N" (``StoryNode/spokenFootnote(_:)``), so
+    /// `1927[^5]` reads "1927 footnote 5" rather than "19275". Use it for accessibility
+    /// labels only; displayed titles keep the plain projection.
+    static func spokenText(
+        for text: String,
+        spokenName: (WebIconPlaceholder) -> String
+    ) -> String {
+        plainText(
+            formattedAtoms(text), spokenName: spokenName, footnote: StoryNode.spokenFootnote
+        )
     }
 
     private indirect enum Atom {
@@ -302,7 +315,8 @@ enum StoryIconInlineParser {
 
     private static func plainText(
         _ atoms: [Atom],
-        spokenName: (WebIconPlaceholder) -> String
+        spokenName: (WebIconPlaceholder) -> String,
+        footnote: (String) -> String
     ) -> String {
         var result = ""
         var buffer = ""
@@ -314,9 +328,10 @@ enum StoryIconInlineParser {
             case let .icon(placeholder):
                 result += unescaped(buffer) + spokenName(placeholder)
             case let .emphasis(_, children):
-                result += unescaped(buffer) + plainText(children, spokenName: spokenName)
+                result += unescaped(buffer)
+                    + plainText(children, spokenName: spokenName, footnote: footnote)
             case let .footnote(number):
-                result += unescaped(buffer) + number
+                result += unescaped(buffer) + footnote(number)
             }
             buffer = ""
         }

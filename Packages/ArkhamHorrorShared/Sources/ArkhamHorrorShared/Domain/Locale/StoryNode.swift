@@ -129,7 +129,13 @@ extension StoryNode {
     /// " footnote N" rather than running its digits into the preceding word or number
     /// (`1927[^5]` must not read "19275").
     var spokenText: String {
-        flattened { " footnote \($0)" }
+        flattened(footnote: Self.spokenFootnote)
+    }
+
+    /// The one VoiceOver form of a footnote reference `[^N]`, shared by ``spokenText`` and
+    /// ``StoryIconInlineParser/spokenText(for:spokenName:)``.
+    static func spokenFootnote(_ number: String) -> String {
+        " footnote \(number)"
     }
 
     // swiftlint:disable:next cyclomatic_complexity
