@@ -189,7 +189,9 @@ select_signed_application() {
 
 # Runs a command that could block on a keychain or key-access prompt:
 #   bounded <step description> <log path> <command> [arguments...]
-# macOS has no timeout(1), so perl arms SIGALRM and execs the command; after keychain_step_timeout seconds the command dies with exit 142
+# macOS has no timeout(1), so perl restores the default SIGALRM action (an
+# inherited ignored signal would survive exec), arms the alarm, and execs the
+# command; after keychain_step_timeout seconds the command dies with exit 142
 # (128 + SIGALRM), which fails the self-test naming the step. Only the command's
 # own output goes to the log, so that failure and any cleanup warnings still
 # reach the caller's stdout and stderr. Otherwise it returns the command's own
@@ -200,7 +202,7 @@ bounded() {
   local log_path="$2"
   shift 2
   local status=0
-  /usr/bin/perl -e 'alarm shift; exec @ARGV or die "exec failed: $!\n"' \
+  /usr/bin/perl -e '$SIG{ALRM} = "DEFAULT"; alarm shift; exec @ARGV or die "exec failed: $!\n"' \
     "$keychain_step_timeout" "$@" >"$log_path" 2>&1 || status=$?
   if [[ "$status" == 142 ]]; then
     fail "$step timed out after ${keychain_step_timeout}s (a keychain or key-access prompt may be waiting)"
