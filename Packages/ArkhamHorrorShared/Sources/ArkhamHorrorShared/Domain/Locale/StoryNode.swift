@@ -26,6 +26,10 @@ indirect enum StoryNode: Sendable, Equatable {
     /// Only the closed token/skill values this client knows become this node; unknown future
     /// values fail the whole entry closed instead of showing raw enum text.
     case semanticIcon(StoryIcon)
+    /// The web's `[^N]` footnote reference (`formatContent` in fork
+    /// `frontend/src/arkham/helpers.ts:229-238` emits `<sup class="footnote-ref">N</sup>`).
+    /// Carries only the ASCII digits `N`.
+    case footnoteMarker(String)
     /// Text naming a card. `code` is the catalog's own card code, kept verbatim so the native
     /// card-art path can use the identifier this deployment publishes.
     case cardReference(code: String, children: [StoryNode])
@@ -118,16 +122,38 @@ extension StoryNode {
     /// A plain-text projection, used where the presentation genuinely has only a string to
     /// show (a story title) and only when ``losesInstructionWhenFlattened`` is `false`.
     var plainText: String {
-        switch self {
+        flattened { $0 }
+    }
+
+    /// The VoiceOver form of ``plainText``: a footnote marker is announced as a separate
+    /// " footnote N" rather than running its digits into the preceding word or number
+    /// (`1927[^5]` must not read "19275").
+    var spokenText: String {
+        flattened(footnote: Self.spokenFootnote)
+    }
+
+    /// The one VoiceOver form of a footnote reference `[^N]`, shared by ``spokenText`` and
+    /// ``StoryIconInlineParser/spokenText(for:spokenName:)``.
+    static func spokenFootnote(_ number: String) -> String {
+        " footnote \(number)"
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private func flattened(footnote: (String) -> String) -> String {
+        func join(_ children: [StoryNode]) -> String {
+            children.map { $0.flattened(footnote: footnote) }.joined()
+        }
+        return switch self {
         case let .text(text): text
-        case let .paragraph(children), let .group(children): children.map(\.plainText).joined()
-        case let .heading(_, children): children.map(\.plainText).joined()
-        case let .emphasis(_, children): children.map(\.plainText).joined()
-        case let .cardReference(_, children): children.map(\.plainText).joined()
-        case let .list(_, items): items.map { $0.map(\.plainText).joined() }.joined(separator: " ")
+        case let .paragraph(children), let .group(children): join(children)
+        case let .heading(_, children): join(children)
+        case let .emphasis(_, children): join(children)
+        case let .cardReference(_, children): join(children)
+        case let .list(_, items): items.map(join).joined(separator: " ")
         case .lineBreak: " "
         case let .icon(name): StoryNode.spokenIconLabel(name)
         case let .semanticIcon(icon): icon.accessibilityLabel
+        case let .footnoteMarker(number): footnote(number)
         case let .image(reference): reference.accessibleDescription
         case .rule, .table: ""
         }
@@ -141,7 +167,7 @@ extension StoryNode {
     /// a lossy string.
     var losesInstructionWhenFlattened: Bool {
         switch self {
-        case .text, .lineBreak, .icon, .semanticIcon: false
+        case .text, .lineBreak, .icon, .semanticIcon, .footnoteMarker: false
         case .rule, .image, .table, .list: true
         case let .paragraph(children), let .group(children):
             children.contains { $0.losesInstructionWhenFlattened }
@@ -162,6 +188,50 @@ extension StoryNode {
             return "rune \(runeLetter.lowercased())"
         }
         return BoardDisplayFormatting.humanizeTag(name).lowercased()
+    }
+
+    /// The web's footnote reference `[^N]` (`/\[\^(\d+)\]/g`, ASCII digits only) starting at
+    /// `index`, as its digits and its length, or `nil`. `character` returns the plain
+    /// character at an index, or `nil` for a non-character position (an icon) or past the end.
+    static func footnoteMarker(
+        at index: Int, character: (Int) -> Character?
+    ) -> (number: String, length: Int)? {
+        guard character(index) == "[", character(index + 1) == "^" else { return nil }
+        var number = ""
+        var cursor = index + 2
+        while let digit = character(cursor), digit.isASCII, digit.isWholeNumber {
+            number.append(digit)
+            cursor += 1
+        }
+        guard !number.isEmpty, character(cursor) == "]" else { return nil }
+        return (number, cursor - index + 1)
+    }
+
+    /// `text` with every `[^N]` footnote reference split out as a ``footnoteMarker(_:)``.
+    static func splittingFootnoteMarkers(in text: String) -> [StoryNode] {
+        let characters = Array(text)
+        var nodes: [StoryNode] = []
+        var buffer = ""
+        var index = 0
+        while index < characters.count {
+            if let marker = footnoteMarker(at: index, character: {
+                characters.indices.contains($0) ? characters[$0] : nil
+            }) {
+                if !buffer.isEmpty {
+                    nodes.append(.text(buffer))
+                    buffer = ""
+                }
+                nodes.append(.footnoteMarker(marker.number))
+                index += marker.length
+            } else {
+                buffer.append(characters[index])
+                index += 1
+            }
+        }
+        if !buffer.isEmpty {
+            nodes.append(.text(buffer))
+        }
+        return nodes
     }
 }
 

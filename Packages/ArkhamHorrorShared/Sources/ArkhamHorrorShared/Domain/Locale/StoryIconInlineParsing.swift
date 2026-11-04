@@ -5,6 +5,14 @@ import Foundation
 /// homebrew `{moon}` icon (`frontend/homebrew/*/icons.json`, no web-font glyph). Any other
 /// braced name (for example `{neutral}` or `{future}`) is not an icon and stays literal, as
 /// it does on the web.
+///
+/// `{moon}` deliberately keeps the honest fallback (an SF Symbol plus the spoken name
+/// "moon") instead of the web's artwork. On the web it comes from the Circus Ex Mortis
+/// homebrew (`frontend/homebrew/circus-ex-mortis/icons.json`, `style.css:5-16`): a CSS mask
+/// over `./img/icons/moon.png` that Vite emits as a hashed bundle asset
+/// (`frontend/src/arkham/homebrewAssets.ts:4-8`), so there is no font glyph and no stable
+/// asset URL to load at runtime. The image's licence is unknown, and this client vendors no
+/// image bytes (`Resources/AssetDigests/PROVENANCE.md`).
 enum WebIconName: String, CaseIterable, Sendable {
     case action, fast, reaction
     case willpower, intellect, combat, agility, wild
@@ -58,14 +66,15 @@ enum WebIconPlaceholder: Sendable, Equatable, Hashable {
 /// literal `{iconName}` placeholders. Catalog-rendered story text already arrives as nodes;
 /// this parser exists only for non-catalog label strings. It follows the web's
 /// `formatContent` (fork `frontend/src/arkham/helpers.ts:229-246`) in order: icons and both
-/// rune forms, then `_bold_`, then `*italic*`, then the `{asterisk}` -> `*` and
-/// `{underscore}` -> `_` escapes. Raw labels follow the web's unescaped `replaceIcons`, so
-/// `{{skull}}` renders as a literal `{`, the skull icon, and a literal `}`.
+/// rune forms, then `_bold_`, then `*italic*`, then `[^N]` footnote references, then the
+/// `{asterisk}` -> `*` and `{underscore}` -> `_` escapes. Raw labels follow the web's
+/// unescaped `replaceIcons`, so `{{skull}}` renders as a literal `{`, the skull icon, and a
+/// literal `}`.
 ///
 /// One deliberate difference: an underscore inside a word (`a_b`, `tdc_rune_m`) never opens
 /// or closes bold, so identifiers stay literal.
 enum StoryIconInlineParser {
-    /// Inline nodes for `text`, or `nil` when it has no icon and no emphasis (the plain
+    /// Inline nodes for `text`, or `nil` when it has no icon, emphasis or footnote (the plain
     /// title then renders as is).
     static func nodes(for text: String) -> [StoryNode]? {
         let atoms = formattedAtoms(text)
@@ -75,15 +84,11 @@ enum StoryIconInlineParser {
     }
 
     /// Whether `text` still holds an unrendered web placeholder: a braced or bracketed icon,
-    /// or the `{asterisk}` / `{underscore}` escape. Catalog message text never contains
-    /// these; text variable values may.
+    /// the `{asterisk}` / `{underscore}` escape, or a `[^N]` footnote reference. Catalog
+    /// choice-label text never contains these; text variable values may.
     static func containsRawPlaceholder(_ text: String) -> Bool {
-        unescaped(text) != text || iconAtoms(text).contains {
-            if case .icon = $0 {
-                return true
-            }
-            return false
-        }
+        // Flat icon atoms hold no emphasis, so any markup atom is an icon or a footnote.
+        unescaped(text) != text || footnoted(iconAtoms(text)).contains(where: \.isMarkup)
     }
 
     /// Removing markers can leave whitespace at the edges (`__ Hello`), so the outer text
@@ -110,18 +115,33 @@ enum StoryIconInlineParser {
     }
 
     /// The spoken/plain form of `text`: the same formatting as ``nodes(for:)`` with each
-    /// icon replaced by its spoken name and emphasis markers removed.
+    /// icon replaced by its spoken name, emphasis markers removed and each footnote
+    /// reference reduced to its number.
     static func plainText(
         for text: String,
         spokenName: (WebIconPlaceholder) -> String
     ) -> String {
-        plainText(formattedAtoms(text), spokenName: spokenName)
+        plainText(formattedAtoms(text), spokenName: spokenName, footnote: { $0 })
+    }
+
+    /// The VoiceOver form of ``plainText(for:spokenName:)``: each footnote reference is
+    /// announced as a separate " footnote N" (``StoryNode/spokenFootnote(_:)``), so
+    /// `1927[^5]` reads "1927 footnote 5" rather than "19275". Use it for accessibility
+    /// labels only; displayed titles keep the plain projection.
+    static func spokenText(
+        for text: String,
+        spokenName: (WebIconPlaceholder) -> String
+    ) -> String {
+        plainText(
+            formattedAtoms(text), spokenName: spokenName, footnote: StoryNode.spokenFootnote
+        )
     }
 
     private indirect enum Atom {
         case character(Character)
         case icon(WebIconPlaceholder)
         case emphasis(LocaleCatalogEmphasis, [Atom])
+        case footnote(String)
 
         var isMarkup: Bool {
             if case .character = self {
@@ -146,7 +166,32 @@ enum StoryIconInlineParser {
     }
 
     private static func formattedAtoms(_ text: String) -> [Atom] {
-        italicized(emphasized(iconAtoms(text), delimiter: "_", style: .bold, intraword: false))
+        footnoted(italicized(
+            emphasized(iconAtoms(text), delimiter: "_", style: .bold, intraword: false)
+        ))
+    }
+
+    /// The web's `/\[\^(\d+)\]/g` -> `<sup class="footnote-ref">`, applied after emphasis.
+    private static func footnoted(_ atoms: [Atom]) -> [Atom] {
+        var result: [Atom] = []
+        var index = 0
+        while index < atoms.count {
+            if case let .emphasis(style, children) = atoms[index] {
+                result.append(.emphasis(style, footnoted(children)))
+                index += 1
+            } else if let marker = StoryNode.footnoteMarker(at: index, character: { position in
+                guard atoms.indices.contains(position),
+                      case let .character(character) = atoms[position] else { return nil }
+                return character
+            }) {
+                result.append(.footnote(marker.number))
+                index += marker.length
+            } else {
+                result.append(atoms[index])
+                index += 1
+            }
+        }
+        return result
     }
 
     private static func iconAtoms(_ text: String) -> [Atom] {
@@ -266,6 +311,9 @@ enum StoryIconInlineParser {
                 if !inner.isEmpty {
                     nodes.append(.emphasis(style, inner))
                 }
+            case let .footnote(number):
+                appendText(unescaped(buffer), to: &nodes)
+                nodes.append(.footnoteMarker(number))
             }
             buffer = ""
         }
@@ -275,7 +323,8 @@ enum StoryIconInlineParser {
 
     private static func plainText(
         _ atoms: [Atom],
-        spokenName: (WebIconPlaceholder) -> String
+        spokenName: (WebIconPlaceholder) -> String,
+        footnote: (String) -> String
     ) -> String {
         var result = ""
         var buffer = ""
@@ -287,7 +336,10 @@ enum StoryIconInlineParser {
             case let .icon(placeholder):
                 result += unescaped(buffer) + spokenName(placeholder)
             case let .emphasis(_, children):
-                result += unescaped(buffer) + plainText(children, spokenName: spokenName)
+                result += unescaped(buffer)
+                    + plainText(children, spokenName: spokenName, footnote: footnote)
+            case let .footnote(number):
+                result += unescaped(buffer) + footnote(number)
             }
             buffer = ""
         }

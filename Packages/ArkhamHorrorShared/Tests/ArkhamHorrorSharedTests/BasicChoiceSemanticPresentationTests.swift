@@ -386,6 +386,43 @@ struct BasicChoiceSemanticPresentationTests {
         #expect(resolved.accessibilityLabel == "Choose Skull")
     }
 
+    @Test("Raw choice label footnotes display a superscript but speak \"footnote N\"")
+    func rawChoiceLabelFootnoteSpeaksFootnote() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "1927[^5]")
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "19275")
+        #expect(resolved.titleNodes == [.text("1927"), .footnoteMarker("5")])
+        #expect(resolved.accessibilityLabel == "1927 footnote 5")
+        #expect(prompt.displayTitle(for: choice, in: projection) == "19275")
+    }
+
+    @Test("A choice control's accessibility label speaks title and tooltip footnotes")
+    func choiceControlAccessibilityLabelSpeaksFootnotes() throws {
+        let prompt = try singleChoicePrompt(choice: .init(
+            sourceIndex: 0,
+            kind: .localizedLabel,
+            label: .init(kind: .embeddedI18n, text: "Wrote _1927_[^5]"),
+            tooltip: "See the note[^2]"
+        ))
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let choice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Wrote 19275")
+        #expect(resolved.subtitle == "See the note2")
+        #expect(
+            prompt.accessibilityLabel(for: choice, in: projection)
+                == "Wrote 1927 footnote 5, See the note footnote 2"
+        )
+    }
+
     @Test("Unresolved catalog labels stay plain and unpressable")
     func unresolvedCatalogLabelHasNoTitleNodesAndIsNotActionable() throws {
         let prompt = try singleChoicePrompt(choice: .init(

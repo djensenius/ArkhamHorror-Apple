@@ -444,8 +444,14 @@ extension StoryNarrativeLocalization {
             imageFallback: true
         ) {
         case let .success(rendered):
+            // Story prose goes through the web's `formatContent`, which turns `[^N]` into a
+            // footnote reference; the game log does not, so only the narrative layer splits.
+            let footnoted = LocaleCatalogRenderedNodes(
+                nodes: rendered.nodes.splittingFootnoteMarkers,
+                degradedReason: rendered.degradedReason
+            )
             return .success(ProductionEntryResolution(
-                entry: makeResolved(rendered),
+                entry: makeResolved(footnoted),
                 degradedReason: rendered.degradedReason
             ))
         case let .failure(reason):
@@ -634,7 +640,7 @@ private extension [StoryNode] {
                 children.containsSemanticIcon
             case let .list(_, items):
                 items.contains { $0.containsSemanticIcon }
-            case .text, .lineBreak, .rule, .image, .table:
+            case .text, .lineBreak, .rule, .image, .table, .footnoteMarker:
                 false
             }
         }
@@ -657,12 +663,75 @@ private extension [StoryNode] {
                 .emphasis(style, children.normalizingWebIconNames)
             case let .cardReference(code, children):
                 .cardReference(code: code, children: children.normalizingWebIconNames)
-            case .text, .lineBreak, .rule, .image, .table, .list, .semanticIcon:
+            case .text, .lineBreak, .rule, .image, .table, .list, .semanticIcon, .footnoteMarker:
                 node
             }
         }
     }
 
+    /// Every text node with its `[^N]` footnote references split out, at any depth.
+    ///
+    /// `LocaleCatalogResolver` emits an interpolated variable value as its own plain `.text`
+    /// sibling (`Note[^{number}].` arrives as "Note[^", "5", "]."), and like the web, which
+    /// applies `formatContent` after interpolation, the reference must still split. So each
+    /// level scans its consecutive `.text` siblings as one run. `.text` carries no styling
+    /// or variable marker, and every other node (emphasis, icons, card references) ends a
+    /// run. A run without a footnote keeps its original nodes.
+    var splittingFootnoteMarkers: [StoryNode] {
+        var result: [StoryNode] = []
+        var run: [String] = []
+        func flushRun() {
+            guard !run.isEmpty else { return }
+            let split = StoryNode.splittingFootnoteMarkers(in: run.joined())
+            let hasMarker = split.contains { node in
+                guard case .footnoteMarker = node else { return false }
+                return true
+            }
+            result += hasMarker ? split : run.map(StoryNode.text)
+            run = []
+        }
+        for node in self {
+            if case let .text(text) = node {
+                run.append(text)
+            } else {
+                flushRun()
+                result.append(node.splittingNestedFootnoteMarkers)
+            }
+        }
+        flushRun()
+        return result
+    }
+}
+
+private extension StoryNode {
+    /// `self` with footnote references split inside its children. Text is split by the
+    /// enclosing sibling run, so a bare `.text` is returned unchanged.
+    var splittingNestedFootnoteMarkers: StoryNode {
+        switch self {
+        case let .group(children):
+            .group(children.splittingFootnoteMarkers)
+        case let .paragraph(children):
+            .paragraph(children.splittingFootnoteMarkers)
+        case let .heading(level, children):
+            .heading(level: level, children: children.splittingFootnoteMarkers)
+        case let .emphasis(style, children):
+            .emphasis(style, children.splittingFootnoteMarkers)
+        case let .cardReference(code, children):
+            .cardReference(code: code, children: children.splittingFootnoteMarkers)
+        case let .list(ordered, items):
+            .list(ordered: ordered, items: items.map(\.splittingFootnoteMarkers))
+        case let .table(head, body):
+            .table(
+                head: head.map(\.splittingFootnoteMarkers),
+                body: body.map(\.splittingFootnoteMarkers)
+            )
+        case .text, .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker:
+            self
+        }
+    }
+}
+
+private extension [StoryNode] {
     var trimmedTextEdges: [StoryNode] {
         var nodes = self
         while let first = nodes.first, case let .text(text) = first {
@@ -695,6 +764,16 @@ private extension [StoryNode] {
                 result.append(node)
             }
         }
+    }
+}
+
+private extension StoryTableRow {
+    var splittingFootnoteMarkers: StoryTableRow {
+        StoryTableRow(cells: cells.map { cell in
+            StoryTableCell(
+                isHeader: cell.isHeader, children: cell.children.splittingFootnoteMarkers
+            )
+        })
     }
 }
 

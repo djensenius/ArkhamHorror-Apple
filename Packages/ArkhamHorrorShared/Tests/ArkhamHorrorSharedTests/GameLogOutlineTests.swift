@@ -125,6 +125,24 @@ struct GameLogOutlineTests {
         ) == nil)
         #expect(StoryNodePresentation.accessibilityLabel(for: rune) == "Chamber rune m")
 
+        // A log icon part that names a rune the web way (`runeM`) renders the rune glyph.
+        let runeSlim = WebIconFontAvailability(registrations: [
+            .arkhamSlim: .init(
+                family: .arkhamSlim, postScriptName: "arkhamslim", supportedScalars: [0xE90C]
+            ),
+        ])
+        #expect(renderer.render(.icon("runeM")) == [.icon("runeM")])
+        #expect(StoryInlineTextRenderer.namedIconGlyph("runeM", iconFonts: runeSlim) == .webGlyph(
+            iconName: "rune-M", fontName: "arkhamslim", glyph: "\u{E90C}"
+        ))
+        #expect(StoryNodePresentation.accessibilityLabel(for: [.icon("runeM")]) == "rune m")
+
+        // The web log never runs formatContent, so `[^N]` stays literal text there. This
+        // only shows the log renderer adds no splitting of its own; the meaningful guard is
+        // the resolver assertion in `StoryCatalogInlineMarkupTests` (catalog log text comes
+        // from the resolver, which must not split).
+        #expect(renderer.render(.text("See note [^1]")) == [.text("See note [^1]")])
+
         let slim = WebIconFontAvailability(registrations: [
             .arkhamSlim: .init(
                 family: .arkhamSlim, postScriptName: "arkhamslim",
