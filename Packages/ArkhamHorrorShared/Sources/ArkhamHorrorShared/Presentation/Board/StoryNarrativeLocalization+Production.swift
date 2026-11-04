@@ -211,13 +211,15 @@ extension StoryNarrativeLocalization {
     /// Catalog choice labels go through the web's `formatContent`, so `[^N]` splits like
     /// story text. A text variable can still leave a raw `{icon}` or escape in the label;
     /// then the label stays unsplit so the legacy re-parse handles icons and footnotes in
-    /// one pass (`productionVariableFootnoteIsParsed`).
+    /// one pass (`productionVariableFootnoteIsParsed`). A label with catalog icon nodes
+    /// keeps them as `inlineNodes` and is never re-parsed, so it splits regardless and the
+    /// variable's placeholder stays verbatim text.
     private static func footnotedChoiceLabel(
         _ nodes: [StoryNode]
     ) -> (nodes: [StoryNode], hasMarker: Bool) {
         let footnoted = nodes.splittingFootnoteMarkers
         guard footnoted.containsFootnoteMarker,
-              !StoryIconInlineParser.containsRawPlaceholder(
+              nodes.containsSemanticIcon || !StoryIconInlineParser.containsRawPlaceholder(
                   footnoted.map(\.plainText).joined()
               )
         else { return (nodes, false) }

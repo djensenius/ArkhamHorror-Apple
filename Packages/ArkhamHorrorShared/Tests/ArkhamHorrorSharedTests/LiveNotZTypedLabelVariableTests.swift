@@ -165,6 +165,34 @@ struct LiveNotZTypedLabelVariableTests {
         #expect(prompt.isChoiceActionable(choice, in: projection))
     }
 
+    @Test("A catalog $ label with an icon, [^N] and a raw variable placeholder splits [^N]")
+    @MainActor
+    func catalogLabelFootnoteWithIconAndRawVariablePlaceholderSplits() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0, with: "$label.footnoteIconNote place=s:\"{asterisk}\""
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+        // The icon node is kept and the variable's `{asterisk}` stays verbatim text.
+        let nodes: [StoryNode] = [
+            .text("Spend "), .icon("action"), .text(" on 1927"), .footnoteMarker("5"),
+            .text(" at {asterisk}"),
+        ]
+
+        #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
+            title: "Spend action on 19275 at {asterisk}",
+            inlineNodes: nodes,
+            accessibilityTitle: "Spend action on 1927 footnote 5 at {asterisk}"
+        )))
+        #expect(resolved.title == "Spend action on 19275 at {asterisk}")
+        #expect(resolved.titleNodes == nodes)
+        #expect(resolved.accessibilityLabel == "Spend action on 1927 footnote 5 at {asterisk}")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+    }
+
     @Test("Out-of-enum icon variable values leave choice labels unresolved and unpressable")
     @MainActor
     func outOfEnumIconVariableChoiceLabelValueRemainsUnresolved() async throws {
@@ -252,6 +280,7 @@ struct LiveNotZTypedLabelVariableTests {
                 "label.discardCardsFromHand",
                 "label.discardCardsWithMatchingIcons",
                 "label.footnoteNote",
+                "label.footnoteIconNote",
                 "label.takeDamageAndHorror",
                 "label.test",
                 "label.webIconGlyphs",
@@ -327,6 +356,19 @@ struct LiveNotZTypedLabelVariableTests {
           {"type":"var","name":"seal","source":"named","role":"iconVariable"}
         ],
         "variables":[{"name":"seal","source":"named","role":"iconVariable"}]
+      },
+      "label.footnoteIconNote": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Spend "},
+          {"type":"var","name":"action","source":"named","role":"icon"},
+          {"type":"text","value":" on 1927[^5] at "},
+          {"type":"var","name":"place","source":"named","role":"text"}
+        ],
+        "variables":[
+          {"name":"action","source":"named","role":"icon"},
+          {"name":"place","source":"named","role":"text"}
+        ]
       },
       "label.footnoteNote": {
         "form":"message",

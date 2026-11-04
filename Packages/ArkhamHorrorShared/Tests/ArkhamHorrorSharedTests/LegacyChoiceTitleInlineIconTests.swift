@@ -348,6 +348,25 @@ extension LegacyChoiceTitleInlineIconTests {
         ))
     }
 
+    @Test("A catalog $ label with an icon, [^N] and a raw variable placeholder splits [^N]")
+    func catalogLabelFootnoteWithIconAndRawPlaceholderSplits() throws {
+        let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+            "$label.doneWithMulligan name=s:\"{asterisk}\"",
+            resolver: catalogResolver([
+                .text("Spend "), .variable(name: "action", source: .named, role: .icon),
+                .text(" 1927[^5] "), .variable(name: "name", source: .named, role: .text),
+            ]), catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        let resolved = try prompt(fixtureQuestion(), resolutions: [0: .resolved(label)])
+            .resolvedChoiceLabel(for: fixtureQuestion().choices[0], in: projection())
+        #expect(resolved.title == "Spend action 19275 {asterisk}")
+        #expect(resolved.titleNodes == [
+            .text("Spend "), .icon("action"), .text(" 1927"), .footnoteMarker("5"),
+            .text(" {asterisk}"),
+        ])
+        #expect(resolved.accessibilityLabel == "Spend action 1927 footnote 5 {asterisk}")
+    }
+
     @Test("A legacy no-envelope title speaks icons by name and footnotes as \"footnote N\"")
     func legacyNoEnvelopeAccessibilityLabelSpeaksIconsAndFootnotes() throws {
         let question = try fixtureQuestion()
