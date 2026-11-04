@@ -305,3 +305,72 @@ extension StoryCatalogInlineMarkupTests {
             == [.text("Heading"), .footnoteMarker("2")])
     }
 }
+
+/// Catalog `<p>` / `<hN>` wrappers pass the flattening guard; the inline title and label
+/// renderers reject block nodes, so a footnoted title or label must arrive inline.
+extension StoryCatalogInlineMarkupTests {
+    private static func wrappedFootnoteResolver() async throws -> LocaleCatalogResolver {
+        try await resolver(
+            entryKeys: ["story.paragraphNote", "story.headingNote"],
+            chunkEntries: """
+            {"story.paragraphNote":{"form":"message","nodes":[\
+            {"type":"paragraph","styles":[],"children":[{"type":"text","value":" Read "},\
+            {"type":"emphasis","style":"italic","children":[{"type":"text","value":"1927[^5]"}]}\
+            ]}],"variables":[]},\
+            "story.headingNote":{"form":"message","nodes":[\
+            {"type":"heading","level":2,"styles":[],"children":[\
+            {"type":"text","value":"Heading[^2]"}]}],"variables":[]}}
+            """
+        )
+    }
+
+    @Test("Paragraph- and heading-wrapped footnoted titles render inline with a marker")
+    func wrappedFootnotedTitlesRenderInline() async throws {
+        let resolver = try await Self.wrappedFootnoteResolver()
+        let cases: [(String, ResolvedStory)] = [
+            ("$story.paragraphNote", ResolvedStory(title: " Read 19275", titleNodes: [
+                .text(" Read "), .emphasis(.italic, [.text("1927"), .footnoteMarker("5")]),
+            ], body: [])),
+            ("$story.headingNote", ResolvedStory(
+                title: "Heading2", titleNodes: [.text("Heading"), .footnoteMarker("2")], body: []
+            )),
+        ]
+        for (title, expected) in cases {
+            let story = StoryNarrativeLocalization.resolve(
+                FlavorText(title: title, body: []), resolver: resolver, catalogUnavailability: nil
+            ).story
+            #expect(story == expected)
+            #expect(StoryInlineTextRenderer.text(
+                for: story?.titleNodes ?? [.paragraph([])], textStyle: .callout
+            ) != nil, Comment(rawValue: title))
+        }
+    }
+
+    @Test("Paragraph- and heading-wrapped footnoted choice labels render inline with a marker")
+    func wrappedFootnotedChoiceLabelsRenderInline() async throws {
+        let resolver = try await Self.wrappedFootnoteResolver()
+        let cases: [(String, BasicChoiceResolvedLabelText)] = [
+            ("$story.paragraphNote", BasicChoiceResolvedLabelText(
+                title: "Read 19275",
+                inlineNodes: [
+                    .text("Read "), .emphasis(.italic, [.text("1927"), .footnoteMarker("5")]),
+                ],
+                accessibilityTitle: "Read 1927 footnote 5"
+            )),
+            ("$story.headingNote", BasicChoiceResolvedLabelText(
+                title: "Heading2",
+                inlineNodes: [.text("Heading"), .footnoteMarker("2")],
+                accessibilityTitle: "Heading footnote 2"
+            )),
+        ]
+        for (key, expected) in cases {
+            let label = try StoryNarrativeLocalization.resolveProductionChoiceLabelRich(
+                key, resolver: resolver, catalogUnavailability: .catalog(.transportFailure)
+            ).get()
+            #expect(label == expected)
+            #expect(StoryInlineTextRenderer.text(
+                for: label.inlineNodes ?? [.paragraph([])], textStyle: .body
+            ) != nil, Comment(rawValue: key))
+        }
+    }
+}

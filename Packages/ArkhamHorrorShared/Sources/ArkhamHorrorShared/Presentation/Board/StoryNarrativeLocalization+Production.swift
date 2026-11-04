@@ -137,14 +137,15 @@ extension StoryNarrativeLocalization {
     }
 
     /// A title whose `[^N]` references split out like story text. `title` stays the plain
-    /// projection; `titleNodes` is set only when a footnote reference was split.
+    /// projection; `titleNodes` is set only when a footnote reference was split, with any
+    /// catalog `<p>`/`<hN>` wrapper unwrapped so the inline title renderer accepts it.
     private static func footnotedTitle(
         _ nodes: [StoryNode], degradedReason: StoryUnavailableReason?
     ) -> ProductionTitleResolution {
         let footnoted = nodes.splittingFootnoteMarkers
         return ProductionTitleResolution(
             title: footnoted.map(\.plainText).joined(),
-            titleNodes: footnoted.containsFootnoteMarker ? footnoted : nil,
+            titleNodes: footnoted.containsFootnoteMarker ? footnoted.unwrappingBlocks : nil,
             degradedReason: degradedReason
         )
     }
@@ -220,7 +221,8 @@ extension StoryNarrativeLocalization {
                   footnoted.map(\.plainText).joined()
               )
         else { return (nodes, false) }
-        return (footnoted, true)
+        // The inline label renderer rejects `<p>`/`<hN>` wrappers, which would drop the marker.
+        return (footnoted.unwrappingBlocks, true)
     }
 
     static func productionChoiceLabelCatalogKey(_ wireLabel: String) -> String? {
@@ -825,6 +827,27 @@ private extension StoryNode {
 }
 
 private extension [StoryNode] {
+    /// Paragraph and heading wrappers spliced into their parent, at any inline depth, so a
+    /// one-line title or choice label renders inline. Their plain text is unchanged, since
+    /// `plainText` joins sibling blocks without a separator too.
+    var unwrappingBlocks: [StoryNode] {
+        flatMap { node -> [StoryNode] in
+            switch node {
+            case let .paragraph(children), let .heading(_, children):
+                children.unwrappingBlocks
+            case let .group(children):
+                [.group(children.unwrappingBlocks)]
+            case let .emphasis(style, children):
+                [.emphasis(style, children.unwrappingBlocks)]
+            case let .cardReference(code, children):
+                [.cardReference(code: code, children: children.unwrappingBlocks)]
+            case .text, .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker,
+                 .list, .table:
+                [node]
+            }
+        }
+    }
+
     var trimmedTextEdges: [StoryNode] {
         var nodes = self
         while let first = nodes.first, case let .text(text) = first {
