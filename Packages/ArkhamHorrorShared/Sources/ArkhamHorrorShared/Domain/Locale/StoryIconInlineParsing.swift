@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 /// The web's named inline icons: every `iconClasses` key from fork commit
@@ -81,6 +82,15 @@ enum StoryIconInlineParser {
         guard atoms.contains(where: \.isMarkup) else { return nil }
         let nodes = trimmingTextEdges(storyNodes(atoms))
         return nodes.isEmpty ? nil : nodes
+    }
+
+    /// ``nodes(for:)`` for one text run among other nodes: edge whitespace is kept, plain
+    /// text stays one `.text` node, and each icon becomes `iconNode(placeholder)`.
+    static func runNodes(
+        for text: String,
+        iconNode: (WebIconPlaceholder) -> StoryNode
+    ) -> [StoryNode] {
+        storyNodes(formattedAtoms(text), iconNode: iconNode)
     }
 
     /// Whether `text` still holds an unrendered web placeholder: a braced or bracketed icon,
@@ -295,7 +305,10 @@ enum StoryIconInlineParser {
             .replacingOccurrences(of: "{underscore}", with: "_")
     }
 
-    private static func storyNodes(_ atoms: [Atom]) -> [StoryNode] {
+    private static func storyNodes(
+        _ atoms: [Atom],
+        iconNode: (WebIconPlaceholder) -> StoryNode = { $0.node }
+    ) -> [StoryNode] {
         var nodes: [StoryNode] = []
         var buffer = ""
         for atom in atoms {
@@ -305,10 +318,10 @@ enum StoryIconInlineParser {
                 continue
             case let .icon(placeholder):
                 appendText(unescaped(buffer), to: &nodes)
-                nodes.append(placeholder.node)
+                nodes.append(iconNode(placeholder))
             case let .emphasis(style, children):
                 appendText(unescaped(buffer), to: &nodes)
-                let inner = storyNodes(children)
+                let inner = storyNodes(children, iconNode: iconNode)
                 if !inner.isEmpty {
                     nodes.append(.emphasis(style, inner))
                 }
