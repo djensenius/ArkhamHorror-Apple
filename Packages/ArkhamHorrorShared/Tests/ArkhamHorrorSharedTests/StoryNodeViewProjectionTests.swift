@@ -62,6 +62,8 @@ struct StoryNodeViewProjectionTests {
         #expect(StoryReturnToEntryPresentation.applies(to: [.borderedEntry, .returnToEntry]))
         #expect(!StoryReturnToEntryPresentation.applies(to: [.borderedEntry]))
         #expect(!StoryReturnToEntryPresentation.applies(to: []))
+        // Codex drops Return to, as the web's FormattedEntry does.
+        #expect(!StoryReturnToEntryPresentation.applies(to: [.codexEntry, .returnToEntry]))
         #expect(StoryReturnToEntryPresentation.colorHex == 0x2D6A62)
         #expect(StoryReturnToEntryPresentation.ruleWidth == 3)
         #expect(StoryReturnToEntryPresentation.leadingInset == 10)
@@ -72,6 +74,53 @@ struct StoryNodeViewProjectionTests {
         #expect(StoryReturnToEntryPresentation.washEnd == 0.75)
         #expect(StoryReturnToEntryPresentation.trailingRadius == 4)
         #expect(StoryFlavorEntryStatus.status(for: [.returnToEntry]) == nil)
+    }
+
+    @Test("The Return to rule keeps #2d6a62 in light mode and clears 3:1 on dark story backgrounds")
+    func returnToRuleContrast() {
+        let light = StoryReturnToEntryPresentation.colorHex
+        let dark = StoryReturnToEntryPresentation.darkColorHex
+        #expect(light == 0x2D6A62)
+        #expect(dark == 0x4A9E92)
+
+        let lightRatio = ArkhamColorContrast.contrastRatio(light, 0xFFFFFF)
+        #expect(abs(lightRatio - 6.27) < 0.01)
+        #expect(lightRatio >= ArkhamColorContrast.minimumNonTextRatio)
+
+        // macOS dark window, macOS dark control/sidebar grey, and the story gradient start.
+        let darkBackgrounds: [UInt32: Double] = [0x1E1E1E: 5.24, 0x323232: 4.03, 0x0A1217: 5.93]
+        for (background, expected) in darkBackgrounds {
+            let ratio = ArkhamColorContrast.contrastRatio(dark, background)
+            #expect(abs(ratio - expected) < 0.01, "background \(String(background, radix: 16))")
+            #expect(ratio >= ArkhamColorContrast.minimumNonTextRatio)
+        }
+    }
+
+    @Test("WCAG contrast ratio matches the reference black/white and grey values")
+    func wcagContrastRatio() {
+        #expect(ArkhamColorContrast.relativeLuminance(0x000000) == 0)
+        #expect(ArkhamColorContrast.relativeLuminance(0xFFFFFF) == 1)
+        #expect(ArkhamColorContrast.contrastRatio(0x000000, 0xFFFFFF) == 21)
+        #expect(ArkhamColorContrast.contrastRatio(0xFFFFFF, 0x000000) == 21)
+        #expect(abs(ArkhamColorContrast.contrastRatio(0x777777, 0xFFFFFF) - 4.48) < 0.01)
+        #expect(ArkhamColorContrast.contrastRatio(0x2D6A62, 0x2D6A62) == 1)
+    }
+
+    @Test("Return to sits inside framed panels and outside unframed washes; codex ignores it")
+    func returnToPanelLayering() {
+        // Innermost first.
+        #expect(StoryFlavorPanelLayout.layers(for: [.returnToEntry]) == [.surface, .returnTo])
+        #expect(StoryFlavorPanelLayout.layers(for: [.byDifficultyEntry, .returnToEntry])
+            == [.surface, .returnTo])
+        #expect(StoryFlavorPanelLayout.layers(for: [.returnToEntry, .validEntry])
+            == [.surface, .returnTo])
+        #expect(StoryFlavorPanelLayout.layers(for: [.borderedEntry, .returnToEntry])
+            == [.returnTo, .surface])
+        #expect(StoryFlavorPanelLayout.layers(for: [.interludeEntry, .returnToEntry])
+            == [.returnTo, .surface])
+        #expect(StoryFlavorPanelLayout.layers(for: [.codexEntry, .returnToEntry]) == [.surface])
+        #expect(StoryFlavorPanelLayout.layers(for: [.borderedEntry]) == [.surface])
+        #expect(StoryFlavorPanelLayout.layers(for: []) == [.surface])
     }
 
     @Test("A footnote body projects a caption-relative raised number and one localized label")

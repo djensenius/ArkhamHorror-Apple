@@ -198,8 +198,13 @@ enum StoryFlavorEntryStatus: Equatable {
 /// `.return-to` class (FormattedEntry.vue): a 3pt dark-teal leading rule, a teal wash
 /// fading to transparent teal, square leading corners and rounded trailing corners. Text colour
 /// and font are left alone so it composes with every other modifier.
+///
+/// Light mode keeps the web's #2d6a62. That teal is only about 2:1 to 2.7:1 against the
+/// dark-mode story backgrounds, so dark mode uses a lighter teal of the same hue that clears
+/// the WCAG 3:1 non-text guideline; the wash derives from the same adaptive colour.
 enum StoryReturnToEntryPresentation {
     static let colorHex: UInt32 = 0x2D6A62
+    static let darkColorHex: UInt32 = 0x4A9E92
     static let ruleWidth: CGFloat = 3
     static let leadingInset: CGFloat = 10
     static let verticalInset: CGFloat = 2
@@ -214,56 +219,85 @@ enum StoryReturnToEntryPresentation {
     }
 
     static var color: Color {
-        Color(
-            red: Double((colorHex >> 16) & 0xFF) / 255,
-            green: Double((colorHex >> 8) & 0xFF) / 255,
-            blue: Double(colorHex & 0xFF) / 255
-        )
+        .adaptive(lightHex: colorHex, darkHex: darkColorHex)
     }
 
+    /// Codex entries skip only the Return to rule and wash, following the web's codex
+    /// branch in FormattedEntry. Colour, font and alignment modifiers still apply to codex
+    /// entries here, as they did before.
     static func applies(to modifiers: [FlavorTextModifier]) -> Bool {
-        modifiers.contains(.returnToEntry)
+        modifiers.contains(.returnToEntry) && !modifiers.contains(.codexEntry)
+    }
+}
+
+/// One wrapping layer of a flavor-text entry, listed inner to outer by
+/// ``StoryFlavorPanelLayout``.
+enum StoryFlavorPanelLayer: Equatable {
+    /// The entry's own padding, background wash and border (bordered, codex, interlude,
+    /// token-reveal and by-difficulty styling).
+    case surface
+    /// The Return to rule and wash.
+    case returnTo
+}
+
+/// Orders the surface and Return to layers so a Return to entry is one coherent panel.
+///
+/// No current backend call site combines `ReturnToEntry` with bordered, codex or interlude
+/// entries: the `returnTo` helpers only extend list items (arkham-api
+/// `Arkham/FlavorText.hs:150-160`). `extendModifiers` (`:200-203`) would merge it into an
+/// existing `ModifyEntry`, so the combination is not type-enforced, but nothing produces it
+/// today. If bordered or interlude entries are combined with it, the Return to rule and wash
+/// sit inside the framed panel's border, as the web merges both classes on one element.
+/// Codex entries skip only the Return to layer (see
+/// ``StoryReturnToEntryPresentation/applies(to:)``). Unframed surfaces (token reveal, by
+/// difficulty) keep their rounded wash inside the Return to padding.
+enum StoryFlavorPanelLayout {
+    static func isFramed(_ modifiers: [FlavorTextModifier]) -> Bool {
+        modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry)
+            || modifiers.contains(.interludeEntry)
+    }
+
+    /// The layers to apply, innermost first.
+    static func layers(for modifiers: [FlavorTextModifier]) -> [StoryFlavorPanelLayer] {
+        guard StoryReturnToEntryPresentation.applies(to: modifiers) else {
+            return [.surface]
+        }
+        return isFramed(modifiers) ? [.returnTo, .surface] : [.surface, .returnTo]
     }
 }
 
 private struct StoryReturnToEntryModifier: ViewModifier {
-    let isApplied: Bool
-
     func body(content: Content) -> some View {
-        if isApplied {
-            content
-                .padding(.leading, StoryReturnToEntryPresentation.effectiveLeadingPadding)
-                .padding(.vertical, StoryReturnToEntryPresentation.verticalInset)
-                .background(
-                    LinearGradient(
-                        stops: [
-                            .init(
-                                color: StoryReturnToEntryPresentation.color
-                                    .opacity(StoryReturnToEntryPresentation.washOpacity),
-                                location: 0
-                            ),
-                            .init(
-                                color: StoryReturnToEntryPresentation.color.opacity(0),
-                                location: StoryReturnToEntryPresentation.washEnd
-                            ),
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    ),
-                    in: UnevenRoundedRectangle(
-                        bottomTrailingRadius: StoryReturnToEntryPresentation.trailingRadius,
-                        topTrailingRadius: StoryReturnToEntryPresentation.trailingRadius
-                    )
+        content
+            .padding(.leading, StoryReturnToEntryPresentation.effectiveLeadingPadding)
+            .padding(.vertical, StoryReturnToEntryPresentation.verticalInset)
+            .background(
+                LinearGradient(
+                    stops: [
+                        .init(
+                            color: StoryReturnToEntryPresentation.color
+                                .opacity(StoryReturnToEntryPresentation.washOpacity),
+                            location: 0
+                        ),
+                        .init(
+                            color: StoryReturnToEntryPresentation.color.opacity(0),
+                            location: StoryReturnToEntryPresentation.washEnd
+                        ),
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                in: UnevenRoundedRectangle(
+                    bottomTrailingRadius: StoryReturnToEntryPresentation.trailingRadius,
+                    topTrailingRadius: StoryReturnToEntryPresentation.trailingRadius
                 )
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(StoryReturnToEntryPresentation.color)
-                        .frame(width: StoryReturnToEntryPresentation.ruleWidth)
-                        .accessibilityHidden(true)
-                }
-        } else {
-            content
-        }
+            )
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(StoryReturnToEntryPresentation.color)
+                    .frame(width: StoryReturnToEntryPresentation.ruleWidth)
+                    .accessibilityHidden(true)
+            }
     }
 }
 
@@ -294,17 +328,28 @@ private struct StoryFlavorTextModifier: ViewModifier {
     let modifiers: [FlavorTextModifier]
 
     func body(content: Content) -> some View {
-        content
+        let layers = StoryFlavorPanelLayout.layers(for: modifiers)
+        let styled = content
             .modifier(StoryOptionalForegroundStyleModifier(foregroundStyle: foregroundStyle))
             .font(font)
             .multilineTextAlignment(alignment)
             .frame(maxWidth: .infinity, alignment: frameAlignment)
-            .padding(padding)
-            .background(background)
-            .overlay(border)
-            .modifier(StoryReturnToEntryModifier(
-                isApplied: StoryReturnToEntryPresentation.applies(to: modifiers)
-            ))
+        return layered(layered(styled, layers.first), layers.dropFirst().first)
+    }
+
+    @ViewBuilder
+    private func layered(_ view: some View, _ layer: StoryFlavorPanelLayer?) -> some View {
+        switch layer {
+        case .surface:
+            view
+                .padding(padding)
+                .background(background)
+                .overlay(border)
+        case .returnTo:
+            view.modifier(StoryReturnToEntryModifier())
+        case nil:
+            view
+        }
     }
 
     private var foregroundStyle: Color? {
@@ -357,8 +402,7 @@ private struct StoryFlavorTextModifier: ViewModifier {
     }
 
     private var padding: CGFloat {
-        modifiers.contains(.borderedEntry) || modifiers.contains(.codexEntry)
-            || modifiers.contains(.interludeEntry) ? 8 : 0
+        StoryFlavorPanelLayout.isFramed(modifiers) ? 8 : 0
     }
 
     @ViewBuilder
