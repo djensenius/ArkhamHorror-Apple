@@ -389,12 +389,7 @@ struct BasicChoicePromptView: View {
         if let content = presentation.question.supportedQuestion?.story {
             VStack(alignment: .leading, spacing: 8) {
                 if let resolved = presentation.storyResolution?.story {
-                    if let title = resolved.title {
-                        Text(title)
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("liveGame.prompt.story.title")
-                    }
+                    StoryPromptTitleView(story: resolved)
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(
@@ -426,12 +421,7 @@ struct BasicChoicePromptView: View {
         } else if presentation.semanticPresentation?.presentation.flavorText != nil {
             VStack(alignment: .leading, spacing: 8) {
                 if let resolved = presentation.storyResolution?.story {
-                    if let title = resolved.title {
-                        Text(title)
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("liveGame.prompt.story.title")
-                    }
+                    StoryPromptTitleView(story: resolved)
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 6) {
                             ForEach(Array(resolved.body.enumerated()), id: \.offset) { _, entry in
@@ -675,5 +665,24 @@ private extension Color {
         #else
             Color(uiColor: .systemBackground)
         #endif
+    }
+}
+
+/// A story prompt's title in the callout, monospaced, secondary look. A title carrying a
+/// `[^N]` footnote reference renders its inline nodes, so the marker matches story text,
+/// and VoiceOver reads it as "footnote N".
+private struct StoryPromptTitleView: View {
+    let story: ResolvedStory
+
+    var body: some View {
+        if let title = story.title {
+            StoryInlineTextLabel(fallbackText: title, nodes: story.titleNodes, textStyle: .callout)
+                .font(.callout.monospaced())
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(Text(verbatim: story.titleNodes.map(
+                    StoryNodePresentation.accessibilityLabel(for:)
+                ) ?? title))
+                .accessibilityIdentifier("liveGame.prompt.story.title")
+        }
     }
 }

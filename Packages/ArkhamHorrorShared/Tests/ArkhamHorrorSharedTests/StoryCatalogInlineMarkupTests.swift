@@ -224,3 +224,84 @@ struct StoryCatalogInlineMarkupTests {
         return try await LocaleCatalogResolver(snapshot: documents.loadSnapshot())
     }
 }
+
+/// TASK-1.22.7: every story path the web runs through `formatContent` splits `[^N]`.
+extension StoryCatalogInlineMarkupTests {
+    @Test("Literal basic story text splits [^N] like catalog text; plain text stays .text")
+    func literalBasicTextSplitsFootnoteMarkers() {
+        let flavorText = FlavorText(title: nil, body: [
+            .basic(text: "Olaus wrote[^1] in 1927[^5]."),
+            .basic(text: "No note [^x] here."),
+        ])
+        let nodes: [StoryNode] = [
+            .text("Olaus wrote"), .footnoteMarker("1"), .text(" in 1927"),
+            .footnoteMarker("5"), .text("."),
+        ]
+        let body: [ResolvedStoryEntry] = [.nodes(nodes), .text("No note [^x] here.")]
+        #expect(StoryNarrativeLocalization.resolve(
+            flavorText, resolver: nil, catalogUnavailability: nil
+        ) == .resolved(ResolvedStory(title: nil, body: body)))
+        #expect(
+            StoryNodePresentation.accessibilityLabel(for: nodes)
+                == "Olaus wrote footnote 1 in 1927 footnote 5."
+        )
+    }
+
+    @Test("Literal and catalog story titles split [^N] into title nodes and speak them")
+    func storyTitlesSplitFootnoteMarkers() async throws {
+        let resolver = try await Self.resolver(
+            entryKeys: ["story.footnoteHeading"],
+            chunkEntries: """
+            {"story.footnoteHeading":{"form":"message","nodes":[\
+            {"type":"text","value":"Heading[^2]"}],"variables":[]}}
+            """
+        )
+        let literal = StoryNarrativeLocalization.resolve(
+            FlavorText(title: "Wormius 1927[^5]", body: []),
+            resolver: resolver, catalogUnavailability: nil
+        ).story
+        let literalNodes: [StoryNode] = [.text("Wormius 1927"), .footnoteMarker("5")]
+        #expect(literal == ResolvedStory(
+            title: "Wormius 19275", titleNodes: literalNodes, body: []
+        ))
+        #expect(
+            StoryNodePresentation.accessibilityLabel(for: literal?.titleNodes ?? [])
+                == "Wormius 1927 footnote 5"
+        )
+
+        let catalog = StoryNarrativeLocalization.resolve(
+            FlavorText(title: "$story.footnoteHeading", body: []),
+            resolver: resolver, catalogUnavailability: nil
+        ).story
+        let catalogNodes: [StoryNode] = [.text("Heading"), .footnoteMarker("2")]
+        #expect(catalog == ResolvedStory(title: "Heading2", titleNodes: catalogNodes, body: []))
+        #expect(
+            StoryNodePresentation.accessibilityLabel(for: catalog?.titleNodes ?? [])
+                == "Heading footnote 2"
+        )
+
+        // A title without a reference keeps its plain string and no nodes.
+        #expect(StoryNarrativeLocalization.resolve(
+            FlavorText(title: "Plain [^x] title", body: []),
+            resolver: resolver, catalogUnavailability: nil
+        ).story == ResolvedStory(title: "Plain [^x] title", titleNodes: nil, body: []))
+    }
+
+    @Test("The catalog game log keeps [^N] literal while story text splits it")
+    func catalogGameLogKeepsFootnoteMarkersLiteral() async throws {
+        let resolver = try await Self.resolver(
+            entryKeys: ["story.footnoteHeading"],
+            chunkEntries: """
+            {"story.footnoteHeading":{"form":"message","nodes":[\
+            {"type":"text","value":"Heading[^2]"}],"variables":[]}}
+            """
+        )
+        let renderer = GameLogPartRenderer(resolver: resolver)
+        #expect(
+            renderer.render(.i18n(key: "story.footnoteHeading", variables: [:]))
+                == [.text("Heading[^2]")]
+        )
+        #expect(try Self.narrativeNodes("story.footnoteHeading", .object([:]), resolver)
+            == [.text("Heading"), .footnoteMarker("2")])
+    }
+}

@@ -114,6 +114,32 @@ struct LiveNotZTypedLabelVariableTests {
         #expect(prompt.isChoiceActionable(choice, in: projection))
     }
 
+    @Test("A catalog $ label's [^N] renders a marker and VoiceOver reads \"footnote N\"")
+    @MainActor
+    func catalogLabelFootnoteRendersMarkerAndSpokenTitle() async throws {
+        let fixture = try Self.fixture().replacingChoiceLabel(
+            at: 0, with: "$label.footnoteNote place=s:\"the archive\""
+        )
+        let labelModel = try await Self.productionLabelModel()
+        let prompt = try Self.prompt(for: fixture, labelModel: labelModel)
+        let projection = BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot())
+        let choice = try #require(prompt.choices.first { $0.index == 0 })
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+        let nodes: [StoryNode] = [
+            .text("Read Wormius 1927"), .footnoteMarker("5"), .text(" at the archive"),
+        ]
+
+        #expect(prompt.choiceLabelResolutions[0] == .resolved(.init(
+            title: "Read Wormius 19275 at the archive",
+            inlineNodes: nodes,
+            accessibilityTitle: "Read Wormius 1927 footnote 5 at the archive"
+        )))
+        #expect(resolved.title == "Read Wormius 19275 at the archive")
+        #expect(resolved.titleNodes == nodes)
+        #expect(resolved.accessibilityLabel == "Read Wormius 1927 footnote 5 at the archive")
+        #expect(prompt.isChoiceActionable(choice, in: projection))
+    }
+
     @Test("Out-of-enum icon variable values leave choice labels unresolved and unpressable")
     @MainActor
     func outOfEnumIconVariableChoiceLabelValueRemainsUnresolved() async throws {
@@ -200,6 +226,7 @@ struct LiveNotZTypedLabelVariableTests {
                 "label.chooseInvestigatorToTakeSeal",
                 "label.discardCardsFromHand",
                 "label.discardCardsWithMatchingIcons",
+                "label.footnoteNote",
                 "label.takeDamageAndHorror",
                 "label.test",
                 "label.webIconGlyphs",
@@ -275,6 +302,14 @@ struct LiveNotZTypedLabelVariableTests {
           {"type":"var","name":"seal","source":"named","role":"iconVariable"}
         ],
         "variables":[{"name":"seal","source":"named","role":"iconVariable"}]
+      },
+      "label.footnoteNote": {
+        "form":"message",
+        "nodes":[
+          {"type":"text","value":"Read Wormius 1927[^5] at "},
+          {"type":"var","name":"place","source":"named","role":"text"}
+        ],
+        "variables":[{"name":"place","source":"named","role":"text"}]
       },
       "label.takeDamageAndHorror": {
         "form":"message",

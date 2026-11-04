@@ -615,12 +615,13 @@ extension BasicChoicePromptPresentation {
         if let nodes = labelResolution?.inlineNodes {
             // Rendered catalog nodes already carry their plain-text title; spoken-izing it
             // again could strip literal `*x*`, `_x_` or `{icon}` text the nodes still show.
+            // A split footnote reference reads from the resolver's own spoken title.
             return BasicChoiceResolvedChoiceLabel(
                 title: title,
                 titleNodes: nodes,
                 subtitle: nil,
                 systemImage: choice.systemImage,
-                accessibilityLabel: title
+                accessibilityLabel: labelResolution?.accessibilityTitle ?? title
             )
         }
         let hasRawPlaceholder = StoryIconInlineParser.containsRawPlaceholder(title)
@@ -861,9 +862,13 @@ extension BasicChoicePromptPresentation {
             title: title,
             labelResolution: labelResolution
         )
-        let spokenTitle = semanticAccessibilityText(for: title, descriptor: descriptor)
+        let spokenTitle = semanticAccessibilityText(
+            for: title, descriptor: descriptor, labelResolution: labelResolution
+        )
         let spokenSubtitle = subtitle.map {
-            semanticAccessibilityText(for: $0, descriptor: descriptor)
+            semanticAccessibilityText(
+                for: $0, descriptor: descriptor, labelResolution: labelResolution
+            )
         }
         let accessibilityLabel = spokenSubtitle.map { "\(spokenTitle), \($0)" } ?? spokenTitle
         return BasicChoiceResolvedChoiceLabel(
@@ -1300,11 +1305,17 @@ extension BasicChoicePromptPresentation {
     /// The VoiceOver form of a displayed choice title or subtitle `text`. When `text` was
     /// derived from one of the descriptor's raw labels, the same raw label is re-projected
     /// with footnote references spoken (`1927[^5]` displays "19275" but reads
-    /// "1927 footnote 5"); any other text is already its own spoken form.
+    /// "1927 footnote 5"); a catalog label with a split footnote reference reads its
+    /// resolved ``BasicChoiceResolvedLabelText/accessibilityTitle``; any other text is
+    /// already its own spoken form.
     private func semanticAccessibilityText(
         for text: String,
-        descriptor: QuestionPresentation.Choice
+        descriptor: QuestionPresentation.Choice,
+        labelResolution: BasicChoiceLabelResolution?
     ) -> String {
+        if labelResolution?.title == text, let spoken = labelResolution?.accessibilityTitle {
+            return spoken
+        }
         let rawSources = [
             descriptor.label?.text,
             descriptor.tooltip,

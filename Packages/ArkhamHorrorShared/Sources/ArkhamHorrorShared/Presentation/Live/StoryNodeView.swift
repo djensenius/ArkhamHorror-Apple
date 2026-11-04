@@ -816,6 +816,7 @@ enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
     case title2
     case title3
     case headline
+    case callout
     case caption
 
     var swiftUITextStyle: Font.TextStyle {
@@ -824,6 +825,7 @@ enum StoryInlineTextStyle: CaseIterable, Equatable, Sendable {
         case .title2: .title2
         case .title3: .title3
         case .headline: .headline
+        case .callout: .callout
         case .caption: .caption
         }
     }
@@ -937,6 +939,7 @@ enum StoryWebGlyphFontMetrics {
             case .title2: .title2
             case .title3: .title3
             case .headline: .headline
+            case .callout: .callout
             case .caption: .caption1
             }
         }
@@ -949,6 +952,7 @@ enum StoryWebGlyphFontMetrics {
             case .title2: .title2
             case .title3: .title3
             case .headline: .headline
+            case .callout: .callout
             case .caption: .caption1
             }
         }
