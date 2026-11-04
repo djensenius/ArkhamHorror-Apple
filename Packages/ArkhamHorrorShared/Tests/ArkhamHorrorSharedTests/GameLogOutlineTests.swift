@@ -137,7 +137,10 @@ struct GameLogOutlineTests {
         ))
         #expect(StoryNodePresentation.accessibilityLabel(for: [.icon("runeM")]) == "rune m")
 
-        // The web log never runs formatContent, so `[^N]` stays literal text there.
+        // The web log never runs formatContent, so `[^N]` stays literal text there. This
+        // only shows the log renderer adds no splitting of its own; the meaningful guard is
+        // the resolver assertion in `StoryCatalogInlineMarkupTests` (catalog log text comes
+        // from the resolver, which must not split).
         #expect(renderer.render(.text("See note [^1]")) == [.text("See note [^1]")])
 
         let slim = WebIconFontAvailability(registrations: [

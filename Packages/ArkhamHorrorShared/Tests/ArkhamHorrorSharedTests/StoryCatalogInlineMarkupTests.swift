@@ -67,6 +67,56 @@ struct StoryCatalogInlineMarkupTests {
         )
     }
 
+    @Test("Catalog story text splits [^N] inside list items, table cells and card references")
+    func catalogStoryTextSplitsNestedFootnoteMarkers() async throws {
+        let resolver = try await Self.resolver(
+            entryKeys: ["story.nestedFootnotes"],
+            chunkEntries: """
+            {"story.nestedFootnotes":{"form":"message","nodes":[\
+            {"type":"list","ordered":false,"styles":[],"items":[\
+            {"styles":[],"children":[{"type":"text","value":"Item[^1]"}]}]},\
+            {"type":"table","styles":[],"head":[{"styles":[],"cells":[\
+            {"header":true,"styles":[],"children":[{"type":"text","value":"Head[^2]"}]}]}],\
+            "body":[{"styles":[],"cells":[\
+            {"header":false,"styles":[],"children":[{"type":"text","value":"Cell[^3]"}]}]}]},\
+            {"type":"cardRef","code":"01001","styles":[],"children":[\
+            {"type":"text","value":"Roland[^4]"}]}],"variables":[]}}
+            """
+        )
+        let flavorText = FlavorText(title: nil, body: [.basic(text: "$story.nestedFootnotes")])
+        let nodes: [StoryNode] = [
+            .list(ordered: false, items: [[.text("Item"), .footnoteMarker("1")]]),
+            .table(
+                head: [StoryTableRow(cells: [
+                    StoryTableCell(isHeader: true, children: [.text("Head"), .footnoteMarker("2")]),
+                ])],
+                body: [StoryTableRow(cells: [
+                    StoryTableCell(
+                        isHeader: false, children: [.text("Cell"), .footnoteMarker("3")]
+                    ),
+                ])]
+            ),
+            .cardReference(code: "01001", children: [.text("Roland"), .footnoteMarker("4")]),
+        ]
+        #expect(StoryNarrativeLocalization.resolve(
+            flavorText, resolver: resolver, catalogUnavailability: nil
+        ) == .resolved(ResolvedStory(title: nil, body: [.nodes(nodes)])))
+    }
+
+    @Test("VoiceOver announces a footnote marker as a separate footnote number")
+    func spokenLabelSeparatesFootnoteMarkers() {
+        let paragraph: [StoryNode] = [.paragraph([
+            .text("Olaus wrote"), .footnoteMarker("1"), .text(" in 1927"),
+            .emphasis(.italic, [.footnoteMarker("5")]),
+        ])]
+        #expect(
+            StoryNodePresentation.accessibilityLabel(for: paragraph)
+                == "Olaus wrote footnote 1 in 1927 footnote 5"
+        )
+        // Flattening (titles) keeps the bare number, like the web's `<sup>` text content.
+        #expect(paragraph.map(\.plainText).joined() == "Olaus wrote1 in 19275")
+    }
+
     static func resolver(
         entryKeys: [String], chunkEntries: String
     ) async throws -> LocaleCatalogResolver {

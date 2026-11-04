@@ -122,17 +122,32 @@ extension StoryNode {
     /// A plain-text projection, used where the presentation genuinely has only a string to
     /// show (a story title) and only when ``losesInstructionWhenFlattened`` is `false`.
     var plainText: String {
-        switch self {
+        flattened { $0 }
+    }
+
+    /// The VoiceOver form of ``plainText``: a footnote marker is announced as a separate
+    /// " footnote N" rather than running its digits into the preceding word or number
+    /// (`1927[^5]` must not read "19275").
+    var spokenText: String {
+        flattened { " footnote \($0)" }
+    }
+
+    // swiftlint:disable:next cyclomatic_complexity
+    private func flattened(footnote: (String) -> String) -> String {
+        func join(_ children: [StoryNode]) -> String {
+            children.map { $0.flattened(footnote: footnote) }.joined()
+        }
+        return switch self {
         case let .text(text): text
-        case let .paragraph(children), let .group(children): children.map(\.plainText).joined()
-        case let .heading(_, children): children.map(\.plainText).joined()
-        case let .emphasis(_, children): children.map(\.plainText).joined()
-        case let .cardReference(_, children): children.map(\.plainText).joined()
-        case let .list(_, items): items.map { $0.map(\.plainText).joined() }.joined(separator: " ")
+        case let .paragraph(children), let .group(children): join(children)
+        case let .heading(_, children): join(children)
+        case let .emphasis(_, children): join(children)
+        case let .cardReference(_, children): join(children)
+        case let .list(_, items): items.map(join).joined(separator: " ")
         case .lineBreak: " "
         case let .icon(name): StoryNode.spokenIconLabel(name)
         case let .semanticIcon(icon): icon.accessibilityLabel
-        case let .footnoteMarker(number): number
+        case let .footnoteMarker(number): footnote(number)
         case let .image(reference): reference.accessibleDescription
         case .rule, .table: ""
         }

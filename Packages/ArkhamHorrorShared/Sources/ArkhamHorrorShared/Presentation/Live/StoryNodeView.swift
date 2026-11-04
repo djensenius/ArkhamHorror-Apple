@@ -33,7 +33,7 @@ enum StoryNodePresentation {
     }
 
     static func accessibilityLabel(for nodes: [StoryNode]) -> String {
-        nodes.map(\.plainText).joined()
+        nodes.map(\.spokenText).joined()
     }
 
     static func encounterSetGroupReferences(_ children: [StoryNode]) -> [StoryAssetReference]? {
