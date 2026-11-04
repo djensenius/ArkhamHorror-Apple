@@ -1183,7 +1183,7 @@ extension BasicChoicePromptPresentation {
         fallback: String?
     ) -> String {
         if let title = labelResolution?.title {
-            return semanticUnsplitFootnotedLabel(labelResolution).flatMap(semanticInlineLabel)
+            return semanticUnsplitRawLabel(labelResolution).flatMap(semanticInlineLabel)
                 ?? title
         }
         if let text = descriptor.label?.text {
@@ -1213,7 +1213,7 @@ extension BasicChoicePromptPresentation {
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
-        let unsplit = semanticUnsplitFootnotedLabel(labelResolution)
+        let unsplit = semanticUnsplitRawLabel(labelResolution)
         if let nodes = unsplit.flatMap({ semanticRawLabelNodes($0, title: title) }) {
             return nodes
         }
@@ -1221,18 +1221,16 @@ extension BasicChoicePromptPresentation {
         return semanticRawLabelNodes(labelText, title: title)
     }
 
-    /// A resolved catalog title the resolver left unsplit because a text variable put a raw
-    /// `{icon}` or escape beside a `[^N]` reference (`footnotedChoiceLabel`). Like
-    /// `legacyChoiceLabel`, it is then formatted as a raw label; `nil` for any other title,
-    /// so labels without a footnote reference keep their resolved text.
-    private func semanticUnsplitFootnotedLabel(
+    /// A resolved catalog title without inline nodes that still holds a raw `{icon}`,
+    /// escape or `[^N]` reference, typically from a text variable (`footnotedChoiceLabel`
+    /// leaves such a label unsplit). Like `legacyChoiceLabel`, it is then formatted as a raw
+    /// label; `nil` for any other title, so labels without a raw placeholder keep their
+    /// resolved text.
+    private func semanticUnsplitRawLabel(
         _ labelResolution: BasicChoiceLabelResolution?
     ) -> String? {
         guard let title = labelResolution?.title, labelResolution?.inlineNodes == nil,
-              StoryNode.splittingFootnoteMarkers(in: title).contains(where: { node in
-                  guard case .footnoteMarker = node else { return false }
-                  return true
-              })
+              StoryIconInlineParser.containsRawPlaceholder(title)
         else { return nil }
         return title
     }
@@ -1338,7 +1336,7 @@ extension BasicChoicePromptPresentation {
             return spoken
         }
         let rawSources = [
-            semanticUnsplitFootnotedLabel(labelResolution),
+            semanticUnsplitRawLabel(labelResolution),
             descriptor.label?.text,
             descriptor.tooltip,
             descriptor.flavorText?.title,

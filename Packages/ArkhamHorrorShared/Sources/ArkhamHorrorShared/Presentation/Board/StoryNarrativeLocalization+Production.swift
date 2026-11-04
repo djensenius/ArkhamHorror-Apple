@@ -188,16 +188,22 @@ extension StoryNarrativeLocalization {
             guard !rendered.nodes.contains(where: \.losesInstructionWhenFlattened) else {
                 return .failure(.unsupportedEntry)
             }
-            let label = footnotedChoiceLabel(rendered.nodes)
+            // A label with catalog icons keeps its nodes and is never re-parsed as a raw
+            // label, so a text variable's raw `{icon}` or escape is formatted here first.
+            let formatted = rendered.nodes.containsSemanticIcon
+                ? rendered.nodes.formattingRawPlaceholderRuns
+                : rendered.nodes
+            let label = footnotedChoiceLabel(formatted)
             let trimmed = label.nodes.map(\.plainText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return .failure(.unsupportedEntry) }
             // Catalog `.icon` nodes for web icons keep their glyph in the choice title
             // instead of flattening to a word; `runeM` uses the glyph key `rune-M`.
             // Normalizing turns unknown icons into text nodes but does not merge them;
-            // `trimmedTextEdges` then trims the edges and coalesces adjacent text.
+            // `trimmedTextEdges` then trims the edges and coalesces adjacent text. The inline
+            // label renderer rejects `<p>`/`<hN>` wrappers, so they are unwrapped first.
             let nodes = label.hasMarker || label.nodes.containsSemanticIcon
-                ? label.nodes.normalizingWebIconNames.trimmedTextEdges
+                ? label.nodes.unwrappingBlocks.normalizingWebIconNames.trimmedTextEdges
                 : nil
             let spoken = label.nodes.map(\.spokenText).joined()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -212,8 +218,8 @@ extension StoryNarrativeLocalization {
     /// story text. A text variable can still leave a raw `{icon}` or escape in the label;
     /// then the label stays unsplit so the legacy re-parse handles icons and footnotes in
     /// one pass (`productionVariableFootnoteIsParsed`). A label with catalog icon nodes
-    /// keeps them as `inlineNodes` and is never re-parsed, so it splits regardless and the
-    /// variable's placeholder stays verbatim text.
+    /// keeps them as `inlineNodes` and is never re-parsed, so it splits regardless; its
+    /// variable placeholders were already formatted (`formattingRawPlaceholderRuns`).
     private static func footnotedChoiceLabel(
         _ nodes: [StoryNode]
     ) -> (nodes: [StoryNode], hasMarker: Bool) {
@@ -829,6 +835,39 @@ private extension StoryNode {
 }
 
 private extension [StoryNode] {
+    /// Each maximal run of sibling `.text` nodes that holds a raw `{icon}`, rune token or
+    /// `{asterisk}`/`{underscore}` escape (from a text variable; catalog icons are already
+    /// nodes), parsed like the web's `formatContent` (icons, `_bold_`, `*italic*`, `[^N]`,
+    /// escapes), at any inline depth. Every other run, including one whose only raw
+    /// placeholder is a `[^N]` reference, is unchanged, so literal catalog `*x*` stays text
+    /// and `footnotedChoiceLabel` splits markers as before.
+    var formattingRawPlaceholderRuns: [StoryNode] {
+        var result: [StoryNode] = []
+        var run: [String] = []
+        func flushRun() {
+            guard !run.isEmpty else { return }
+            let text = run.joined()
+            let hasIconOrEscape = StoryNode.splittingFootnoteMarkers(in: text).contains { node in
+                guard case let .text(piece) = node else { return false }
+                return StoryIconInlineParser.containsRawPlaceholder(piece)
+            }
+            result += hasIconOrEscape
+                ? StoryIconInlineParser.runNodes(for: text, iconNode: \.catalogNode)
+                : run.map(StoryNode.text)
+            run = []
+        }
+        for node in self {
+            if case let .text(text) = node {
+                run.append(text)
+                continue
+            }
+            flushRun()
+            result.append(node.formattingNestedRawPlaceholderRuns)
+        }
+        flushRun()
+        return result
+    }
+
     /// Paragraph and heading wrappers spliced into their parent, at any inline depth, so a
     /// one-line title or choice label renders inline. Their plain text is unchanged, since
     /// `plainText` joins sibling blocks without a separator too.
@@ -882,6 +921,38 @@ private extension [StoryNode] {
                 result.append(node)
             }
         }
+    }
+}
+
+private extension StoryNode {
+    /// `self` with raw-placeholder text runs formatted inside its inline children.
+    var formattingNestedRawPlaceholderRuns: StoryNode {
+        switch self {
+        case let .group(children):
+            .group(children.formattingRawPlaceholderRuns)
+        case let .paragraph(children):
+            .paragraph(children.formattingRawPlaceholderRuns)
+        case let .heading(level, children):
+            .heading(level: level, children: children.formattingRawPlaceholderRuns)
+        case let .emphasis(style, children):
+            .emphasis(style, children.formattingRawPlaceholderRuns)
+        case let .cardReference(code, children):
+            .cardReference(code: code, children: children.formattingRawPlaceholderRuns)
+        case .text, .lineBreak, .rule, .image, .icon, .semanticIcon, .footnoteMarker,
+             .list, .table:
+            self
+        }
+    }
+}
+
+private extension WebIconPlaceholder {
+    /// The node a catalog `icon` variable resolves to before `normalizingWebIconNames`:
+    /// a rune keeps its placeholder name (`runeM`), every other icon its parsed node.
+    var catalogNode: StoryNode {
+        if case let .rune(letter) = self {
+            return .icon("rune\(letter)")
+        }
+        return node
     }
 }
 
