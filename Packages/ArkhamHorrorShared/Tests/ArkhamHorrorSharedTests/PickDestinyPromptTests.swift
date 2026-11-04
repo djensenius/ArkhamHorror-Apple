@@ -250,6 +250,41 @@ struct PickDestinyPromptTests {
         #expect(source.contains("proxy.scrollTo(focusedID, anchor: .center)"))
     }
 
+    @Test("Pick Destiny rows show hosted tarot art, rotated 180° only when reversed")
+    func pickDestinyTarotImagePresentation() throws {
+        let key = try #require(PickDestinyTarotImageView.assetKey(forArcana: "TemperanceXIV"))
+        #expect(key == AssetKey(source: .hosted, category: .tarot(.temperance), locale: .english))
+        #expect(AssetLocator.candidates(for: key).map { $0.url(base: .hosted).absoluteString } ==
+            ["https://assets.arkhamhorror.app:443/img/arkham/tarot/tarot-14.jpg"])
+        #expect(PickDestinyTarotImageView.assetKey(forArcana: "NotAnArcana") == nil)
+        #expect(PickDestinyTarotImageView.rotationDegrees(for: .reversed) == 180)
+        #expect(PickDestinyTarotImageView.rotationDegrees(for: .upright) == 0)
+        #expect(PickDestinyTarotImageView.thumbnailWidth == 60)
+        #expect(PickDestinyTarotImageView.thumbnailHeight == 105) // 4:7 portrait
+
+        let source = try pickDestinyPromptViewSource()
+        let symbol = try #require(source.range(of: "\"arrow.uturn.down\"")?.lowerBound)
+        let image = try #require(
+            source.range(of: "PickDestinyTarotImageView(tarot: drawing.tarot)")?.lowerBound
+        )
+        let title = try #require(source.range(of: "Text(row.scenarioTitle)")?.lowerBound)
+        #expect(symbol < image)
+        #expect(image < title)
+
+        let imageSource = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+                .appending(path: "Sources/ArkhamHorrorShared/Presentation/Live")
+                .appending(path: "PickDestinyTarotImageView.swift"),
+            encoding: .utf8
+        )
+        #expect(imageSource.contains(
+            ".rotationEffect(.degrees(Self.rotationDegrees(for: tarot.facing)))"
+        ))
+        #expect(imageSource.contains("reduceMotion ? nil : .easeInOut"))
+        #expect(imageSource.contains(".accessibilityHidden(true)"))
+    }
+
     @Test("AppModel send fence rejects illegal Pick Destiny answers before transport")
     func appModelRejectsIllegalPickDestinyBeforeSend() async throws {
         let model = await GameLifecycleTestModel.makeSignedIn(

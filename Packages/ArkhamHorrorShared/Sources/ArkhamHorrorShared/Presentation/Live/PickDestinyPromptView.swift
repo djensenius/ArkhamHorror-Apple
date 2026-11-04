@@ -159,6 +159,7 @@ struct PickDestinyPromptView: View {
                         : "arrow.up")
                         .frame(width: 22)
                         .accessibilityHidden(true)
+                    PickDestinyTarotImageView(tarot: drawing.tarot)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.scenarioTitle)
                             .font(.callout.weight(.semibold))

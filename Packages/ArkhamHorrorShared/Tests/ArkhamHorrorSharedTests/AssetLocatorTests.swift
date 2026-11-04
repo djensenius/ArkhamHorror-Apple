@@ -248,6 +248,43 @@ struct AssetLocatorTests {
         #expect(urls(candidates) ==
             ["https://assets.arkhamhorror.app:443/img/arkham/tokens/\(expectedName).png"])
     }
+
+    @Test(
+        "Tarot art resolves to tarot/tarot-<n>.jpg, English-only, as JPEG",
+        arguments: [
+            (TarotArcanaArt.theFool, "tarot-0.jpg"),
+            (TarotArcanaArt.temperance, "tarot-14.jpg"),
+            (TarotArcanaArt.theWorld, "tarot-21.jpg"),
+        ]
+    )
+    func tarotResolvesCorrectly(arcana: TarotArcanaArt, expectedName: String) {
+        let category = AssetCategory.tarot(arcana)
+        let expected = ["https://assets.arkhamhorror.app:443/img/arkham/tarot/\(expectedName)"]
+        #expect(urls(AssetLocator.candidates(for: key(category))) == expected)
+        #expect(urls(AssetLocator.candidates(for: key(category, locale: .italian))) == expected)
+        #expect(category.expectedFormat == .jpeg)
+        #expect(!category.isLocalizable)
+    }
+
+    @Test("Every web tarot arcana maps to its tarot-N.jpg number; unknown arcana map to nil")
+    func tarotArcanaImageNumbersMatchWeb() {
+        // Pinned from `tarotArcanaImage` in frontend/src/arkham/types/TarotCard.ts.
+        let web: [String: Int] = [
+            "TheFool0": 0, "TheMagicianI": 1, "TheHighPriestessII": 2, "TheEmpressIII": 3,
+            "TheEmperorIV": 4, "TheHierophantV": 5, "TheLoversVI": 6, "TheChariotVII": 7,
+            "StrengthVIII": 8, "TheHermitIX": 9, "WheelOfFortuneX": 10, "JusticeXI": 11,
+            "TheHangedManXII": 12, "DeathXIII": 13, "TemperanceXIV": 14, "TheDevilXV": 15,
+            "TheTowerXVI": 16, "TheStarXVII": 17, "TheMoonXVIII": 18, "TheSunXIX": 19,
+            "JudgementXX": 20, "TheWorldXXI": 21,
+        ]
+        #expect(TarotArcanaArt.allCases.count == web.count)
+        for (raw, number) in web {
+            #expect(TarotArcanaArt(rawValue: raw)?.imageNumber == number, "\(raw)")
+        }
+        #expect(TarotArcanaArt(rawValue: "TheFool") == nil)
+        #expect(TarotArcanaArt(rawValue: "") == nil)
+        #expect(TarotArcanaArt(rawValue: "thefool0") == nil)
+    }
 }
 
 extension AssetLocatorTests {

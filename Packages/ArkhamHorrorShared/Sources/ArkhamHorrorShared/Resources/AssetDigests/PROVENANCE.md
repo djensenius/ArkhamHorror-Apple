@@ -64,6 +64,9 @@ extension, discarding entries that do not match the card-code grammar
 Entries with any other prefix (e.g. `tarot/`) or a malformed code are dropped;
 this is intentional and fails closed (that entry is simply never treated as
 localized, matching the safe default of falling back to the English asset).
+Tarot art (`tarot/tarot-N.jpg`, shown in Pick Destiny) is English-only by
+design: it is never localized, is fetched at runtime from the asset host like
+other card art, and its image bytes are never vendored or bundled.
 The same pure transformation is re-applied in
 `LocalizedDigestCompactorDriftTests` against the raw upstream files vendored at
 `Tests/ArkhamHorrorSharedTests/Fixtures/LocaleDigests/raw/` to detect drift
