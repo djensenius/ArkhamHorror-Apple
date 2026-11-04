@@ -6,13 +6,19 @@ import SwiftUI
 /// story asset cache (never bundled). The image is decorative: the row's
 /// accessibility label names the arcana and its value names the facing.
 struct PickDestinyTarotImageView: View {
-    static let thumbnailWidth: CGFloat = 60
-    /// The web client's 4:7 tarot aspect ratio.
-    static let thumbnailHeight: CGFloat = thumbnailWidth * 7 / 4
+    static let cornerRadius: CGFloat = 6
 
     let tarot: QuestionPresentation.TarotCard
+    let isCompact: Bool
     @Environment(\.storyAssetCache) private var cacheService
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The thumbnail size, at the web client's 4:7 tarot aspect ratio.
+    /// Compact layouts use a smaller card so several rows fit in the
+    /// compact (240pt) card list.
+    static func size(isCompact: Bool) -> CGSize {
+        isCompact ? CGSize(width: 36, height: 63) : CGSize(width: 60, height: 105)
+    }
 
     /// The hosted, English-only tarot art key, or `nil` for an arcana the
     /// web client has no image for (no image is shown).
@@ -26,15 +32,21 @@ struct PickDestinyTarotImageView: View {
     }
 
     var body: some View {
-        if let cacheService, let key = Self.assetKey(forArcana: tarot.arcana) {
-            LoadedPickDestinyTarotImageView(key: key, cacheService: cacheService)
-                .id(key)
-                .frame(width: Self.thumbnailWidth, height: Self.thumbnailHeight)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .rotationEffect(.degrees(Self.rotationDegrees(for: tarot.facing)))
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: tarot.facing)
-                .accessibilityHidden(true)
+        let size = Self.size(isCompact: isCompact)
+        Group {
+            if let cacheService, let key = Self.assetKey(forArcana: tarot.arcana) {
+                LoadedPickDestinyTarotImageView(key: key, cacheService: cacheService)
+                    .id(key)
+                    .frame(width: size.width, height: size.height)
+                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                    .rotationEffect(.degrees(Self.rotationDegrees(for: tarot.facing)))
+                    .animation(
+                        reduceMotion ? nil : .easeInOut(duration: 0.25),
+                        value: tarot.facing
+                    )
+            }
         }
+        .accessibilityHidden(true)
     }
 }
 
@@ -57,7 +69,10 @@ private struct LoadedPickDestinyTarotImageView: View {
                     .resizable()
                     .scaledToFit()
             case .failure:
-                EmptyView()
+                // No retry (matches BoardAssetImageView); a faint card-shaped
+                // fill keeps the row from showing an empty hole.
+                RoundedRectangle(cornerRadius: PickDestinyTarotImageView.cornerRadius)
+                    .fill(Color.secondary.opacity(0.15))
             }
         }
         .onAppear {

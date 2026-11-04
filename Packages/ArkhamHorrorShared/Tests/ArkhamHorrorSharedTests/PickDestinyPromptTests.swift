@@ -259,13 +259,16 @@ struct PickDestinyPromptTests {
         #expect(PickDestinyTarotImageView.assetKey(forArcana: "NotAnArcana") == nil)
         #expect(PickDestinyTarotImageView.rotationDegrees(for: .reversed) == 180)
         #expect(PickDestinyTarotImageView.rotationDegrees(for: .upright) == 0)
-        #expect(PickDestinyTarotImageView.thumbnailWidth == 60)
-        #expect(PickDestinyTarotImageView.thumbnailHeight == 105) // 4:7 portrait
+        // 4:7 portrait; compact rows use a smaller card so several fit in 240pt.
+        #expect(PickDestinyTarotImageView.size(isCompact: false) == CGSize(width: 60, height: 105))
+        #expect(PickDestinyTarotImageView.size(isCompact: true) == CGSize(width: 36, height: 63))
 
         let source = try pickDestinyPromptViewSource()
         let symbol = try #require(source.range(of: "\"arrow.uturn.down\"")?.lowerBound)
         let image = try #require(
-            source.range(of: "PickDestinyTarotImageView(tarot: drawing.tarot)")?.lowerBound
+            source.range(
+                of: "PickDestinyTarotImageView(tarot: drawing.tarot, isCompact: isCompact)"
+            )?.lowerBound
         )
         let title = try #require(source.range(of: "Text(row.scenarioTitle)")?.lowerBound)
         #expect(symbol < image)
@@ -282,7 +285,21 @@ struct PickDestinyPromptTests {
             ".rotationEffect(.degrees(Self.rotationDegrees(for: tarot.facing)))"
         ))
         #expect(imageSource.contains("reduceMotion ? nil : .easeInOut"))
-        #expect(imageSource.contains(".accessibilityHidden(true)"))
+        // Hidden once, on the outer container, covering image, progress and placeholder.
+        #expect(imageSource.components(separatedBy: ".accessibilityHidden(true)").count == 2)
+        #expect(imageSource.contains("""
+                }
+                .accessibilityHidden(true)
+            }
+        }
+
+        private struct LoadedPickDestinyTarotImageView
+        """))
+        let failure = try #require(imageSource.range(of: "case .failure:")?.upperBound)
+        let placeholder = try #require(
+            imageSource.range(of: ".fill(Color.secondary.opacity(0.15))")?.lowerBound
+        )
+        #expect(failure < placeholder)
     }
 
     @Test("AppModel send fence rejects illegal Pick Destiny answers before transport")
