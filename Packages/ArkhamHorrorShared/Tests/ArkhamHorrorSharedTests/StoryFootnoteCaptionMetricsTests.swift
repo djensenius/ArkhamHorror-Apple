@@ -35,8 +35,8 @@ struct StoryFootnoteCaptionMetricsTests {
     /// Renders the footnote's own note body and the same entry outside a footnote. The note
     /// body must be narrower: its plain text follows the caption font, and its `[^N]` markers
     /// (sized from the `inlineTextStyle` argument `ResolvedStoryEntryView` passes on), its
-    /// entry and node headings and its PlainText all follow the caption
-    /// `storyEntryInlineTextStyle` the footnote sets.
+    /// entry and node headings, its PlainText and its checkpoint and resolution entries all
+    /// follow the caption `storyEntryInlineTextStyle` the footnote sets.
     @Test(
         "The footnote body renders text, markers, headings and PlainText at caption size",
         arguments: [
@@ -50,6 +50,12 @@ struct StoryFootnoteCaptionMetricsTests {
             ])),
             ("plainText", .modified(
                 modifiers: [.plainText], entry: .text("Seal the gate before the dawn breaks")
+            )),
+            ("checkpoint", .modified(
+                modifiers: [.checkpointEntry], entry: .text("Seal the gate before the dawn breaks")
+            )),
+            ("resolution", .modified(
+                modifiers: [.resolutionEntry], entry: .text("Seal the gate before the dawn breaks")
             )),
         ]
     )
