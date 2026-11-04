@@ -110,6 +110,51 @@ struct StoryNodeViewProjectionTests {
         )
     }
 
+    @Test("A footnote label keeps nested valid and invalid entry statuses in place")
+    func footnoteSpokenTextKeepsNestedEntryStatus() {
+        let body: ResolvedStoryEntry = .list(items: [ResolvedStoryListItem(
+            entry: .modified(modifiers: [.validEntry], entry: .text("Seal the gate")),
+            nested: [ResolvedStoryListItem(
+                entry: .columns(entries: [
+                    .modified(modifiers: [.invalidEntry, .redEntry], entry: .text("Burn it")),
+                    .text("Flee"),
+                ]),
+                nested: []
+            )]
+        )])
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("en") {
+            #expect(
+                StoryFootnoteEntryPresentation.spokenText(for: body, cardCatalog: nil)
+                    == "Valid Seal the gate Invalid Burn it Flee"
+            )
+        }
+        CampaignPromptLocalization.$localizationIdentifierOverride.withValue("de") {
+            #expect(
+                StoryFootnoteEntryPresentation.spokenText(for: body, cardCatalog: nil)
+                    == "Gültig Seal the gate Ungültig Burn it Flee"
+            )
+        }
+    }
+
+    @Test("Nested story entries default to body metrics; a footnote body uses caption metrics")
+    func footnoteNestedEntriesUseCaptionInlineStyle() {
+        #expect(EnvironmentValues().storyEntryInlineTextStyle == .body)
+        var footnoteEnvironment = EnvironmentValues()
+        footnoteEnvironment.storyEntryInlineTextStyle = StoryFootnoteEntryPresentation.textStyle
+        #expect(footnoteEnvironment.storyEntryInlineTextStyle == .caption)
+        let bodyMarker = StoryFootnoteMarkerMetrics.run(
+            "3", textStyle: .body, dynamicTypeSize: .large
+        )
+        let captionMarker = StoryFootnoteMarkerMetrics.run(
+            "3", textStyle: .caption, dynamicTypeSize: .large
+        )
+        #expect(captionMarker.pointSize < bodyMarker.pointSize)
+        #expect(
+            StoryWebGlyphFontMetrics.pointSize(forIconNamed: "elderSign", textStyle: .caption)
+                < StoryWebGlyphFontMetrics.pointSize(forIconNamed: "elderSign", textStyle: .body)
+        )
+    }
+
     @Test("The footnote accessibility label exists in the English and German bundles")
     func footnoteAccessibilityLabelIsLocalized() throws {
         let expected = [

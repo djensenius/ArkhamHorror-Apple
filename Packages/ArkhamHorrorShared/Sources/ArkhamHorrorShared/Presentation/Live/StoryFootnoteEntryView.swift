@@ -69,8 +69,12 @@ struct StoryFootnoteEntryPresentation: Equatable {
             value
         case let .nodes(nodes), let .heading(_, nodes):
             StoryNodePresentation.accessibilityLabel(for: nodes)
-        case let .modified(_, entry):
-            spokenText(for: entry, cardCatalog: cardCatalog)
+        case let .modified(modifiers, entry):
+            // `ModifiedResolvedStoryEntryView` labels a valid/invalid entry with an icon.
+            joined([
+                StoryFlavorEntryStatus.status(for: modifiers)?.accessibilityLabel ?? "",
+                spokenText(for: entry, cardCatalog: cardCatalog),
+            ])
         case let .composite(entries), let .columns(entries):
             spokenEntries(entries)
         case let .list(items):
@@ -113,24 +117,16 @@ struct StoryFootnoteEntryView: View {
                 .font(.system(size: presentation.marker.pointSize, weight: .bold))
                 .italic(false)
                 .baselineOffset(presentation.marker.baselineOffset)
-            noteBody
+            ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
                 .font(.system(StoryFootnoteEntryPresentation.textStyle.swiftUITextStyle))
+                .environment(
+                    \.storyEntryInlineTextStyle, StoryFootnoteEntryPresentation.textStyle
+                )
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .foregroundStyle(.secondary)
         .padding(.top, StoryFootnoteEntryPresentation.topPadding)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
-    }
-
-    @ViewBuilder private var noteBody: some View {
-        switch entry {
-        case let .nodes(nodes):
-            StoryNodeSequenceView(
-                nodes: nodes, inlineTextStyle: StoryFootnoteEntryPresentation.textStyle
-            )
-        default:
-            ResolvedStoryEntryView(entry: entry, cardCatalog: cardCatalog)
-        }
     }
 }
