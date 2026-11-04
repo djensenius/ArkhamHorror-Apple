@@ -324,7 +324,7 @@ private struct StoryReferenceText: View {
     }
 }
 
-private struct StoryFlavorTextModifier: ViewModifier {
+struct StoryFlavorTextModifier: ViewModifier {
     let modifiers: [FlavorTextModifier]
     @Environment(\.storyEntryInlineTextStyle) private var inheritedTextStyle
 
@@ -373,11 +373,19 @@ private struct StoryFlavorTextModifier: ViewModifier {
     }
 
     private var font: Font? {
+        Self.font(for: modifiers, inheriting: inheritedTextStyle)
+    }
+
+    /// The entry font for `modifiers` under the inherited `storyEntryInlineTextStyle`:
+    /// PlainText first, then checkpoint and resolution entries, otherwise none.
+    static func font(
+        for modifiers: [FlavorTextModifier], inheriting inherited: StoryInlineTextStyle
+    ) -> Font? {
         if modifiers.contains(.plainText) {
-            return StoryBlockTextStyle.plainText(inheriting: inheritedTextStyle).font
+            return StoryBlockTextStyle.plainText(inheriting: inherited).font
         }
         if modifiers.contains(.checkpointEntry) || modifiers.contains(.resolutionEntry) {
-            return .headline
+            return StoryBlockTextStyle.emphasizedEntry(inheriting: inherited).font
         }
         return nil
     }
@@ -1100,6 +1108,17 @@ struct StoryBlockTextStyle: Equatable {
         case 2: Self(font: .title3, inlineTextStyle: .title3)
         default: Self(font: .headline, inlineTextStyle: .headline)
         }
+    }
+
+    /// Checkpoint and resolution entries: `.headline` in the story body, the inherited
+    /// style in semibold (caption semibold in a footnote) elsewhere, like a heading.
+    static func emphasizedEntry(inheriting inherited: StoryInlineTextStyle) -> Self {
+        inherited == .body
+            ? Self(font: .headline, inlineTextStyle: .headline)
+            : Self(
+                font: .system(inherited.swiftUITextStyle, weight: .semibold),
+                inlineTextStyle: inherited
+            )
     }
 
     static func plainText(inheriting inherited: StoryInlineTextStyle) -> Self {
