@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import Foundation
 
 /// `Arkham.Text.FlavorText`: a story beat's optional title and its ordered body content,
@@ -43,6 +44,7 @@ enum FlavorTextModifier: String, Sendable, Equatable, Hashable, CaseIterable {
     case hauntedEntry = "HauntedEntry"
     case tokenRevealEntry = "TokenRevealEntry"
     case byDifficultyEntry = "ByDifficultyEntry"
+    case returnToEntry = "ReturnToEntry"
 }
 
 enum FlavorTextImageModifier: String, Sendable, Equatable, Hashable, CaseIterable {
