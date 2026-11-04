@@ -716,6 +716,7 @@ EOF
   expect_signature_verdict 0 "${leaf_oid_clause}${xcode_identifier_clause}" \
     "$selfsigned_xcode_fixture" \
     "positive control: the leaf-OID and identifier clauses rejected the self-signed fixture"
+  printf 'PASS: positive control: the leaf-OID and identifier clauses accept the self-signed com.apple.dt.Xcode fixture (exit 0)\n'
   expect_signature_verdict 3 "$anchor_requirement" "$selfsigned_xcode_fixture" \
     "launcher anchor clause accepted a self-signed certificate carrying the App Store leaf OID"
   expect_signature_verdict 3 "$launcher_requirement" "$selfsigned_xcode_fixture" \
