@@ -309,6 +309,13 @@ extension LegacyChoiceTitleInlineIconTests {
         #expect(
             resolved.accessibilityLabel == "Done at Wormius 1927 footnote 5 Per player"
         )
+
+        // A footnote alone (no icon) must still count as a raw placeholder.
+        let footnoteOnly = prompt(question, resolutions: [0: .resolved("Done at 1927[^5]")])
+            .resolvedChoiceLabel(for: question.choices[0], in: projection())
+        #expect(footnoteOnly.title == "Done at 19275")
+        #expect(footnoteOnly.titleNodes == [.text("Done at 1927"), .footnoteMarker("5")])
+        #expect(footnoteOnly.accessibilityLabel == "Done at 1927 footnote 5")
     }
 
     @Test("A legacy no-envelope title speaks icons by name and footnotes as \"footnote N\"")
