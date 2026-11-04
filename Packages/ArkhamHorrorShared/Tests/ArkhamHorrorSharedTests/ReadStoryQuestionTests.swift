@@ -144,6 +144,51 @@ struct ReadStoryQuestionTests {
         )))
     }
 
+    /// Mirrors the Return to The Gathering setup (fork
+    /// NightOfTheZealot/TheGathering.hs:58-64 with `isReturnTo = True`).
+    @Test("Return to The Gathering setup decodes ReturnToEntry on top-level and nested items")
+    func returnToGatheringSetupDecodesReturnToEntry() throws {
+        let bytes = Data(
+            #"{"tag":"Read","flavorText":{"title":"$setup","body":[{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.gatherSets","variables":{}},"nested":[{"entry":{"tag":"ModifyEntry","modifiers":["ReturnToEntry"],"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.returnTo.gatherSets","variables":{}}},"nested":[]}]},{"entry":{"tag":"ModifyEntry","modifiers":["ReturnToEntry"],"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.returnTo.mysteriousGateway","variables":{}}},"nested":[]},{"entry":{"tag":"ModifyEntry","modifiers":["ReturnToEntry"],"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.returnTo.placeLocations","variables":{}}},"nested":[]},{"entry":{"tag":"ModifyEntry","modifiers":["ReturnToEntry"],"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.returnTo.atticAndCellar","variables":{}}},"nested":[]},{"entry":{"tag":"I18nEntry","key":"nightOfTheZealot.theGathering.setup.setOutOfPlay","variables":{}},"nested":[]},{"entry":{"tag":"I18nEntry","key":"shuffleRemainder","variables":{}},"nested":[]}]}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#.utf8
+        )
+        let payload = try ContractJSON.decode(BasicChoiceQuestionPayload.self, from: bytes)
+        #expect(payload.isUpdateRequired == false)
+        let story = try #require(payload.supportedQuestion?.story)
+        #expect(story.flavorText.title == "$setup")
+        let prefix = "nightOfTheZealot.theGathering.setup."
+        func returnTo(_ key: String) -> FlavorTextEntry {
+            .modify(modifiers: [.returnToEntry], entry: .i18n(key: prefix + "returnTo." + key, variables: .object([:])))
+        }
+        func plain(_ key: String) -> FlavorTextEntry {
+            .i18n(key: key, variables: .object([:]))
+        }
+        #expect(story.flavorText.body == [.list(items: [
+            FlavorTextListItem(entry: plain(prefix + "gatherSets"), nested: [FlavorTextListItem(entry: returnTo("gatherSets"), nested: [])]),
+            FlavorTextListItem(entry: returnTo("mysteriousGateway"), nested: []),
+            FlavorTextListItem(entry: returnTo("placeLocations"), nested: []),
+            FlavorTextListItem(entry: returnTo("atticAndCellar"), nested: []),
+            FlavorTextListItem(entry: plain(prefix + "setOutOfPlay"), nested: []),
+            FlavorTextListItem(entry: plain("shuffleRemainder"), nested: []),
+        ])])
+
+        func resolvedReturnTo(_ key: String) -> ResolvedStoryEntry {
+            .modified(modifiers: [.returnToEntry], entry: .text(prefix + "returnTo." + key))
+        }
+        let resolved = StoryNarrativeLocalization.resolve(
+            story.flavorText,
+            resolver: nil,
+            catalogUnavailability: .catalog(.notAdvertised)
+        )
+        #expect(resolved.story?.body == [.list(items: [
+            ResolvedStoryListItem(entry: .text(prefix + "gatherSets"), nested: [ResolvedStoryListItem(entry: resolvedReturnTo("gatherSets"), nested: [])]),
+            ResolvedStoryListItem(entry: resolvedReturnTo("mysteriousGateway"), nested: []),
+            ResolvedStoryListItem(entry: resolvedReturnTo("placeLocations"), nested: []),
+            ResolvedStoryListItem(entry: resolvedReturnTo("atticAndCellar"), nested: []),
+            ResolvedStoryListItem(entry: .text(prefix + "setOutOfPlay"), nested: []),
+            ResolvedStoryListItem(entry: .text("shuffleRemainder"), nested: []),
+        ])])
+    }
+
     @Test(
         "Malformed FootnoteEntry values fail closed to a readable unknown entry, never the whole story",
         arguments: [
@@ -249,7 +294,7 @@ struct ReadStoryQuestionTests {
     }
 
     static var allFlavorEntriesReadQuestion: String {
-        #"{"tag":"Read","flavorText":{"title":"$story.title","body":[{"tag":"BasicEntry","text":"$story.basic"},{"tag":"HeaderEntry","level":2,"key":"story.heading"},{"tag":"I18nEntry","key":"story.i18n","variables":{"name":"Daisy"}},{"tag":"ModifyEntry","modifiers":["BlueEntry","GreenEntry","BorderedEntry","RedEntry","RightAligned","PlainText","InvalidEntry","ValidEntry","CenteredEntry","ResolutionEntry","CheckpointEntry","InterludeEntry","NestedEntry","NoUnderline","CodexEntry","HauntedEntry","TokenRevealEntry","ByDifficultyEntry"],"entry":{"tag":"BasicEntry","text":"Modified"}},{"tag":"CompositeEntry","entries":[{"tag":"BasicEntry","text":"Composite A"},{"tag":"BasicEntry","text":"Composite B"}]},{"tag":"ColumnEntry","entries":[{"tag":"BasicEntry","text":"Column A"},{"tag":"BasicEntry","text":"Column B"}]},{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"story.listItem","variables":{}},"nested":[{"entry":{"tag":"BasicEntry","text":"Nested basic"},"nested":[]}]}]},{"tag":"CardEntry","cardCode":"c01159","imageModifiers":["RemoveImage","SelectImage","SmallImage"]},{"tag":"TarotEntry","tarot":"TheFool0"},{"tag":"ChaosTokenEntry","chaosTokenFace":"Skull"},{"tag":"ChaosTokenMorphEntry","morphFrom":"Skull","morphTo":"Cultist"},{"tag":"EntrySplit"},{"tag":"FootnoteEntry","number":2,"entry":{"tag":"I18nEntry","key":"story.footnote","variables":{}}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#
+        #"{"tag":"Read","flavorText":{"title":"$story.title","body":[{"tag":"BasicEntry","text":"$story.basic"},{"tag":"HeaderEntry","level":2,"key":"story.heading"},{"tag":"I18nEntry","key":"story.i18n","variables":{"name":"Daisy"}},{"tag":"ModifyEntry","modifiers":["BlueEntry","GreenEntry","BorderedEntry","RedEntry","RightAligned","PlainText","InvalidEntry","ValidEntry","CenteredEntry","ResolutionEntry","CheckpointEntry","InterludeEntry","NestedEntry","NoUnderline","CodexEntry","HauntedEntry","TokenRevealEntry","ByDifficultyEntry","ReturnToEntry"],"entry":{"tag":"BasicEntry","text":"Modified"}},{"tag":"CompositeEntry","entries":[{"tag":"BasicEntry","text":"Composite A"},{"tag":"BasicEntry","text":"Composite B"}]},{"tag":"ColumnEntry","entries":[{"tag":"BasicEntry","text":"Column A"},{"tag":"BasicEntry","text":"Column B"}]},{"tag":"ListEntry","list":[{"entry":{"tag":"I18nEntry","key":"story.listItem","variables":{}},"nested":[{"entry":{"tag":"BasicEntry","text":"Nested basic"},"nested":[]}]}]},{"tag":"CardEntry","cardCode":"c01159","imageModifiers":["RemoveImage","SelectImage","SmallImage"]},{"tag":"TarotEntry","tarot":"TheFool0"},{"tag":"ChaosTokenEntry","chaosTokenFace":"Skull"},{"tag":"ChaosTokenMorphEntry","morphFrom":"Skull","morphTo":"Cultist"},{"tag":"EntrySplit"},{"tag":"FootnoteEntry","number":2,"entry":{"tag":"I18nEntry","key":"story.footnote","variables":{}}}]},"readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue","messages":[]}]},"readCards":null}"#
     }
 
     static var allModifiers: [FlavorTextModifier] {
@@ -257,7 +302,7 @@ struct ReadStoryQuestionTests {
             .blueEntry, .greenEntry, .borderedEntry, .redEntry, .rightAligned, .plainText,
             .invalidEntry, .validEntry, .centeredEntry, .resolutionEntry, .checkpointEntry,
             .interludeEntry, .nestedEntry, .noUnderline, .codexEntry, .hauntedEntry,
-            .tokenRevealEntry, .byDifficultyEntry,
+            .tokenRevealEntry, .byDifficultyEntry, .returnToEntry,
         ]
     }
 
