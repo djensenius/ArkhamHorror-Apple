@@ -9,9 +9,13 @@ extension BasicChoicePromptView {
         let submitEnabled = presentation.canSubmit
         let guidanceMessage = amountPrompt.guidanceMessage(for: normalized, in: presentation)
         return VStack(alignment: .leading, spacing: 10) {
-            Text(amountPrompt.legend)
-                .font(.callout.weight(.semibold))
-                .accessibilityIdentifier("liveGame.prompt.amount.legend")
+            FootnotedInlineText(
+                text: amountPrompt.legend,
+                footnote: amountPrompt.legendFootnote,
+                textStyle: .callout
+            )
+            .font(.callout.weight(.semibold))
+            .accessibilityIdentifier("liveGame.prompt.amount.legend")
             ForEach(Array(amountPrompt.visibleRows.enumerated()), id: \.element.id) { index, row in
                 amountRow(row, index: index, amount: normalized[row.id] ?? 0)
             }
@@ -65,7 +69,7 @@ extension BasicChoicePromptView {
     ) -> some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title)
+                FootnotedInlineText(text: row.title, footnote: row.titleFootnote)
                     .font(.body)
                 Text(promptString(
                     "amountPrompt.row.bounds",
@@ -80,8 +84,8 @@ extension BasicChoicePromptView {
                 label: "−",
                 accessibilityLabel: promptString(
                     "amountPrompt.decrease.accessibility",
-                    value: "Decrease \(row.title)",
-                    row.title
+                    value: "Decrease \(row.spokenTitle)",
+                    row.spokenTitle
                 ),
                 focusID: BoardFocusID.promptAmountDecrease(index),
                 disabled: !controller.adjustmentAvailable(rowID: row.id, delta: -1)
@@ -94,8 +98,8 @@ extension BasicChoicePromptView {
                 label: "+",
                 accessibilityLabel: promptString(
                     "amountPrompt.increase.accessibility",
-                    value: "Increase \(row.title)",
-                    row.title
+                    value: "Increase \(row.spokenTitle)",
+                    row.spokenTitle
                 ),
                 focusID: BoardFocusID.promptAmountIncrease(index),
                 disabled: !controller.adjustmentAvailable(rowID: row.id, delta: 1)
@@ -103,7 +107,7 @@ extension BasicChoicePromptView {
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(row.title)
+        .accessibilityLabel(row.spokenTitle)
         .accessibilityValue(promptString(
             "amountPrompt.row.value",
             value: "\(amount), allowed \(row.minBound) to \(row.maxBound)",

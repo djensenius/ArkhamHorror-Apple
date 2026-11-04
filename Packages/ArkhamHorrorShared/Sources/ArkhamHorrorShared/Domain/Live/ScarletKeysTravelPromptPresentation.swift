@@ -12,6 +12,10 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         let isLocked: Bool
         let lockedTitle: String?
         let actions: [Action]
+        /// Set only for labels carrying a `[^N]` footnote (TASK-1.22.12).
+        var titleFootnote: BasicChoiceFootnotedText?
+        var subtitleFootnote: BasicChoiceFootnotedText?
+        var lockedTitleFootnote: BasicChoiceFootnotedText?
 
         var isActionable: Bool {
             title != nil && actions.contains(where: \.isActionable)
@@ -30,6 +34,9 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         let kind: Kind
         let title: String?
         let payload: JSONValue
+        /// Set only for labels carrying a `[^N]` footnote (TASK-1.22.12).
+        var titleFootnote: BasicChoiceFootnotedText?
+        var locationTitleFootnote: BasicChoiceFootnotedText?
 
         var id: String {
             "\(locationID).\(kind.rawValue)"
@@ -38,6 +45,15 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
         var isActionable: Bool {
             locationTitle != nil && title != nil
         }
+
+        /// The titles VoiceOver reads: "footnote N" for footnoted labels.
+        var spokenTitle: String? {
+            titleFootnote?.accessibilityLabel ?? title
+        }
+
+        var spokenLocationTitle: String? {
+            locationTitleFootnote?.accessibilityLabel ?? locationTitle
+        }
     }
 
     let currentLocationID: String
@@ -45,6 +61,9 @@ struct ScarletKeysTravelPromptPresentation: Sendable, Equatable {
     let hasTicket: Bool
     let travelTimeLabel: String?
     let locations: [Location]
+    /// Set only for labels carrying a `[^N]` footnote (TASK-1.22.12).
+    var currentLocationTitleFootnote: BasicChoiceFootnotedText?
+    var travelTimeLabelFootnote: BasicChoiceFootnotedText?
 
     var actions: [Action] {
         locations.flatMap(\.actions)
@@ -111,6 +130,7 @@ extension ScarletKeysTravelPromptPresentation {
         return requests
     }
 
+    // swiftlint:disable:next function_body_length
     static func make(
         rawQuestion: JSONValue,
         presentation: QuestionPresentation,
@@ -124,6 +144,9 @@ extension ScarletKeysTravelPromptPresentation {
         let isFinale = map.availableLocationIDs.count == 1
         let currentLocationTitle = labelResolutions["scarletKeys.youAreCurrentlyHere"]?.title
         let lockedTitle = labelResolutions["scarletKeys.locationLocked"]?.title
+        let lockedTitleFootnote = BasicChoiceFootnotedText(
+            resolution: labelResolutions["scarletKeys.locationLocked"]
+        )
         let travelTimeLabel = labelResolutions["scarletKeysTravel.travelTime"]?.title
         let locations = map.locationIDs.map { locationID in
             let isAvailable = map.availableLocationIDSet.contains(locationID)
@@ -133,9 +156,11 @@ extension ScarletKeysTravelPromptPresentation {
                 ? nil
                 : displayedTravelTime(rawTravelTime, locationID: locationID)
             let isLocked = !isCurrent && !isAvailable
-            let title = labelResolutions[
-                "scarletKeysTravel.location.\(locationID).name"
-            ]?.title
+            let titleResolution = labelResolutions["scarletKeysTravel.location.\(locationID).name"]
+            let subtitleResolution = labelResolutions[
+                "scarletKeysTravel.location.\(locationID).subtitle"
+            ]
+            let title = titleResolution?.title
             let actions = actions(
                 for: locationID,
                 locationTitle: title,
@@ -149,15 +174,16 @@ extension ScarletKeysTravelPromptPresentation {
             return Location(
                 id: locationID,
                 title: title,
-                subtitle: labelResolutions[
-                    "scarletKeysTravel.location.\(locationID).subtitle"
-                ]?.title,
+                subtitle: subtitleResolution?.title,
                 travelTime: travelTime,
                 isAvailable: isAvailable,
                 isCurrent: isCurrent,
                 isLocked: isLocked,
                 lockedTitle: isLocked ? lockedTitle : nil,
-                actions: actions
+                actions: actions,
+                titleFootnote: BasicChoiceFootnotedText(resolution: titleResolution),
+                subtitleFootnote: BasicChoiceFootnotedText(resolution: subtitleResolution),
+                lockedTitleFootnote: isLocked ? lockedTitleFootnote : nil
             )
         }
         return ScarletKeysTravelPromptPresentation(
@@ -165,7 +191,13 @@ extension ScarletKeysTravelPromptPresentation {
             currentLocationTitle: currentLocationTitle,
             hasTicket: map.hasTicket,
             travelTimeLabel: travelTimeLabel,
-            locations: locations
+            locations: locations,
+            currentLocationTitleFootnote: BasicChoiceFootnotedText(
+                resolution: labelResolutions["scarletKeys.youAreCurrentlyHere"]
+            ),
+            travelTimeLabelFootnote: BasicChoiceFootnotedText(
+                resolution: labelResolutions["scarletKeysTravel.travelTime"]
+            )
         )
     }
 
@@ -234,6 +266,7 @@ extension ScarletKeysTravelPromptPresentation {
         locationTitle: String?,
         labelResolutions: [String: BasicChoiceLabelResolution]
     ) -> Action {
+        let titleResolution = labelResolutions["scarletKeysTravel.action.\(kind.rawValue)"]
         let wireTag = switch kind {
         case .travel: "travel"
         case .travelVia: "travelVia"
@@ -243,8 +276,12 @@ extension ScarletKeysTravelPromptPresentation {
             locationID: locationID,
             locationTitle: locationTitle,
             kind: kind,
-            title: labelResolutions["scarletKeysTravel.action.\(kind.rawValue)"]?.title,
-            payload: .array([.string(wireTag), .string(locationID)])
+            title: titleResolution?.title,
+            payload: .array([.string(wireTag), .string(locationID)]),
+            titleFootnote: BasicChoiceFootnotedText(resolution: titleResolution),
+            locationTitleFootnote: BasicChoiceFootnotedText(
+                resolution: labelResolutions["scarletKeysTravel.location.\(locationID).name"]
+            )
         )
     }
 

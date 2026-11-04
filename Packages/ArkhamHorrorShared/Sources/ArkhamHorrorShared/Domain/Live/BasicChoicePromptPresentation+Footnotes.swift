@@ -7,6 +7,28 @@ struct BasicChoiceFootnotedText: Sendable, Equatable {
     let accessibilityLabel: String
 }
 
+extension BasicChoiceFootnotedText {
+    /// A resolved catalog label whose inline nodes carry a `[^N]` footnote marker; `nil`
+    /// for unresolved labels and labels without a footnote.
+    init?(resolution: BasicChoiceLabelResolution?) {
+        guard resolution?.title != nil, let nodes = resolution?.inlineNodes,
+              StoryFootnoteSuperscript.title(for: nodes) != nil
+        else { return nil }
+        self.init(
+            nodes: nodes,
+            accessibilityLabel: resolution?.accessibilityTitle
+                ?? nodes.map(\.spokenText).joined()
+        )
+    }
+
+    /// A raw label carrying a `[^N]` footnote reference, split into text and markers.
+    init?(rawText: String) {
+        let nodes = StoryNode.splittingFootnoteMarkers(in: rawText)
+        guard StoryFootnoteSuperscript.title(for: nodes) != nil else { return nil }
+        self.init(nodes: nodes, accessibilityLabel: nodes.map(\.spokenText).joined())
+    }
+}
+
 extension BasicChoicePromptPresentation {
     /// The question-label header (`headerTitle`) as nodes and spoken text, or `nil` when the
     /// header does not come from the question label or carries no footnote marker.
@@ -14,23 +36,20 @@ extension BasicChoicePromptPresentation {
     /// The web renders this header with mustache, so a raw label shows a literal `[^N]`;
     /// natively the reference renders as a marker, as it does in story text.
     var promptQuestionLabelFootnote: BasicChoiceFootnotedText? {
-        guard semanticPresentation != nil else { return nil }
-        if let resolution = promptLabelResolutions["questionLabel"], resolution.title != nil {
-            guard let nodes = resolution.inlineNodes,
-                  StoryFootnoteSuperscript.title(for: nodes) != nil
-            else { return nil }
-            return BasicChoiceFootnotedText(
-                nodes: nodes,
-                accessibilityLabel: resolution.accessibilityTitle
-                    ?? nodes.map(\.spokenText).joined()
-            )
-        }
-        guard let title = promptQuestionLabelTitle else { return nil }
-        let nodes = StoryNode.splittingFootnoteMarkers(in: title)
-        guard StoryFootnoteSuperscript.title(for: nodes) != nil else { return nil }
-        return BasicChoiceFootnotedText(
-            nodes: nodes,
-            accessibilityLabel: nodes.map(\.spokenText).joined()
+        guard let presentation = semanticPresentation?.presentation else { return nil }
+        return promptLabelFootnote(
+            key: "questionLabel", labelText: presentation.questionLabel?.text
         )
+    }
+
+    /// The footnoted form of a prompt label shown as its resolved catalog title or, for a
+    /// raw (non-`$`) label, its trimmed text; `nil` for fallbacks and footnote-free labels.
+    func promptLabelFootnote(key: String, labelText: String?) -> BasicChoiceFootnotedText? {
+        if let resolution = promptLabelResolutions[key], resolution.title != nil {
+            return BasicChoiceFootnotedText(resolution: resolution)
+        }
+        guard let labelText, !labelText.hasPrefix("$") else { return nil }
+        let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : BasicChoiceFootnotedText(rawText: trimmed)
     }
 }
