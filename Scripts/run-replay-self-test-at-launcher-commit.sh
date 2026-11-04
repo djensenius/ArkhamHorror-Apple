@@ -93,11 +93,17 @@ else
       GIT_COMMITTER_NAME="ArkhamHorror replay self-test" \
       GIT_COMMITTER_EMAIL="replay-self-test@invalid" \
       GIT_COMMITTER_DATE="2000-01-01T00:00:00Z" \
-      "$git_bin" commit-tree "$graft_tree" -p "$launcher_parent" \
+      "$git_bin" commit-tree --no-gpg-sign "$graft_tree" -p "$launcher_parent" \
       -m "Replay self-test graft: launcher $launcher_revision, self-test from $head_revision"
   )"
 fi
 readonly run_revision
+run_commit_object="$("$git_bin" cat-file -p "$run_revision")"
+if [[ "$run_revision" != "$launcher_revision" ]] &&
+  /usr/bin/grep -q '^gpgsig' <<<"$run_commit_object"
+then
+  fail "graft commit is unexpectedly signed"
+fi
 
 # The graft may differ from the launcher commit in the self-test only.
 changed_paths="$("$git_bin" diff-tree -r --name-only "$launcher_revision" "$run_revision")"
