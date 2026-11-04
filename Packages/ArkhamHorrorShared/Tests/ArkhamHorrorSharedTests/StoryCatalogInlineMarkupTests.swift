@@ -1,4 +1,5 @@
 @testable import ArkhamHorrorShared
+import Foundation
 import Testing
 
 @Suite("Story catalog inline icons and footnotes")
@@ -101,6 +102,40 @@ struct StoryCatalogInlineMarkupTests {
         #expect(StoryNarrativeLocalization.resolve(
             flavorText, resolver: resolver, catalogUnavailability: nil
         ) == .resolved(ResolvedStory(title: nil, body: [.nodes(nodes)])))
+    }
+
+    @Test("A FootnoteEntry body keeps catalog italics and its own [^N] markers")
+    func footnoteEntryBodyKeepsCatalogItalicsAndMarkers() async throws {
+        let resolver = try await Self.resolver(
+            entryKeys: ["theDunwichLegacy.prologue.footnote2"],
+            chunkEntries: """
+            {"theDunwichLegacy.prologue.footnote2":{"form":"message","nodes":[\
+            {"type":"text","value":"Translated as "},\
+            {"type":"emphasis","style":"italic","children":[\
+            {"type":"text","value":"DH[^4]"}]},\
+            {"type":"text","value":"."}],"variables":[]}}
+            """
+        )
+        let json = #"""
+        {"tag":"Read","flavorText":{"title":null,"body":[{"tag":"FootnoteEntry","number":2,
+        "entry":{"tag":"I18nEntry","key":"theDunwichLegacy.prologue.footnote2","variables":{}}}]},
+        "readChoices":{"tag":"BasicReadChoices","contents":[{"tag":"Label","label":"$continue",
+        "messages":[]}]},"readCards":null}
+        """#
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self, from: Data(json.utf8)
+        )
+        let flavorText = try #require(payload.supportedQuestion?.story?.flavorText)
+        let note: [StoryNode] = [
+            .text("Translated as "),
+            .emphasis(.italic, [.text("DH"), .footnoteMarker("4")]),
+            .text("."),
+        ]
+        #expect(StoryNarrativeLocalization.resolve(
+            flavorText, resolver: resolver, catalogUnavailability: nil
+        ) == .resolved(ResolvedStory(
+            title: nil, body: [.footnote(number: 2, entry: .nodes(note))]
+        )))
     }
 
     @Test("A footnote number interpolated from a variable still splits into a marker")

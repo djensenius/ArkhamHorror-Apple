@@ -110,6 +110,8 @@ struct ResolvedStoryEntryView: View {
             StoryReferenceText(title: "Chaos token \(from.rawValue) → \(target.rawValue)")
         case .divider:
             Divider()
+        case let .footnote(number, entry):
+            StoryFootnoteEntryView(number: number, entry: entry, cardCatalog: cardCatalog)
         }
     }
 }

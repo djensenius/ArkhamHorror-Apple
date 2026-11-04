@@ -33,6 +33,8 @@ indirect enum ResolvedStoryEntry: Sendable, Equatable {
     case chaosTokenReference(face: ChaosTokenFace)
     case chaosTokenMorph(from: ChaosTokenFace, target: ChaosTokenFace)
     case divider
+    /// A story note rendered in body order: `entry` is the resolved note body.
+    case footnote(number: Int, entry: ResolvedStoryEntry)
 }
 
 struct ResolvedStoryListItem: Sendable, Equatable {
@@ -140,7 +142,7 @@ extension StoryNarrativeLocalization {
         return vocabulary[key] ?? key
     }
 
-    // swiftlint:disable:next cyclomatic_complexity
+    // swiftlint:disable:next cyclomatic_complexity function_body_length
     static func resolvedStaticEntry(
         _ entry: FlavorTextEntry, vocabulary: [String: String]
     ) -> ResolvedStoryEntry? {
@@ -190,6 +192,10 @@ extension StoryNarrativeLocalization {
             return .chaosTokenMorph(from: from, target: target)
         case .split:
             return .divider
+        case let .footnote(number, entry):
+            return resolvedStaticEntry(entry, vocabulary: vocabulary).map {
+                .footnote(number: number, entry: $0)
+            }
         case let .unknown(tag, text):
             return .text(readableUnknownEntry(tag: tag, text: text))
         }

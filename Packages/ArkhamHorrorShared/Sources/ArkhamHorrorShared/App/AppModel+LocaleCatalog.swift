@@ -346,6 +346,12 @@ extension AppModel {
             return .chaosTokenMorph(from: ChaosTokenFace(from), target: ChaosTokenFace(target))
         case "EntrySplit":
             return .split
+        case "FootnoteEntry":
+            guard let number = FlavorTextEntry.footnoteNumber(object["number"]),
+                  let rawEntry = object["entry"],
+                  let converted = presentationFlavorEntry(rawEntry)
+            else { return .unknown(tag: tag, text: presentationUnknownEntryText(object)) }
+            return .footnote(number: number, entry: converted)
         default:
             return .unknown(tag: tag, text: presentationUnknownEntryText(object))
         }
