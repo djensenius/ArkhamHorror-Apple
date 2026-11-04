@@ -555,20 +555,8 @@ extension BasicChoicePromptPresentation {
         revealsHandCardFaces: Bool = true
     ) -> BasicChoiceResolvedChoiceLabel {
         guard let semanticPresentation else {
-            let title = BoardDisplayFormatting.choiceDisplayTitle(
-                for: choice,
-                in: projection,
-                ownerID: ownerID,
-                labelResolution: choiceLabelResolutions[choice.index],
-                revealsHandCardFaces: revealsHandCardFaces
-            )
-            return BasicChoiceResolvedChoiceLabel(
-                title: title,
-                subtitle: nil,
-                systemImage: choice.systemImage,
-                // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
-                // reads their spoken names instead.
-                accessibilityLabel: semanticInlineLabel(title) ?? title
+            return legacyChoiceLabel(
+                for: choice, in: projection, revealsHandCardFaces: revealsHandCardFaces
             )
         }
         guard let descriptor = semanticPresentation.descriptor(forSourceIndex: choice.index) else {
@@ -594,6 +582,43 @@ extension BasicChoicePromptPresentation {
         return resolvedChoiceLabel(
             resolution,
             addingCost: semanticCostSummary(cost, in: projection)
+        )
+    }
+
+    /// The label for a choice without the server's question presentation.
+    private func legacyChoiceLabel(
+        for choice: BasicChoice,
+        in projection: BoardProjection,
+        revealsHandCardFaces: Bool
+    ) -> BasicChoiceResolvedChoiceLabel {
+        let labelResolution = choiceLabelResolutions[choice.index]
+        let title = BoardDisplayFormatting.choiceDisplayTitle(
+            for: choice,
+            in: projection,
+            ownerID: ownerID,
+            labelResolution: labelResolution,
+            revealsHandCardFaces: revealsHandCardFaces
+        )
+        if Self.legacyTitleIsCatalogText(choice), labelResolution?.title == title,
+           let spokenTitle = semanticInlineLabel(title) {
+            // Catalog text keeps web icons and emphasis as inline nodes, like the
+            // presentation path; names and fixed strings below stay literal.
+            return BasicChoiceResolvedChoiceLabel(
+                title: spokenTitle,
+                titleNodes: labelResolution?.inlineNodes
+                    ?? semanticRawLabelNodes(title, title: spokenTitle),
+                subtitle: nil,
+                systemImage: choice.systemImage,
+                accessibilityLabel: spokenTitle
+            )
+        }
+        return BasicChoiceResolvedChoiceLabel(
+            title: title,
+            subtitle: nil,
+            systemImage: choice.systemImage,
+            // The legacy title can still carry raw `{icon}` placeholders; VoiceOver
+            // reads their spoken names instead.
+            accessibilityLabel: semanticInlineLabel(title) ?? title
         )
     }
 
@@ -1156,14 +1181,29 @@ extension BasicChoicePromptPresentation {
         if labelResolution?.title == title, let nodes = labelResolution?.inlineNodes {
             return nodes
         }
-        guard let labelText = descriptor.label?.text,
-              !labelText.hasPrefix("$"),
-              semanticInlineLabel(labelText) == title
-        else {
+        guard let labelText = descriptor.label?.text else { return nil }
+        return semanticRawLabelNodes(labelText, title: title)
+    }
+
+    /// Inline icon and emphasis nodes for a raw label whose spoken form is `title`, or `nil`
+    /// for `$` keys, labels speaking something else, and labels without markup.
+    private func semanticRawLabelNodes(_ labelText: String, title: String) -> [StoryNode]? {
+        guard !labelText.hasPrefix("$"), semanticInlineLabel(labelText) == title else {
             return nil
         }
         let trimmed = labelText.trimmingCharacters(in: .whitespacesAndNewlines)
         return StoryIconInlineParser.nodes(for: trimmed)
+    }
+
+    /// Whether the legacy (no-presentation) title of `choice` is catalog text from its label
+    /// resolution rather than a card, location or investigator name or a fixed string.
+    private static func legacyTitleIsCatalogText(_ choice: BasicChoice) -> Bool {
+        switch choice.content {
+        case .finishMulligan, .chooseAgendaConsequence:
+            true
+        default:
+            false
+        }
     }
 
     private func semanticSubtitle(

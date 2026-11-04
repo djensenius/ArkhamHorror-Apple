@@ -1,0 +1,164 @@
+@testable import ArkhamHorrorShared
+import Foundation
+import Testing
+
+/// Choice prompts without the server's question presentation (the legacy path) render
+/// catalog-sourced titles like the presentation path and leave names untouched.
+@Suite("Legacy choice title inline icons")
+struct LegacyChoiceTitleInlineIconTests {
+    private let ownerID = BoardTestFixtures.playerID()
+
+    private func fixtureQuestion() throws -> BasicChoiceQuestion {
+        let url = try #require(
+            Bundle.module.url(
+                forResource: "question-mulligan",
+                withExtension: "json",
+                subdirectory: "Fixtures/Contract"
+            )
+        )
+        let payload = try ContractJSON.decode(
+            BasicChoiceQuestionPayload.self,
+            from: Data(contentsOf: url)
+        )
+        return try #require(payload.supportedQuestion)
+    }
+
+    private func projection(locations: [(LocationID, Location)] = []) -> BoardProjection {
+        let investigatorID = BoardTestFixtures.investigatorID("c01001")
+        return BoardProjectionBuilder.makeProjection(from: BoardTestFixtures.snapshot(
+            locations: locations,
+            investigators: [
+                investigatorID: BoardTestFixtures.investigator(
+                    id: investigatorID,
+                    hand: [],
+                    playerID: ownerID
+                ),
+            ],
+            playerOrder: [investigatorID],
+            activeInvestigatorID: investigatorID,
+            leadInvestigatorID: investigatorID
+        ))
+    }
+
+    private func prompt(
+        _ question: BasicChoiceQuestion,
+        resolutions: [Int: BasicChoiceLabelResolution]
+    ) -> BasicChoicePromptPresentation {
+        BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: ownerID,
+                questionVersion: 4,
+                rawQuestion: question.rawValue,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: .supported(question),
+            choiceLabelResolutions: resolutions,
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+    }
+
+    @Test("Catalog legacy titles match the presentation path's title, nodes and spoken label")
+    func catalogLegacyTitlesMatchPresentationPath() throws {
+        struct Case {
+            let label: String
+            let title: String
+            let nodes: [StoryNode]?
+
+            init(_ label: String, _ title: String, _ nodes: [StoryNode]?) {
+                self.label = label
+                self.title = title
+                self.nodes = nodes
+            }
+        }
+        let cases: [Case] = [
+            Case(
+                "Reveal {skull} now",
+                "Reveal Skull now",
+                [.text("Reveal "), .semanticIcon(.chaosToken(.skull)), .text(" now")]
+            ),
+            Case("Choose {neutral} {future}", "Choose {neutral} {future}", nil),
+            Case(
+                "Take _1_ {asterisk}",
+                "Take 1 *",
+                [.text("Take "), .emphasis(.bold, [.text("1")]), .text(" *")]
+            ),
+            Case("Keep tdc_rune_m and a_b", "Keep tdc_rune_m and a_b", nil),
+        ]
+        let question = try fixtureQuestion()
+        let choice = question.choices[0]
+        let projection = projection()
+        for testCase in cases {
+            let resolved = prompt(question, resolutions: [0: .resolved(testCase.label)])
+                .resolvedChoiceLabel(for: choice, in: projection)
+            let comment = Comment(rawValue: testCase.label)
+            #expect(resolved.title == testCase.title, comment)
+            #expect(resolved.accessibilityLabel == testCase.title, comment)
+            #expect(resolved.titleNodes == testCase.nodes, comment)
+        }
+    }
+
+    @Test("A resolved catalog label with inline nodes keeps those nodes")
+    func resolvedInlineNodesAreReused() throws {
+        let question = try fixtureQuestion()
+        let nodes: [StoryNode] = [.text("Spend "), .icon("perPlayer"), .text(" clues")]
+        let resolved = prompt(
+            question,
+            resolutions: [0: .resolved(BasicChoiceResolvedLabelText(
+                title: "Spend Per player clues",
+                inlineNodes: nodes
+            ))]
+        ).resolvedChoiceLabel(for: question.choices[0], in: projection())
+
+        #expect(resolved.title == "Spend Per player clues")
+        #expect(resolved.titleNodes == nodes)
+        #expect(resolved.accessibilityLabel == "Spend Per player clues")
+    }
+
+    @Test("Legacy location names keep their literal * and _ characters and no nodes")
+    func nonCatalogLegacyTitlesStayLiteral() throws {
+        let question = try fixtureQuestion()
+        let locationID = BoardTestFixtures.locationID("000000000101")
+        let projection = projection(locations: [
+            (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                id: locationID,
+                label: "Rue *Orsay* _Annex_"
+            ))),
+        ])
+        let choice = BasicChoice(
+            index: 1,
+            rawValue: .null,
+            content: .chooseLocation(locationID: locationID, messages: [])
+        )
+        let resolved = prompt(question, resolutions: [1: .resolved("{skull} _bold_")])
+            .resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Rue *Orsay* _Annex_")
+        #expect(resolved.titleNodes == nil)
+    }
+
+    @Test("Prompt identity and actionability do not depend on the legacy title")
+    func identityAndActionabilityAreUnchanged() throws {
+        let question = try fixtureQuestion()
+        let projection = projection()
+        let raw = prompt(question, resolutions: [0: .resolved("Done at [tdc_rune_m] {perPlayer}")])
+        let plain = prompt(question, resolutions: [0: .resolved("Done replacing cards")])
+        let expectedKey = BasicChoicePromptKey(
+            gameID: BoardTestFixtures.gameID(),
+            ownerID: ownerID,
+            questionVersion: 4,
+            rawQuestion: question.rawValue
+        )
+
+        #expect(raw.identity.promptKey == expectedKey)
+        #expect(plain.identity.promptKey == expectedKey)
+        #expect(raw.isChoiceActionable(question.choices[0], in: projection))
+        #expect(plain.isChoiceActionable(question.choices[0], in: projection))
+        #expect(raw.displayTitle(for: question.choices[0], in: projection)
+            == "Done at Rune M Per player")
+    }
+}
