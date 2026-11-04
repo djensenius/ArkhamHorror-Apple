@@ -26,11 +26,8 @@ struct BasicChoicePromptView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Label(
-                        presentation.headerTitle(in: controller.projection),
-                        systemImage: isStoryPrompt ? "book.closed.fill" : "questionmark.circle.fill"
-                    )
-                    .font(.headline)
+                    headerTitleLabel
+                        .font(.headline)
                     if let subtitle = presentation.headerSubtitle(
                         in: controller.projection,
                         revealsHandCardFaces: revealsPromptOwnerHandCardFaces
@@ -539,9 +536,13 @@ struct BasicChoicePromptView: View {
                             textStyle: .body
                         )
                         if let subtitle = resolved.subtitle {
-                            Text(subtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            StoryInlineTextLabel(
+                                fallbackText: subtitle,
+                                nodes: resolved.subtitleNodes,
+                                textStyle: .caption
+                            )
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -561,6 +562,29 @@ struct BasicChoicePromptView: View {
         // internally; an outer override here would risk silently diverging from it.
         .accessibilityHint(accessibilityHint(for: choice))
         .accessibilityIdentifier("liveGame.prompt.choice.\(choice.index)")
+    }
+
+    /// The prompt header. A question label carrying a `[^N]` footnote renders its marker
+    /// and reads "footnote N"; every other header keeps the plain `Label`.
+    @ViewBuilder
+    private var headerTitleLabel: some View {
+        let title = presentation.headerTitle(in: controller.projection)
+        let systemImage = isStoryPrompt ? "book.closed.fill" : "questionmark.circle.fill"
+        if let footnoted = presentation.promptQuestionLabelFootnote {
+            Label {
+                StoryInlineTextLabel(
+                    fallbackText: title,
+                    nodes: footnoted.nodes,
+                    textStyle: .headline
+                )
+            } icon: {
+                Image(systemName: systemImage)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(verbatim: footnoted.accessibilityLabel))
+        } else {
+            Label(title, systemImage: systemImage)
+        }
     }
 
     @ViewBuilder
