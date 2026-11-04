@@ -70,7 +70,7 @@ jobs:
   replay-self-test:
     name: Production assignment replay self-test
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -80,25 +80,10 @@ jobs:
         uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde
         with:
           cache: true
+      # Runs this commit's self-test against the audited launcher commit; see
+      # the helper's header for why the graft is sound.
       - name: Self-test production assignment replay wrapper (offline)
-        run: |
-          set -euo pipefail
-          replay_revision="$(
-            git log -1 --format=%H -- Scripts/run-production-assignment-replay.sh
-          )"
-          [[ "$replay_revision" =~ ^[0-9a-f]{40}$ ]]
-          scratch_root="$(mktemp -d /private/tmp/arkham-replay-ci.XXXXXX)"
-          replay_worktree="$scratch_root/checkout"
-          cleanup() {
-            git worktree remove --force "$replay_worktree" >/dev/null 2>&1 || true
-            /bin/rmdir "$scratch_root" 2>/dev/null || true
-          }
-          trap cleanup EXIT
-          trap 'exit 129' HUP
-          trap 'exit 130' INT
-          trap 'exit 143' TERM
-          git worktree add --detach "$replay_worktree" "$replay_revision"
-          "$replay_worktree/Scripts/test-run-production-assignment-replay.sh"
+        run: Scripts/run-replay-self-test-at-launcher-commit.sh
 
   contract-provenance:
     name: Contract fixture provenance

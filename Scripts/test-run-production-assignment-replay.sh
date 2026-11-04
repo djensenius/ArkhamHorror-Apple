@@ -44,6 +44,11 @@ readonly scenario_log="$harness_root/scenario.log"
 readonly production_log="$harness_root/production-launch.log"
 readonly signature_log="$harness_root/signature.log"
 readonly adhoc_xcode_fixture="$harness_root/signature-fixture/Xcode.app"
+readonly tampered_xcode_fixture="$harness_root/signature-tampered/Xcode.app"
+readonly selfsigned_root="$harness_root/selfsigned"
+readonly selfsigned_keychain="$selfsigned_root/replay-selftest.keychain-db"
+readonly selfsigned_xcode_fixture="$selfsigned_root/Xcode.app"
+readonly selfsigned_log="$selfsigned_root/keychain.log"
 readonly fake_package_root="$harness_root/fake-package"
 readonly fake_package_launcher="$fake_package_root/Scripts/run-production-assignment-replay.sh"
 readonly fake_package_launcher_hop="$fake_package_root/launcher-hop"
@@ -61,6 +66,7 @@ created_build_root=0
 created_harness_root=0
 created_ignored_derived_data_root=0
 created_ignored_source_root=0
+created_selfsigned_keychain=0
 build_root_identity=""
 harness_root_identity=""
 ignored_derived_data_root_identity=""
@@ -119,8 +125,13 @@ leaf_signing_authority() {
 
 # Sets selected_application to the first candidate of the given kind
 # (app-store or developer-id) that is not signed as Xcode and whose signature
-# verifies on its own, or to "" when none qualifies. Cheap signature metadata
-# is checked first; only remaining candidates are verified.
+# is valid, or to "" when none qualifies. Cheap signature metadata is checked
+# first; each remaining candidate gets one deep verify against the launcher's
+# anchor clause:
+#   kind          exit 0             exit 1           exit 3             other
+#   app-store     select             skip (invalid)   FAIL               FAIL
+#   developer-id  FAIL               skip (invalid)   select             FAIL
+# so a selected app has already proven its anchor-clause verdict.
 selected_application=""
 select_signed_application() {
   local kind="$1"
@@ -145,17 +156,122 @@ select_signed_application() {
       continue
     fi
     status=0
-    /usr/bin/codesign --verify --deep --strict "$candidate" \
+    /usr/bin/codesign --verify --deep --strict \
+      -R="$anchor_requirement" \
+      "$candidate" \
       >"$signature_log" 2>&1 || status=$?
-    if [[ "$status" != 0 ]]; then
-      printf 'note: skipping %s: its signature does not verify (codesign exit %s)\n' \
-        "$candidate" \
-        "$status"
-      continue
-    fi
-    selected_application="$candidate"
-    return 0
+    case "$kind:$status" in
+      app-store:0 | developer-id:3)
+        selected_application="$candidate"
+        return 0
+        ;;
+      *:1)
+        printf 'note: skipping %s: its signature does not verify (codesign exit 1)\n' \
+          "$candidate"
+        continue
+        ;;
+      app-store:3)
+        /bin/cat "$signature_log" >&2
+        fail "anchor clause rejected an App Store Xcode-family app: $candidate"
+        ;;
+      developer-id:0)
+        /bin/cat "$signature_log" >&2
+        fail "anchor clause accepted Developer ID: $candidate"
+        ;;
+      *)
+        /bin/cat "$signature_log" >&2
+        fail "unexpected anchor-clause verdict for $kind application $candidate (codesign exit $status)"
+        ;;
+    esac
   done
+  return 0
+}
+
+# Runs a command that could block on a keychain or key-access prompt:
+#   bounded <step description> <log path> <command> [arguments...]
+# macOS has no timeout(1), so perl restores the default SIGALRM action (an
+# inherited ignored signal would survive exec), arms the alarm, and execs the
+# command; after keychain_step_timeout seconds the command dies with exit 142
+# (128 + SIGALRM), which fails the self-test naming the step. Only the command's
+# own output goes to the log, so that failure and any cleanup warnings still
+# reach the caller's stdout and stderr. Otherwise it returns the command's own
+# exit status.
+readonly keychain_step_timeout=120
+bounded() {
+  local step="$1"
+  local log_path="$2"
+  shift 2
+  local status=0
+  /usr/bin/perl -e '$SIG{ALRM} = "DEFAULT"; alarm shift; exec @ARGV or die "exec failed: $!\n"' \
+    "$keychain_step_timeout" "$@" >"$log_path" 2>&1 || status=$?
+  if [[ "$status" == 142 ]]; then
+    fail "$step timed out after ${keychain_step_timeout}s (a keychain or key-access prompt may be waiting)"
+  fi
+  return "$status"
+}
+
+# Prints the user keychain search list, one path per line.
+user_keychain_search_list() {
+  local listing
+  listing="$(/usr/bin/security list-keychains -d user)" || return 1
+  /usr/bin/sed -n 's/^[[:space:]]*"\(.*\)"[[:space:]]*$/\1/p' <<<"$listing"
+}
+
+# Succeeds only when the user search list is readable and does not contain
+# the self-test keychain.
+selfsigned_keychain_search_status() {
+  local listing
+  listing="$(user_keychain_search_list)" || return 1
+  ! /usr/bin/grep -Fqx -- "$selfsigned_keychain" <<<"$listing"
+}
+
+# Removes only the self-test keychain's entry from the user search list. It
+# never restores a snapshot and never sets an empty list.
+remove_selfsigned_keychain_from_search_list() {
+  local listing entry found=0
+  local -a remaining=()
+  listing="$(user_keychain_search_list)" ||
+    fail "user keychain search list is unavailable"
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    if [[ "$entry" == "$selfsigned_keychain" ]]; then
+      found=1
+    else
+      remaining+=("$entry")
+    fi
+  done <<<"$listing"
+  [[ "$found" == 1 ]] || return 0
+  if [[ "${#remaining[@]}" == 0 ]]; then
+    printf 'note: the self-test keychain is the only user search-list entry; delete-keychain removes it\n'
+    return 0
+  fi
+  /usr/bin/security list-keychains -d user -s "${remaining[@]}" ||
+    fail "could not remove the self-test keychain from the user search list"
+}
+
+# Appends only the self-test keychain to the current user search list.
+append_selfsigned_keychain_to_search_list() {
+  local listing entry
+  local -a entries=()
+  listing="$(user_keychain_search_list)" ||
+    fail "user keychain search list is unavailable"
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    entries+=("$entry")
+  done <<<"$listing"
+  entries+=("$selfsigned_keychain")
+  /usr/bin/security list-keychains -d user -s "${entries[@]}" ||
+    fail "could not add the self-test keychain to the user search list"
+}
+
+sign_selfsigned_fixture() {
+  bounded "signing the fixture with codesign" "$selfsigned_log" \
+    /usr/bin/codesign --force \
+    --sign "$selfsigned_fingerprint" \
+    --keychain "$selfsigned_keychain" \
+    --identifier com.apple.dt.Xcode \
+    --timestamp=none \
+    "$selfsigned_xcode_fixture"
 }
 
 cleanup() {
@@ -190,6 +306,30 @@ cleanup() {
         cleanup_failed=1
     else
       printf 'FAIL: refusing cleanup of unowned ignored-source parent\n' >&2
+      cleanup_failed=1
+    fi
+  fi
+
+  if [[ "$created_selfsigned_keychain" == 1 &&
+    -n "$selfsigned_keychain" &&
+    "$selfsigned_keychain" == "$harness_root/"* ]]
+  then
+    # Subshells keep a fail() inside these helpers from skipping the rest of
+    # cleanup.
+    if [[ -e "$selfsigned_keychain" ]] &&
+      ! (bounded "security delete-keychain (cleanup)" /dev/null \
+        /usr/bin/security delete-keychain "$selfsigned_keychain")
+    then
+      printf 'FAIL: could not delete self-test keychain %s\n' "$selfsigned_keychain" >&2
+      cleanup_failed=1
+    fi
+    # create-keychain may have listed the path without leaving a file, or
+    # delete-keychain may have failed; drop only our own search-list entry.
+    if ! selfsigned_keychain_search_status; then
+      (remove_selfsigned_keychain_from_search_list) >/dev/null 2>&1
+    fi
+    if ! selfsigned_keychain_search_status; then
+      printf 'FAIL: self-test keychain may still be in the user search list\n' >&2
       cleanup_failed=1
     fi
   fi
@@ -344,6 +484,15 @@ expect_signature_verdict 3 "$anchor_requirement" "$adhoc_xcode_fixture" \
   "launcher anchor clause accepted an ad-hoc signature"
 printf 'PASS: launcher signature requirement rejects an ad-hoc re-signed com.apple.dt.Xcode copy\n'
 
+# A damaged bundle must be reported as an invalid signature (exit 1), which
+# select_signed_application skips, not as a requirement mismatch (exit 3).
+/bin/mkdir -p "$(/usr/bin/dirname -- "$tampered_xcode_fixture")"
+/bin/cp -R "$adhoc_xcode_fixture" "$tampered_xcode_fixture"
+printf 'x' >>"$tampered_xcode_fixture/Contents/MacOS/Xcode"
+expect_signature_verdict 1 "$anchor_requirement" "$tampered_xcode_fixture" \
+  "a damaged com.apple.dt.Xcode bundle was not reported as an invalid signature"
+printf 'PASS: a damaged signed bundle is an invalid signature (exit 1), not a requirement mismatch\n'
+
 [[ -d "$apple_platform_application" ]] ||
   fail "Apple platform application fixture is missing: $apple_platform_application"
 expect_signature_verdict 0 "$anchor_requirement" "$apple_platform_application" \
@@ -356,8 +505,7 @@ printf 'PASS: Apple-signed %s satisfies the anchor clause but not the Xcode iden
 select_signed_application app-store /Applications/*.app
 readonly mas_application="$selected_application"
 if [[ -n "$mas_application" ]]; then
-  expect_signature_verdict 0 "$anchor_requirement" "$mas_application" \
-    "launcher anchor clause rejected Mac App Store application $mas_application"
+  # Selection already proved the anchor clause holds (codesign exit 0).
   expect_signature_verdict 3 "$launcher_requirement" "$mas_application" \
     "launcher signature requirement accepted non-Xcode Mac App Store application $mas_application"
   printf 'PASS: Mac App Store %s satisfies the anchor clause but not the Xcode identifier\n' \
@@ -369,14 +517,225 @@ fi
 select_signed_application developer-id /Applications/*.app
 readonly developer_id_application="$selected_application"
 if [[ -n "$developer_id_application" ]]; then
-  expect_signature_verdict 3 "$anchor_requirement" "$developer_id_application" \
-    "launcher anchor clause accepted Developer ID application $developer_id_application"
+  # Selection already proved the anchor clause rejects it (codesign exit 3).
   expect_signature_verdict 3 "$launcher_requirement" "$developer_id_application" \
     "launcher signature requirement accepted Developer ID application $developer_id_application"
   printf 'PASS: launcher anchor clause rejects Developer ID %s\n' \
     "$developer_id_application"
 else
   printf 'SKIP: no verifiable Developer ID application not signed as com.apple.dt.Xcode under /Applications\n'
+fi
+
+# A throwaway self-signed certificate carrying the Mac App Store leaf OID
+# (1.2.840.113635.100.6.1.9). The leaf-OID and identifier clauses alone accept
+# it (positive control), so only `anchor apple generic` keeps the App Store
+# clause from accepting a self-made certificate: the anchor clause and the full
+# requirement must reject it with exit 3. Signing needs a temporary keychain,
+# which touches the user keychain search list, so this runs by default only in
+# GitHub Actions. Locally it is skipped unless ARKHAM_SELFTEST_KEYCHAIN=1. When
+# it runs, every problem (missing tools included) is a failure. It never adds
+# trust settings or touches the System keychain.
+readonly leaf_oid_clause='certificate leaf[field.1.2.840.113635.100.6.1.9]'
+readonly selfsigned_common_name='ArkhamHorror replay self-test (untrusted)'
+selfsigned_fingerprint=""
+if [[ "${GITHUB_ACTIONS:-}" != true && "${ARKHAM_SELFTEST_KEYCHAIN:-}" != 1 ]]; then
+  printf 'SKIP: self-signed leaf-OID keychain scenario runs only in GitHub Actions or with ARKHAM_SELFTEST_KEYCHAIN=1\n'
+else
+  for keychain_tool in /usr/bin/openssl /usr/bin/security /usr/bin/codesign; do
+    [[ -x "$keychain_tool" ]] ||
+      fail "self-signed keychain scenario requires $keychain_tool"
+  done
+  [[ "$launcher_requirement" == *"$leaf_oid_clause"* &&
+    "$launcher_requirement" == *"$xcode_identifier_clause" ]] ||
+    fail "launcher requirement no longer contains the leaf-OID and identifier clauses"
+  /bin/mkdir -m 700 "$selfsigned_root"
+  /bin/cat >"$selfsigned_root/openssl.cnf" <<EOF
+[req]
+distinguished_name = selftest_dn
+x509_extensions = selftest_ext
+prompt = no
+
+[selftest_dn]
+CN = $selfsigned_common_name
+
+[selftest_ext]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+subjectKeyIdentifier = hash
+1.2.840.113635.100.6.1.9 = ASN1:NULL
+EOF
+  if ! /usr/bin/openssl req -x509 -new -newkey rsa:2048 -nodes -sha256 -days 1 \
+    -config "$selfsigned_root/openssl.cnf" \
+    -keyout "$selfsigned_root/key.pem" \
+    -out "$selfsigned_root/cert.pem" \
+    >"$selfsigned_log" 2>&1
+  then
+    /bin/cat "$selfsigned_log" >&2
+    fail "could not create the self-signed certificate"
+  fi
+  selfsigned_text="$(
+    /usr/bin/openssl x509 -in "$selfsigned_root/cert.pem" -noout -text
+  )" || fail "self-signed certificate is unreadable"
+  /usr/bin/grep -Fq '1.2.840.113635.100.6.1.9' <<<"$selfsigned_text" ||
+    fail "self-signed certificate does not carry OID 1.2.840.113635.100.6.1.9"
+  selfsigned_fingerprint="$(
+    /usr/bin/openssl x509 -in "$selfsigned_root/cert.pem" -noout -fingerprint -sha1
+  )" || fail "self-signed certificate fingerprint is unavailable"
+  selfsigned_fingerprint="${selfsigned_fingerprint#*=}"
+  selfsigned_fingerprint="${selfsigned_fingerprint//:/}"
+  [[ "$selfsigned_fingerprint" =~ ^[0-9A-F]{40}$ ]] ||
+    fail "self-signed certificate fingerprint is malformed"
+  pkcs12_password="$(/usr/bin/openssl rand -hex 24)"
+  keychain_password="$(/usr/bin/openssl rand -hex 24)"
+  if [[ "$(/usr/bin/openssl version)" == LibreSSL* ]]; then
+    pkcs12_status=0
+    /usr/bin/openssl pkcs12 -export \
+      -inkey "$selfsigned_root/key.pem" \
+      -in "$selfsigned_root/cert.pem" \
+      -name "$selfsigned_common_name" \
+      -passout "pass:$pkcs12_password" \
+      -out "$selfsigned_root/identity.p12" \
+      >"$selfsigned_log" 2>&1 || pkcs12_status=$?
+  else
+    pkcs12_status=0
+    /usr/bin/openssl pkcs12 -export -legacy \
+      -inkey "$selfsigned_root/key.pem" \
+      -in "$selfsigned_root/cert.pem" \
+      -name "$selfsigned_common_name" \
+      -passout "pass:$pkcs12_password" \
+      -out "$selfsigned_root/identity.p12" \
+      >"$selfsigned_log" 2>&1 || pkcs12_status=$?
+  fi
+  if [[ "$pkcs12_status" != 0 ]]; then
+    /bin/cat "$selfsigned_log" >&2
+    fail "could not export the self-signed identity"
+  fi
+
+  search_list_before="$(user_keychain_search_list)" ||
+    fail "user keychain search list is unavailable"
+  default_keychain_before="$(/usr/bin/security default-keychain -d user)" ||
+    fail "user default keychain is unavailable"
+  [[ ! -e "$selfsigned_keychain" ]] ||
+    fail "self-test keychain path already exists"
+  keychain_status=0
+  # Set before create-keychain, which adds the keychain to the search list,
+  # so an interruption in between still reaches the cleanup backstop.
+  created_selfsigned_keychain=1
+  bounded "security create-keychain" "$selfsigned_log" \
+    /usr/bin/security create-keychain -p "$keychain_password" \
+    "$selfsigned_keychain" || keychain_status=$?
+  if [[ "$keychain_status" != 0 ]]; then
+    /bin/cat "$selfsigned_log" >&2
+    fail "could not create the self-test keychain"
+  fi
+  [[ -f "$selfsigned_keychain" ]] ||
+    fail "self-test keychain was not created at $selfsigned_keychain"
+  remove_selfsigned_keychain_from_search_list
+  [[ "$(user_keychain_search_list)" == "$search_list_before" ]] ||
+    fail "creating the self-test keychain changed the user search list beyond its own entry"
+  [[ "$(/usr/bin/security default-keychain -d user)" == "$default_keychain_before" ]] ||
+    fail "creating the self-test keychain changed the user default keychain"
+  for keychain_step in settings unlock import partition; do
+    keychain_status=0
+    case "$keychain_step" in
+      settings)
+        bounded "security set-keychain-settings" "$selfsigned_log" \
+          /usr/bin/security set-keychain-settings "$selfsigned_keychain" ||
+          keychain_status=$?
+        ;;
+      unlock)
+        bounded "security unlock-keychain" "$selfsigned_log" \
+          /usr/bin/security unlock-keychain -p "$keychain_password" \
+          "$selfsigned_keychain" || keychain_status=$?
+        ;;
+      import)
+        bounded "security import" "$selfsigned_log" \
+          /usr/bin/security import "$selfsigned_root/identity.p12" \
+          -k "$selfsigned_keychain" \
+          -f pkcs12 \
+          -P "$pkcs12_password" \
+          -T /usr/bin/codesign || keychain_status=$?
+        ;;
+      partition)
+        bounded "security set-key-partition-list" "$selfsigned_log" \
+          /usr/bin/security set-key-partition-list \
+          -S apple-tool:,apple:,codesign: \
+          -s \
+          -k "$keychain_password" \
+          "$selfsigned_keychain" || keychain_status=$?
+        /usr/bin/sed 's/^/  set-key-partition-list: /' "$selfsigned_log"
+        ;;
+    esac
+    if [[ "$keychain_status" != 0 ]]; then
+      /bin/cat "$selfsigned_log" >&2
+      fail "self-test keychain step '$keychain_step' failed (exit $keychain_status)"
+    fi
+  done
+
+  /bin/cp -R "$adhoc_xcode_fixture" "$selfsigned_xcode_fixture"
+  if ! sign_selfsigned_fixture; then
+    if [[ "${GITHUB_ACTIONS:-}" == true ]] &&
+      /usr/bin/grep -Fq 'no identity found' "$selfsigned_log" &&
+      selfsigned_keychain_search_status
+    then
+      printf 'note: codesign --keychain did not find the identity off the search list; retrying with only the self-test keychain appended\n'
+      append_selfsigned_keychain_to_search_list
+      sign_status=0
+      sign_selfsigned_fixture || sign_status=$?
+      remove_selfsigned_keychain_from_search_list
+      [[ "$(user_keychain_search_list)" == "$search_list_before" ]] ||
+        fail "user search list was not restored after the temporary self-test keychain entry"
+      if [[ "$sign_status" != 0 ]]; then
+        /bin/cat "$selfsigned_log" >&2
+        fail "could not sign the fixture with the self-signed identity"
+      fi
+    else
+      /bin/cat "$selfsigned_log" >&2
+      fail "could not sign the fixture with the self-signed identity"
+    fi
+  fi
+  selfsigned_details="$(
+    /usr/bin/codesign -d --verbose=2 "$selfsigned_xcode_fixture" 2>&1
+  )" || fail "self-signed fixture signature is unreadable"
+  /usr/bin/grep -Fqx 'Identifier=com.apple.dt.Xcode' <<<"$selfsigned_details" ||
+    fail "self-signed fixture is not signed as com.apple.dt.Xcode"
+  [[ "$(leaf_signing_authority "$selfsigned_xcode_fixture")" == "$selfsigned_common_name" ]] ||
+    fail "self-signed fixture's leaf authority is not the self-test certificate"
+  if /usr/bin/grep -Fqx 'Signature=adhoc' <<<"$selfsigned_details"; then
+    fail "self-signed fixture is still ad-hoc signed"
+  fi
+
+  verify_status=0
+  /usr/bin/codesign --verify --deep --strict "$selfsigned_xcode_fixture" \
+    >"$signature_log" 2>&1 || verify_status=$?
+  if [[ "$verify_status" != 0 ]]; then
+    /bin/cat "$signature_log" >&2
+    fail "self-signed fixture signature does not verify (codesign exit $verify_status)"
+  fi
+  expect_signature_verdict 0 "${leaf_oid_clause}${xcode_identifier_clause}" \
+    "$selfsigned_xcode_fixture" \
+    "positive control: the leaf-OID and identifier clauses rejected the self-signed fixture"
+  printf 'PASS: positive control: the leaf-OID and identifier clauses accept the self-signed com.apple.dt.Xcode fixture (exit 0)\n'
+  expect_signature_verdict 3 "$anchor_requirement" "$selfsigned_xcode_fixture" \
+    "launcher anchor clause accepted a self-signed certificate carrying the App Store leaf OID"
+  expect_signature_verdict 3 "$launcher_requirement" "$selfsigned_xcode_fixture" \
+    "launcher signature requirement accepted a self-signed com.apple.dt.Xcode signature carrying the App Store leaf OID"
+
+  if ! bounded "security delete-keychain" "$selfsigned_log" \
+    /usr/bin/security delete-keychain "$selfsigned_keychain"
+  then
+    /bin/cat "$selfsigned_log" >&2
+    fail "could not delete the self-test keychain"
+  fi
+  created_selfsigned_keychain=0
+  [[ ! -e "$selfsigned_keychain" ]] ||
+    fail "self-test keychain file survived delete-keychain"
+  selfsigned_keychain_search_status ||
+    fail "self-test keychain is still in the user search list"
+  [[ "$(/usr/bin/security default-keychain -d user)" == "$default_keychain_before" ]] ||
+    fail "user default keychain changed during the self-signed scenario"
+  printf 'PASS: anchor apple generic rejects a self-signed com.apple.dt.Xcode signature carrying the App Store leaf OID\n'
 fi
 
 for replay_scenario in \

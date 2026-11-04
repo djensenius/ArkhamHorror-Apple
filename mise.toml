@@ -65,8 +65,8 @@ description = "Offline self-test of verify-locale-digest-provenance.sh's own log
 run = "Scripts/test-verify-locale-digest-provenance.sh"
 
 [tasks.production-assignment-replay-selftest]
-description = "Offline self-test of the fixed launcher and scenario-dispatched replay coordinator"
-run = "Scripts/test-run-production-assignment-replay.sh"
+description = "Offline self-test of the fixed launcher and scenario-dispatched replay coordinator, run as CI runs it (this HEAD's self-test grafted onto the audited launcher commit)"
+run = "Scripts/run-replay-self-test-at-launcher-commit.sh"
 
 [tasks.notz-coverage-replay]
 description = "Replay downloaded Night of the Zealot coverage JSONL prompts through AppModel"

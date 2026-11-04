@@ -423,6 +423,15 @@ mise run build
 `project-check` regenerates `ArkhamHorror.xcodeproj` and fails when the checked-in
 project differs from `project.yml`.
 
+`production-assignment-replay-selftest` runs
+`Scripts/run-replay-self-test-at-launcher-commit.sh`, as CI does. The launcher
+only runs from the commit that last changed it, so the helper grafts `HEAD`'s
+committed `Scripts/test-run-production-assignment-replay.sh` onto that audited
+launcher commit (nothing else changes) and runs it without `DEVELOPER_DIR` in a
+temporary detached worktree. The self-signed certificate scenario creates and
+deletes a temporary keychain, so it runs only in GitHub Actions (or locally with
+`ARKHAM_SELFTEST_KEYCHAIN=1`) and is skipped otherwise.
+
 ## Current limitations
 
 The deterministic Gathering path is playable through setup, investigation,
