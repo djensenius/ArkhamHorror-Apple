@@ -211,6 +211,58 @@ extension BasicChoiceSemanticPresentationTests {
         )
     }
 
+    @Test("Info choice story-body footnotes keep the displayed title and speak \"footnote N\"")
+    func infoStoryBodyFootnoteSpeaksFootnote() throws {
+        let payload = try rawPayload("question-gathering-act-advance")
+        let choice = QuestionPresentation.Choice(
+            sourceIndex: 0,
+            kind: .info,
+            flavorText: .init(title: nil, body: [])
+        )
+        let presentation = QuestionPresentation(
+            protocolVersion: 2,
+            questionVersion: 135,
+            questionKind: .chooseOne,
+            choiceCount: 1,
+            choices: [choice]
+        )
+        let bound = try presentation.bind(to: payload.rawValue, expectedQuestionVersion: 135)
+        // Narrative catalog resolution splits `[^N]` into footnote marker nodes.
+        let body = StoryNode.splittingFootnoteMarkers(in: "Olaus Wormius wrote in 1927[^5].")
+        let prompt = BasicChoicePromptPresentation(
+            identity: BasicChoicePromptIdentity(
+                gameID: BoardTestFixtures.gameID(),
+                ownerID: BoardTestFixtures.playerID(),
+                questionVersion: 135,
+                rawQuestion: payload.rawValue,
+                questionPresentation: presentation,
+                sessionAttemptID: nil,
+                connectionID: nil
+            ),
+            question: payload.state,
+            semanticPresentation: bound,
+            choiceFlavorResolutions: [0: .resolved(ResolvedStory(
+                title: nil,
+                body: [.nodes(body)]
+            ))],
+            readOnlyReason: nil,
+            actionPhase: nil,
+            actionChoiceIndex: nil,
+            serverFeedback: nil
+        )
+        let projection = gatheringProjection(includeAct: false, includeInvestigator: false)
+        let renderedChoice = try #require(prompt.choices.first)
+        let resolved = prompt.resolvedChoiceLabel(for: renderedChoice, in: projection)
+
+        #expect(body == [
+            .text("Olaus Wormius wrote in 1927"), .footnoteMarker("5"), .text("."),
+        ])
+        #expect(resolved.title == "Olaus Wormius wrote in 19275.")
+        #expect(prompt.displayTitle(for: renderedChoice, in: projection)
+            == "Olaus Wormius wrote in 19275.")
+        #expect(resolved.accessibilityLabel == "Olaus Wormius wrote in 1927 footnote 5.")
+    }
+
     private func semanticSummaryEntries(cardCode: CardCode) -> [ResolvedStoryEntry] {
         [
             .heading(level: .level1, nodes: [.text("Heading text")]),

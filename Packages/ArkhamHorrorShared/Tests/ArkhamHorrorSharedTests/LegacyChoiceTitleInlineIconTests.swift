@@ -310,4 +310,31 @@ extension LegacyChoiceTitleInlineIconTests {
             resolved.accessibilityLabel == "Done at Wormius 1927 footnote 5 Per player"
         )
     }
+
+    @Test("A legacy no-envelope title speaks icons by name and footnotes as \"footnote N\"")
+    func legacyNoEnvelopeAccessibilityLabelSpeaksIconsAndFootnotes() throws {
+        let question = try fixtureQuestion()
+        let locationID = BoardTestFixtures.locationID("000000000101")
+        let projection = projection(locations: [
+            (locationID, .ordinary(BoardTestFixtures.ordinaryLocation(
+                id: locationID,
+                label: "Archive {skull} 1927[^5]"
+            ))),
+        ])
+        let choice = BasicChoice(
+            index: 1,
+            rawValue: .null,
+            content: .chooseLocation(locationID: locationID, messages: [])
+        )
+        let prompt = prompt(question, resolutions: [:])
+        let resolved = prompt.resolvedChoiceLabel(for: choice, in: projection)
+
+        #expect(resolved.title == "Archive {skull} 1927[^5]")
+        #expect(resolved.titleNodes == nil)
+        #expect(resolved.accessibilityLabel == "Archive Skull 1927 footnote 5")
+        #expect(
+            prompt.accessibilityLabel(for: choice, in: projection)
+                == "Archive Skull 1927 footnote 5"
+        )
+    }
 }
