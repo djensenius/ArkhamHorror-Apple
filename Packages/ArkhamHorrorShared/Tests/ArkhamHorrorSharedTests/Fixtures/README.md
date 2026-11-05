@@ -2,13 +2,15 @@
 
 ## Contract fixtures
 
-Vendored byte-for-byte from:
-`https://github.com/djensenius/ArkhamHorror@8453314123831e9fb1e7817e34190671b73b8ae0`,
-schema revision `0.1.51`. References below to `backend/` and `frontend/` paths are
-paths in that same ArkhamHorror commit. Local validation can use the exact backend
-worktree as `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
+Vendored byte-for-byte from `https://github.com/djensenius/ArkhamHorror` at the
+backend commit and schema revision recorded in `ContractPin.current`
+(`Packages/ArkhamHorrorShared/Sources/ArkhamHorrorShared/Domain/Contract/ContractPin.swift`),
+which is the source of truth. When this was written that was commit
+`05e537101118c5f8ceb70abae82ab7f59a355d93`, schema revision `0.1.63`. References below
+to `backend/` and `frontend/` paths are paths in that same ArkhamHorror commit. Local
+validation can use the exact backend worktree as `PROVENANCE_BACKEND_REPO_URL` and `LOCALE_CATALOG_BACKEND_REPO_URL`.
 
-These 106 fixture files, and only these 106, live under `Fixtures/Contract/` — a
+The governed contract fixture files, and only those, live under `Fixtures/Contract/` — a
 dedicated subdirectory `ContractFixtureDigestTests` enumerates directly (via
 `Bundle.module.urls(forResourcesWithExtension:subdirectory:)`), so adding, removing, or
 substituting a file there is caught by comparing the directory's actual contents against
@@ -96,7 +98,7 @@ question version `6`; all 114 backend-published negative mutations remain update
 ## Governed assignment continuations
 
 Both remaining-assignment questions and dedicated Answers originate from the immutable
-`djensenius/ArkhamHorror#76` merge. The current revision `0.1.51` manifest and
+`djensenius/ArkhamHorror#76` merge. The manifest at the current pinned revision and
 basic-choice schema continue to govern them. Unlike the former replay-derived draft, these
 questions are generated through the real backend game engine, registered in the manifest,
 schema-validated, and each backed by 16 published single-mutation negatives.
@@ -316,8 +318,8 @@ replay coordinator uses that contract to bind the imported game, player remappin
 checkpoint bytes, backend build identity, and canonical replay envelope before
 submitting any native action. `djensenius/ArkhamHorror#79` repairs the fixture's
 canonical receipt digest and pins these bytes to immutable merge
-`229b89da24546dc6f0a55b2d08ab0f047eb59808`; revision `0.1.51` rebinds that
-same validated fixture to the current contract manifest.
+`229b89da24546dc6f0a55b2d08ab0f047eb59808`; later pins (from revision `0.1.51`
+onward) rebind that same validated fixture to the current contract manifest.
 
 ## token.json / whoami.json
 

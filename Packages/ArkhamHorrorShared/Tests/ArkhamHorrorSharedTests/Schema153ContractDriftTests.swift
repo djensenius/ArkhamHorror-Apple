@@ -5,14 +5,7 @@ import Testing
 @Suite("Schema 0.1.53 contract drift")
 struct Schema153ContractDriftTests {
     private func fixtureData(named fileName: String) throws -> Data {
-        let url = try #require(
-            Bundle.module.url(
-                forResource: fileName,
-                withExtension: "json",
-                subdirectory: "Fixtures/Contract"
-            )
-        )
-        return try Data(contentsOf: url)
+        try ContractFixtures.contractData(fileName)
     }
 
     @Test("0.1.53 get-game forceDraw array decodes from captured fixture bytes")

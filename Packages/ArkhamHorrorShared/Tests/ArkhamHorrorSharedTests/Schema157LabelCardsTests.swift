@@ -27,9 +27,9 @@ struct Schema157LabelCardsTests {
     @Test("Captured 0.1.57 assignment prompts parse exactly like their pre-0.1.57 bytes")
     func assignmentPromptsAcceptBothShapes() throws {
         for name in Self.parsedAssignmentFixtures {
-            let schemaValue = try Schema157Fixtures.value(name)
+            let schemaValue = try ContractFixtures.value(name)
             #expect(try Self.labelQuestion(schemaValue)["labelCards"] == .array([]), "\(name)")
-            let legacyValue = try Schema157Fixtures.legacyValue(name)
+            let legacyValue = try ContractFixtures.legacyValue(name)
             #expect(try Self.labelQuestion(legacyValue)["card"] == .null, "\(name)")
 
             let schemaQuestion = try #require(
@@ -53,13 +53,13 @@ struct Schema157LabelCardsTests {
         for name in Self.semanticAssignmentFixtures {
             let presentation = try ContractJSON.decode(
                 QuestionPresentation.self,
-                from: Schema157Fixtures.contractData(
+                from: ContractFixtures.contractData(
                     name.replacingOccurrences(of: "question-", with: "question-presentation-")
                 )
             )
-            let schemaValue = try Schema157Fixtures.value(name)
+            let schemaValue = try ContractFixtures.value(name)
             #expect(try Self.labelQuestion(schemaValue)["labelCards"] == .array([]), "\(name)")
-            let legacyValue = try Schema157Fixtures.legacyValue(name)
+            let legacyValue = try ContractFixtures.legacyValue(name)
             var renderedChoices: [[JSONValue]] = []
             for raw in [schemaValue, legacyValue] {
                 let binding = try presentation.bind(
@@ -67,7 +67,7 @@ struct Schema157LabelCardsTests {
                 )
                 #expect(binding.rawChoices.count == 1, "\(name)")
                 #expect(binding.isRenderableInCurrentClient, "\(name)")
-                let prompt = Schema157Fixtures.prompt(
+                let prompt = ContractFixtures.prompt(
                     rawQuestion: raw, presentation: presentation, binding: binding
                 )
                 #expect(prompt.isRenderableQuestion, "\(name)")
@@ -87,7 +87,7 @@ struct Schema157LabelCardsTests {
     @Test("Captured 0.1.57 enemy attack assignment keeps its exact choice titles")
     func enemyAttackAssignmentTitles() throws {
         let question = try #require(BasicChoiceParser.parseQuestion(
-            Schema157Fixtures.value("question-enemy-attack-damage-assignment")
+            ContractFixtures.value("question-enemy-attack-damage-assignment")
         ).supportedQuestion)
         #expect(question.choices.map(\.index) == [0, 1])
         #expect(question.choices.map(\.title) == ["Assign 1 damage", "Assign 1 horror"])
@@ -96,15 +96,15 @@ struct Schema157LabelCardsTests {
     @Test("Assignment prompts with both card and labelCards, or a named card, fail closed")
     func assignmentPromptsRejectMixedOrCardBearingShapes() throws {
         for name in Self.parsedAssignmentFixtures {
-            let both = try Self.mutatingLabel(Schema157Fixtures.value(name)) {
+            let both = try Self.mutatingLabel(ContractFixtures.value(name)) {
                 $0["card"] = .null
             }
             #expect(!Self.parsesSupported(both), "\(name)")
-            let neither = try Self.mutatingLabel(Schema157Fixtures.value(name)) {
+            let neither = try Self.mutatingLabel(ContractFixtures.value(name)) {
                 $0["labelCards"] = nil
             }
             #expect(!Self.parsesSupported(neither), "\(name)")
-            let named = try Self.mutatingLabel(Schema157Fixtures.value(name)) {
+            let named = try Self.mutatingLabel(ContractFixtures.value(name)) {
                 $0["labelCards"] = .array([.string("c01001")])
             }
             #expect(!Self.parsesSupported(named), "\(name)")
@@ -132,24 +132,24 @@ struct Schema157LabelCardsTests {
     func genericWrappedBindsBothShapes() throws {
         let presentation = try ContractJSON.decode(
             QuestionPresentation.self,
-            from: Schema157Fixtures.contractData("question-presentation-generic-wrapped")
+            from: ContractFixtures.contractData("question-presentation-generic-wrapped")
         )
         for raw in try [
-            Schema157Fixtures.value("question-generic-wrapped"),
-            Schema157Fixtures.legacyValue("question-generic-wrapped"),
+            ContractFixtures.value("question-generic-wrapped"),
+            ContractFixtures.legacyValue("question-generic-wrapped"),
         ] {
             let binding = try presentation.bind(
                 to: raw, expectedQuestionVersion: presentation.questionVersion
             )
             #expect(binding.rawChoices.count == 1)
             #expect(binding.isRenderableInCurrentClient)
-            let prompt = Schema157Fixtures.prompt(
+            let prompt = ContractFixtures.prompt(
                 rawQuestion: raw, presentation: presentation, binding: binding
             )
             #expect(prompt.isRenderableQuestion)
             #expect(prompt.choices.map(\.index) == [0])
         }
-        let wrapped = try Schema157Fixtures.value("question-generic-wrapped")
+        let wrapped = try ContractFixtures.value("question-generic-wrapped")
         #expect(try Self.innerLabel(wrapped)["labelCards"] == .array([.string("c01120")]))
     }
 
@@ -157,9 +157,9 @@ struct Schema157LabelCardsTests {
     func genericWrappedRejectsMixedShapes() throws {
         let presentation = try ContractJSON.decode(
             QuestionPresentation.self,
-            from: Schema157Fixtures.contractData("question-presentation-generic-wrapped")
+            from: ContractFixtures.contractData("question-presentation-generic-wrapped")
         )
-        let wrapped = try Schema157Fixtures.value("question-generic-wrapped")
+        let wrapped = try ContractFixtures.value("question-generic-wrapped")
         let both = try Self.mutatingInnerLabel(wrapped) { $0["card"] = .string("c01120") }
         let neither = try Self.mutatingInnerLabel(wrapped) { $0["labelCards"] = nil }
         let wrongType = try Self.mutatingInnerLabel(wrapped) {
@@ -196,7 +196,7 @@ struct Schema157LabelCardsTests {
 
     @Test("Representative questionLabel-many presentation carries every label card")
     func presentationLabelCardsDecodeAndRoundTrip() throws {
-        let entry = try Schema157Fixtures.representative(named: "questionLabel-many")
+        let entry = try ContractFixtures.representative(named: "questionLabel-many")
         let presentation = try ContractJSON.decode(
             QuestionPresentation.self, from: ContractJSON.encode(entry)
         )
@@ -209,7 +209,7 @@ struct Schema157LabelCardsTests {
 
     @Test("Presentation labelCards must hold two or more cards led by cardCode")
     func presentationLabelCardsValidation() throws {
-        let entry = try Schema157Fixtures.representative(named: "questionLabel-many")
+        let entry = try ContractFixtures.representative(named: "questionLabel-many")
         guard case var .object(object) = entry else {
             Issue.record("Expected object")
             return
@@ -244,7 +244,7 @@ struct Schema157LabelCardsTests {
 
     private static func labelQuestion(_ value: JSONValue) throws -> [String: JSONValue] {
         guard case let .object(root) = value, case let .object(label)? = root["question"] else {
-            throw Schema157Fixtures.Failure.shape
+            throw ContractFixtures.Failure.shape
         }
         return label
     }
@@ -253,7 +253,7 @@ struct Schema157LabelCardsTests {
         _ value: JSONValue,
         _ mutate: (inout [String: JSONValue]) -> Void
     ) throws -> JSONValue {
-        guard case var .object(root) = value else { throw Schema157Fixtures.Failure.shape }
+        guard case var .object(root) = value else { throw ContractFixtures.Failure.shape }
         var label = try labelQuestion(value)
         mutate(&label)
         root["question"] = .object(label)
@@ -264,7 +264,7 @@ struct Schema157LabelCardsTests {
         guard case let .object(root) = value,
               case let .object(payCost)? = root["question"],
               case let .object(label)? = payCost["question"]
-        else { throw Schema157Fixtures.Failure.shape }
+        else { throw ContractFixtures.Failure.shape }
         return label
     }
 
@@ -273,90 +273,12 @@ struct Schema157LabelCardsTests {
         _ mutate: (inout [String: JSONValue]) -> Void
     ) throws -> JSONValue {
         guard case var .object(root) = value, case var .object(payCost)? = root["question"] else {
-            throw Schema157Fixtures.Failure.shape
+            throw ContractFixtures.Failure.shape
         }
         var label = try innerLabel(value)
         mutate(&label)
         payCost["question"] = .object(label)
         root["question"] = .object(payCost)
         return .object(root)
-    }
-}
-
-/// Loaders for the schema 0.1.57 drift fixtures and their legacy counterparts.
-enum Schema157Fixtures {
-    enum Failure: Error {
-        case shape
-        case missingRepresentative(String)
-    }
-
-    /// Governed 0.1.57 bytes. The pre-repin drift copies in `Fixtures/Schema157Drift` were
-    /// byte-identical to these and were removed when `Fixtures/Contract` was re-vendored.
-    static func data(_ name: String) throws -> Data {
-        try contractData(name)
-    }
-
-    static func value(_ name: String) throws -> JSONValue {
-        try LosslessJSONParser.parse(data(name))
-    }
-
-    static func legacyData(_ name: String) throws -> Data {
-        try load("\(name)-pre-0.1.57", subdirectory: "Fixtures/LegacyContract")
-    }
-
-    static func legacyValue(_ name: String) throws -> JSONValue {
-        try LosslessJSONParser.parse(legacyData(name))
-    }
-
-    static func contractData(_ name: String) throws -> Data {
-        try load(name, subdirectory: "Fixtures/Contract")
-    }
-
-    static func representative(named name: String) throws -> JSONValue {
-        guard case let .object(root) = try value("question-presentation-representatives"),
-              case let .array(entries)? = root["presentations"]
-        else { throw Failure.shape }
-        for case let .object(entry) in entries where entry["name"] == .string(name) {
-            if let presentation = entry["presentation"] {
-                return presentation
-            }
-        }
-        throw Failure.missingRepresentative(name)
-    }
-
-    static func prompt(
-        rawQuestion: JSONValue,
-        presentation: QuestionPresentation,
-        binding: BoundQuestionPresentation
-    ) -> BasicChoicePromptPresentation {
-        BasicChoicePromptPresentation(
-            identity: BasicChoicePromptIdentity(
-                gameID: BoardTestFixtures.gameID(),
-                ownerID: BoardTestFixtures.playerID(),
-                questionVersion: presentation.questionVersion,
-                rawQuestion: rawQuestion,
-                questionPresentation: presentation,
-                sessionAttemptID: nil,
-                connectionID: nil
-            ),
-            question: BasicChoiceParser.parseQuestion(rawQuestion),
-            semanticPresentation: binding,
-            semanticLocaleIdentifier: "en",
-            cardCatalog: nil,
-            choiceLabelResolutions: [:],
-            readOnlyReason: nil,
-            actionPhase: nil,
-            actionChoiceIndex: nil,
-            serverFeedback: nil
-        )
-    }
-
-    private static func load(_ name: String, subdirectory: String) throws -> Data {
-        let url = try #require(Bundle.module.url(
-            forResource: name,
-            withExtension: "json",
-            subdirectory: subdirectory
-        ))
-        return try Data(contentsOf: url)
     }
 }

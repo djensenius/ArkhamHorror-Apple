@@ -12,21 +12,21 @@ import Testing
 struct Schema157BoardFieldsTests {
     @Test("Captured 0.1.57 get-game re-encodes to semantically equal JSON")
     func getGameRoundTrips() throws {
-        let original = try Schema157Fixtures.data("get-game")
+        let original = try ContractFixtures.data("get-game")
         let envelope = try ContractJSON.decode(GetGameEnvelope.self, from: original)
         try expectSemanticRoundTrip(original, ContractJSON.encode(envelope))
     }
 
     @Test("Captured 0.1.57 game-update re-encodes to semantically equal JSON")
     func gameUpdateRoundTrips() throws {
-        let original = try Schema157Fixtures.data("game-update")
+        let original = try ContractFixtures.data("game-update")
         let update = try ContractJSON.decode(BoardSnapshotUpdate.self, from: original)
         try expectSemanticRoundTrip(original, ContractJSON.encode(update))
     }
 
     @Test("Captured 0.1.57 game-list re-encodes to semantically equal JSON")
     func gameListRoundTrips() throws {
-        let original = try Schema157Fixtures.data("game-list")
+        let original = try ContractFixtures.data("game-list")
         let list = try ContractJSON.decode(GameList.self, from: original)
         try expectSemanticRoundTrip(original, ContractJSON.encode(list))
     }
@@ -34,7 +34,7 @@ struct Schema157BoardFieldsTests {
     @Test("Captured 0.1.57 modes re-encode to semantically equal JSON")
     func modesRoundTrip() throws {
         for name in ["mode-turn-zero", "mode-campaign-scenario"] {
-            let original = try Schema157Fixtures.data(name)
+            let original = try ContractFixtures.data(name)
             let mode = try ContractJSON.decode(GameMode.self, from: original)
             try expectSemanticRoundTrip(original, ContractJSON.encode(mode))
         }
@@ -42,7 +42,7 @@ struct Schema157BoardFieldsTests {
 
     @Test("Captured 0.1.57 investigator re-encodes to semantically equal JSON")
     func investigatorRoundTrips() throws {
-        let original = try Schema157Fixtures.data("investigator-unhealed-horror-negative")
+        let original = try ContractFixtures.data("investigator-unhealed-horror-negative")
         let investigator = try ContractJSON.decode(Investigator.self, from: original)
         try expectSemanticRoundTrip(original, ContractJSON.encode(investigator))
     }
@@ -52,7 +52,7 @@ struct Schema157BoardFieldsTests {
     @Test("Captured 0.1.57 fields decode to their present-but-empty or null states")
     func capturedFieldsDecode() throws {
         let game = try ContractJSON.decode(
-            GetGameEnvelope.self, from: Schema157Fixtures.data("get-game")
+            GetGameEnvelope.self, from: ContractFixtures.data("get-game")
         ).game
         let investigator = try #require(game.investigators.values.first)
         let scenario = try #require(Schema157BoardFixtures.scenario(in: game.mode))
@@ -69,7 +69,7 @@ struct Schema157BoardFieldsTests {
 
     @Test("Captured 0.1.57 game-list outcomes decode as null, recorded, or absent")
     func capturedGameListOutcomes() throws {
-        let list = try ContractJSON.decode(GameList.self, from: Schema157Fixtures.data("game-list"))
+        let list = try ContractJSON.decode(GameList.self, from: ContractFixtures.data("game-list"))
         let outcomes = list.map { entry -> GameOutcome?? in
             guard case let .game(summary) = entry else { return nil }
             return summary.outcome
@@ -87,7 +87,7 @@ struct Schema157BoardFieldsTests {
     @Test("Pre-0.1.57 bytes decode with every new field absent")
     func legacyBytesLeaveFieldsAbsent() throws {
         let game = try ContractJSON.decode(
-            GetGameEnvelope.self, from: Schema157Fixtures.legacyData("get-game")
+            GetGameEnvelope.self, from: ContractFixtures.legacyData("get-game")
         ).game
         let investigator = try #require(game.investigators.values.first)
         let scenario = try #require(Schema157BoardFixtures.scenario(in: game.mode))
@@ -100,7 +100,7 @@ struct Schema157BoardFieldsTests {
         #expect(scenario.chaosBag.debugRevealedChaosTokens == nil)
         #expect(scenario.sealedChaosTokens == nil)
         let list = try ContractJSON.decode(
-            GameList.self, from: Schema157Fixtures.legacyData("game-list")
+            GameList.self, from: ContractFixtures.legacyData("game-list")
         )
         for entry in list {
             if case let .game(summary) = entry {
@@ -191,12 +191,12 @@ struct Schema157BoardFieldsTests {
 
     @Test("A malformed off-board investigator is dropped on its own, like other drift there")
     func malformedOffBoardInvestigatorIsDroppedPerEntry() throws {
-        let gameValue = try Schema157Fixtures.value("get-game")
+        let gameValue = try ContractFixtures.value("get-game")
         guard case let .object(root) = gameValue,
               case let .object(game)? = root["game"],
               case let .object(investigators)? = game["investigators"],
               case var .object(investigator)? = investigators["c01001"]
-        else { throw Schema157Fixtures.Failure.shape }
+        else { throw ContractFixtures.Failure.shape }
         investigator["playProhibitions"] = .string("not-an-array")
         let other = JSONValue.object(["c01001": .object(investigator)])
         let data = try ContractJSON.encode(
@@ -313,7 +313,7 @@ enum Schema157BoardFixtures {
 
     /// Applies `(path under "game", JSON literal)` edits to the captured 0.1.57 get-game.
     static func mutatedGetGame(_ edits: [([String], String)]) throws -> Data {
-        var root = try Schema157Fixtures.value("get-game")
+        var root = try ContractFixtures.value("get-game")
         for (path, json) in edits {
             root = try setting(
                 LosslessJSONParser.parse(Data(json.utf8)), at: ["game"] + path, in: root
@@ -329,7 +329,7 @@ enum Schema157BoardFixtures {
     ) throws -> JSONValue {
         guard let key = path.first else { return value }
         guard case var .object(object) = root, let child = object[key] else {
-            throw Schema157Fixtures.Failure.shape
+            throw ContractFixtures.Failure.shape
         }
         object[key] = try setting(value, at: Array(path.dropFirst()), in: child)
         return .object(object)
@@ -337,10 +337,10 @@ enum Schema157BoardFixtures {
 
     static func path(_ json: String) throws -> [String] {
         guard case let .array(items) = try LosslessJSONParser.parse(Data(json.utf8)) else {
-            throw Schema157Fixtures.Failure.shape
+            throw ContractFixtures.Failure.shape
         }
         return try items.map { item in
-            guard case let .string(key) = item else { throw Schema157Fixtures.Failure.shape }
+            guard case let .string(key) = item else { throw ContractFixtures.Failure.shape }
             return key
         }
     }
