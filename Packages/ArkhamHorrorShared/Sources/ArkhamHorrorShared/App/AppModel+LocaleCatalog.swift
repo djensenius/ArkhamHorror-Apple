@@ -66,6 +66,9 @@ extension AppModel {
         else {
             return
         }
+        if localeCatalogDeferredPacks?.state == .failed {
+            localeCatalogDeferredPacks = nil
+        }
         if localeCatalogFailure == nil, localeCatalog != nil {
             retryStoryAssetSource(request, profile: selectedProfile)
         } else {
@@ -112,6 +115,7 @@ extension AppModel {
         _ request: LocaleCatalogRequest, profile: ServerProfile
     ) {
         localeCatalogTask?.cancel()
+        resetLocaleCatalogDeferredPacks()
         localeCatalogGeneration += 1
         let catalogGeneration = localeCatalogGeneration
         localeCatalog = nil
@@ -188,6 +192,7 @@ extension AppModel {
     func invalidateLocaleCatalog(failure: LocaleCatalogFailure? = nil) {
         localeCatalogTask?.cancel()
         localeCatalogTask = nil
+        resetLocaleCatalogDeferredPacks()
         localeCatalogRequest = nil
         localeCatalogGeneration += 1
         localeCatalog = nil
@@ -212,7 +217,13 @@ extension AppModel {
         else { return nil }
         return LocaleCatalogResolver(
             snapshot: snapshot, assetSource: assetCacheService == nil ? nil : storyAssetSource,
-            assetUnavailability: storyAssetUnavailability
+            assetUnavailability: storyAssetUnavailability,
+            deferredPackDemand: { [weak self] in
+                // Called mid-render: only schedule, never mutate observed state here.
+                Task { @MainActor [weak self] in
+                    self?.loadLocaleCatalogDeferredPacks()
+                }
+            }
         )
     }
 
