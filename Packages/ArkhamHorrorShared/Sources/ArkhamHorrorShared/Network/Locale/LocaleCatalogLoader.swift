@@ -134,26 +134,14 @@ struct LocaleCatalogLoader: Sendable {
         }
 
         let snapshot = LocaleCatalogSnapshot(
-            identity: identity, manifest: manifest, chunks: fetched.chunks
+            identity: identity, manifest: manifest, chunks: fetched.chunks,
+            manifestByteCount: manifestBytes.count
         )
         guard snapshot.isComplete else { return .failure(.malformedManifest) }
         await storage?.store(
             snapshot: snapshot, manifestBytes: manifestBytes, chunkBytes: fetched.bytes
         )
         return .success(snapshot)
-    }
-
-    /// Every eager chunk the selected locale's own resolution chain needs — the locale itself
-    /// and every fallback up to and including the default — so a key absent from a partial
-    /// locale always has somewhere to resolve to without a second network round trip
-    /// mid-render. Deferred packs are left for ``loadDeferredPacks(for:advertisement:profile:)``.
-    static func eagerChunkLocations(
-        manifest: LocaleCatalogManifest, locale: String
-    ) throws -> [LocaleCatalogChunkLocation] {
-        guard let locations = manifest.chunkLocations(chainFrom: locale) else {
-            throw LocaleCatalogFailure.malformedManifest
-        }
-        return locations.filter { !$0.isDeferred }
     }
 
     /// The verified chunk set plus the exact bytes each chunk arrived as, so the cache can

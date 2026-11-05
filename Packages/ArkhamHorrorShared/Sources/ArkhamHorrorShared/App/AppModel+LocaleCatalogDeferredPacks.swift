@@ -73,9 +73,42 @@ extension AppModel {
         localeCatalog = loaded
     }
 
+    /// The resolver's demand hook for `snapshot`, or `nil` once its deferred packs are loading,
+    /// loaded or failed (or there are none), so a re-render after that schedules nothing.
+    /// A hook fires at most once: it is called mid-render, so it only schedules the load on
+    /// the main actor and never mutates observed state itself.
+    func localeCatalogDeferredPackDemand(
+        for snapshot: LocaleCatalogSnapshot
+    ) -> (@Sendable () -> Void)? {
+        guard snapshot.hasPendingDeferredPacks,
+              localeCatalogDeferredPacks?.identity != snapshot.identity
+        else { return nil }
+        let once = LocaleCatalogDemandOnce()
+        return { [weak self] in
+            guard once.claim() else { return }
+            Task { @MainActor [weak self] in
+                self?.loadLocaleCatalogDeferredPacks()
+            }
+        }
+    }
+
     func resetLocaleCatalogDeferredPacks() {
         localeCatalogDeferredPackTask?.cancel()
         localeCatalogDeferredPackTask = nil
         localeCatalogDeferredPacks = nil
+    }
+}
+
+/// Lets one resolver's demand hook schedule at most one load, however many lookups miss.
+private final class LocaleCatalogDemandOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !claimed else { return false }
+        claimed = true
+        return true
     }
 }

@@ -180,6 +180,48 @@ struct AppModelLocaleCatalogDeferredPackTests {
         ])
     }
 
+    @Test("Renders schedule no new demand once the load is loading or has failed")
+    func demandHookIsWithdrawnAfterFirstLoad() async throws {
+        let catalog = try VendoredLocaleCatalog.make()
+        let transport = catalog.transport(withheld: catalog.cardNameURLs)
+        let model = await loadedModel(
+            catalog: catalog, loader: LocaleCatalogLoader(transport: transport)
+        )
+        #expect(model.localeCatalogResolver?.deferredPackDemand != nil)
+        model.loadLocaleCatalogDeferredPacks()
+        #expect(model.localeCatalogDeferredPacks?.state == .loading)
+        #expect(model.localeCatalogResolver?.deferredPackDemand == nil)
+        await model.localeCatalogDeferredPackTask?.value
+        #expect(model.localeCatalogDeferredPacks?.state == .failed)
+        #expect(model.localeCatalogResolver?.deferredPackDemand == nil)
+        #expect(shownName(model) == .string("Swarm of Rats"))
+    }
+
+    @Test("Retrying the catalog clears a failed deferred load so the next miss fetches again")
+    func retryClearsFailedDeferredLoad() async throws {
+        let catalog = try VendoredLocaleCatalog.make()
+        let transport = catalog.transport(withheld: catalog.cardNameURLs)
+        let model = await loadedModel(
+            catalog: catalog, loader: LocaleCatalogLoader(transport: transport)
+        )
+        _ = shownName(model)
+        await settle(model)
+        #expect(model.localeCatalogDeferredPacks?.state == .failed)
+        #expect(model.localeCatalogRetryReason != nil)
+
+        model.retryLocaleCatalog()
+        #expect(model.localeCatalogDeferredPacks == nil)
+        await model.localeCatalogTask?.value
+        #expect(model.localeCatalogResolver?.deferredPackDemand != nil)
+        #expect(shownName(model) == .string("Swarm of Rats"))
+        await settle(model)
+
+        #expect(model.localeCatalogDeferredPacks?.state == .failed)
+        #expect(try await cardNameRequests(transport, catalog: catalog) == [
+            catalog.url("de", "cardNames"), catalog.url("de", "cardNames"),
+        ])
+    }
+
     @Test("A profile switch mid-load discards the deferred result")
     func profileSwitchDiscardsDeferredLoad() async throws {
         let catalog = try VendoredLocaleCatalog.make()
@@ -203,7 +245,10 @@ struct AppModelLocaleCatalogDeferredPackTests {
         await model.flowTask?.value
         await model.localeCatalogTask?.value
 
-        #expect(model.localeCatalog?.hasPendingDeferredPacks != false)
+        // The hosted profile's catalog is not served here, so nothing is published for it, and
+        // the old profile's card names were dropped rather than adopted.
+        #expect(model.localeCatalogRequest?.profileID == ServerProfile.hosted.id)
+        #expect(model.localeCatalog == nil)
         #expect(model.localeCatalogDeferredPacks == nil)
     }
 

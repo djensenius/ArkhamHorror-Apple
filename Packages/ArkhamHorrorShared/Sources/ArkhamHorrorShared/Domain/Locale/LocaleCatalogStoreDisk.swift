@@ -94,8 +94,11 @@ extension FileLocaleCatalogStore {
             }
             chunks[location.key] = chunk
         }
+        // The cached manifest is the digest-verified one, so its size is exact; this is how
+        // an entry written before the size was tracked still budgets deferred packs.
         let snapshot = LocaleCatalogSnapshot(
-            identity: identity, manifest: manifest, chunks: chunks
+            identity: identity, manifest: manifest, chunks: chunks,
+            manifestByteCount: manifestBytes.count
         )
         guard snapshot.isComplete else { return nil }
         _ = writeEntryRecord(identity: identity, rootFD: rootFD, entryName: record.name)
@@ -338,6 +341,13 @@ extension FileLocaleCatalogStore {
     /// under a temporary name and renamed into place, so a reader sees either no file or the
     /// whole verified one. The bytes count against the same disk budget, evicting other
     /// entries least-recently-used first; when they cannot fit nothing is written.
+    ///
+    /// Only the entry's net growth is reserved: a corrupt file being repaired is replaced, so
+    /// its current size is subtracted. The planned evictions run *before* any write, so the
+    /// entry's final size already fits and the cache cannot end above budget even if a write
+    /// then fails. On a failed write or directory sync every file this call published is
+    /// removed again, leaving the entry no larger than it was (a replaced corrupt file is
+    /// removed rather than restored, which only shrinks it).
     func writeDeferredToDisk(snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data]) {
         let identity = snapshot.identity
         let entryName = Self.directoryName(for: identity)
@@ -357,29 +367,48 @@ extension FileLocaleCatalogStore {
         let evictions = plannedEvictions(
             scan: scan,
             destination: entryName,
-            reserving: existing.byteCount + files.reduce(0) { $0 + $1.bytes.count }
+            reserving: max(
+                existing.byteCount + files.reduce(0) { $0 + $1.bytes.count - $1.replacedBytes },
+                0
+            )
         ) else {
             return
         }
-        for file in files {
-            guard writeAtomically(file.bytes, directoryFD: directoryFD, name: file.name) else {
-                return
-            }
-        }
-        guard LocaleCatalogPOSIX.syncDirectory(directoryFD) else { return }
         for entry in evictions {
             guard LocaleCatalogPOSIX.remove(parent: rootFD, name: entry.name) else { return }
+        }
+        var published: [String] = []
+        for file in files {
+            guard writeAtomically(file.bytes, directoryFD: directoryFD, name: file.name) else {
+                removePublished(published, directoryFD: directoryFD, rootFD: rootFD)
+                return
+            }
+            published.append(file.name)
+        }
+        guard LocaleCatalogPOSIX.syncDirectory(directoryFD) else {
+            removePublished(published, directoryFD: directoryFD, rootFD: rootFD)
+            return
         }
         _ = writeEntryRecord(identity: identity, rootFD: rootFD, entryName: entryName)
         _ = LocaleCatalogPOSIX.syncDirectory(rootFD)
     }
 
-    /// The deferred chunk files `snapshot` holds that the entry lacks or holds corrupted, or
-    /// `nil` when any supplied bytes do not match their descriptor.
+    /// Rolls back a failed deferred write: removes the files it published, best effort.
+    private func removePublished(_ names: [String], directoryFD: Int32, rootFD: Int32) {
+        for name in names {
+            _ = LocaleCatalogPOSIX.removeIfPresent(parent: directoryFD, name: name)
+        }
+        _ = LocaleCatalogPOSIX.syncDirectory(directoryFD)
+        _ = LocaleCatalogPOSIX.syncDirectory(rootFD)
+    }
+
+    /// The deferred chunk files `snapshot` holds that the entry lacks or holds corrupted, with
+    /// the on-disk size of the file each replaces (`0` when absent), or `nil` when any supplied
+    /// bytes do not match their descriptor.
     private func deferredFilesToWrite(
         snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data], directoryFD: Int32
-    ) -> [(name: String, bytes: Data)]? {
-        var files: [(name: String, bytes: Data)] = []
+    ) -> [DeferredFile]? {
+        var files: [DeferredFile] = []
         for location in Self.uniqueByDigest(snapshot.heldChunkLocations.filter(\.isDeferred)) {
             let descriptor = location.descriptor
             let name = "\(descriptor.sha256).json"
@@ -395,9 +424,19 @@ extension FileLocaleCatalogStore {
             if let present, LocaleCatalogLoader.sha256Hex(present) == descriptor.sha256 {
                 continue
             }
-            files.append((name, bytes))
+            let replacedBytes = LocaleCatalogPOSIX.regularFileSize(
+                parent: directoryFD, name: name
+            ) ?? 0
+            files.append(DeferredFile(name: name, bytes: bytes, replacedBytes: replacedBytes))
         }
         return files
+    }
+
+    /// A deferred chunk file to publish, and the on-disk size of the file it replaces.
+    private struct DeferredFile {
+        let name: String
+        let bytes: Data
+        let replacedBytes: Int
     }
 
     private func writeAtomically(_ bytes: Data, directoryFD: Int32, name: String) -> Bool {
@@ -897,6 +936,21 @@ final class LocaleCatalogDescriptorTracker: @unchecked Sendable {
 
     var isClean: Bool {
         outstandingCount == 0 && violationCount == 0
+    }
+}
+
+extension LocaleCatalogPOSIX {
+    /// The size of the regular file `name`, or `nil` when it is absent or not a regular file
+    /// (which ``directorySize(parent:name:fileLimit:)`` would not have counted either).
+    static func regularFileSize(parent: Int32, name: String) -> Int? {
+        var metadata = stat()
+        guard fstatat(parent, name, &metadata, AT_SYMLINK_NOFOLLOW) == 0,
+              isRegular(metadata),
+              metadata.st_size >= 0
+        else {
+            return nil
+        }
+        return Int(metadata.st_size)
     }
 }
 

@@ -25,6 +25,11 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
     /// The exact endpoint/revision/locale/digest identity this snapshot is bound to.
     let identity: LocaleCatalogIdentity
     let manifest: LocaleCatalogManifest
+    /// The exact size of the digest-verified manifest this snapshot was built from, so a
+    /// deferred-pack load can hold the whole catalog (manifest plus every chunk) to
+    /// ``LocaleCatalogLimits/maxCatalogBytes`` exactly as the eager load does. `nil` only for
+    /// a snapshot built without manifest bytes (tests); see ``manifestBudgetBytes``.
+    let manifestByteCount: Int?
     /// Every verified chunk, keyed by `(locale, pack)`.
     private let chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk]
     /// Lookup follows the verified chunks themselves rather than guessing a pack from a
@@ -35,10 +40,12 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
     init(
         identity: LocaleCatalogIdentity,
         manifest: LocaleCatalogManifest,
-        chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk]
+        chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk],
+        manifestByteCount: Int? = nil
     ) {
         self.identity = identity
         self.manifest = manifest
+        self.manifestByteCount = manifestByteCount
         self.chunks = chunks
         var entries: [LocaleCatalogEntryKey: LocaleCatalogEntry] = [:]
         var duplicates: Set<LocaleCatalogEntryKey> = []
@@ -112,6 +119,13 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
         !pendingDeferredChunks.isEmpty
     }
 
+    /// The manifest bytes a deferred load counts against the catalog budget: the verified
+    /// size when known, otherwise the largest manifest the loader would ever accept, so an
+    /// unknown size can only make the budget stricter.
+    var manifestBudgetBytes: Int {
+        manifestByteCount ?? LocaleCatalogLimits.maxManifestBytes
+    }
+
     /// This snapshot plus *every* pending deferred chunk, or `nil` when `added` is not exactly
     /// that set, a chunk's identity does not match its coordinates, or the merged snapshot
     /// fails ``isComplete`` (for example a key duplicated across packs of one locale).
@@ -128,7 +142,10 @@ struct LocaleCatalogSnapshot: Sendable, Equatable {
             guard chunk.locale == key.locale, chunk.pack == key.pack else { return nil }
         }
         let merged = chunks.merging(added) { current, _ in current }
-        let next = LocaleCatalogSnapshot(identity: identity, manifest: manifest, chunks: merged)
+        let next = LocaleCatalogSnapshot(
+            identity: identity, manifest: manifest, chunks: merged,
+            manifestByteCount: manifestByteCount
+        )
         guard next.isComplete else { return nil }
         return next
     }

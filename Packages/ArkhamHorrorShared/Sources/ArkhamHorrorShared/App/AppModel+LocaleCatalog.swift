@@ -218,12 +218,7 @@ extension AppModel {
         return LocaleCatalogResolver(
             snapshot: snapshot, assetSource: assetCacheService == nil ? nil : storyAssetSource,
             assetUnavailability: storyAssetUnavailability,
-            deferredPackDemand: { [weak self] in
-                // Called mid-render: only schedule, never mutate observed state here.
-                Task { @MainActor [weak self] in
-                    self?.loadLocaleCatalogDeferredPacks()
-                }
-            }
+            deferredPackDemand: localeCatalogDeferredPackDemand(for: snapshot)
         )
     }
 
