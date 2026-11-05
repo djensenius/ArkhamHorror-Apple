@@ -21,16 +21,23 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
     let snapshot: LocaleCatalogSnapshot
     let assetSource: AssetSourceNamespace?
     let assetUnavailability: StoryUnavailableReason
+    /// Called when a key in a ``LocaleCatalogLimits/deferredPacks`` namespace (`cardNames.*`)
+    /// misses while the snapshot still has deferred packs pending, so the owner can load them.
+    /// The lookup itself still misses: the caller keeps its fallback (the server-sent name).
+    /// Called synchronously from the render, so it must only schedule work.
+    let deferredPackDemand: (@Sendable () -> Void)?
     private var richVariables: [String: [StoryNode]] = [:]
 
     init(
         snapshot: LocaleCatalogSnapshot,
         assetSource: AssetSourceNamespace? = nil,
-        assetUnavailability: StoryUnavailableReason = .unsupportedEntry
+        assetUnavailability: StoryUnavailableReason = .unsupportedEntry,
+        deferredPackDemand: (@Sendable () -> Void)? = nil
     ) {
         self.snapshot = snapshot
         self.assetSource = assetSource
         self.assetUnavailability = assetUnavailability
+        self.deferredPackDemand = deferredPackDemand
     }
 
     func render(
@@ -157,6 +164,14 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
         )
     }
 
+    private func reportDeferredMiss(_ key: String) {
+        guard let deferredPackDemand,
+              LocaleCatalogLimits.deferredPacks.contains(where: { key.hasPrefix("\($0).") }),
+              snapshot.hasPendingDeferredPacks
+        else { return }
+        deferredPackDemand()
+    }
+
     private static func lacksPluralSelector(_ variables: JSONValue) -> Bool {
         guard case let .object(named) = variables else { return false }
         return named["count"] == nil && named["n"] == nil
@@ -171,6 +186,7 @@ struct LocaleCatalogResolver: Sendable { // swiftlint:disable:this type_body_len
                 return LocaleCatalogLocatedEntry(locale: candidate, entry: entry)
             }
         }
+        reportDeferredMiss(key)
         return nil
     }
 
