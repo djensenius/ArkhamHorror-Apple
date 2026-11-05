@@ -11,9 +11,13 @@ import Foundation
 ///    **before** the bytes are parsed, let alone trusted;
 /// 4. parse through this module's lossless parser, which rejects duplicate object keys;
 /// 5. validate against the closed v1 manifest schema *and* against the advertisement;
-/// 6. fetch every chunk the selected locale's resolution chain needs, size- and
+/// 6. fetch every eager chunk the selected locale's resolution chain needs, size- and
 ///    digest-checking each one and requiring its declared identity to match the descriptor;
 /// 7. only then construct the immutable snapshot.
+///
+/// ``LocaleCatalogLimits/deferredPacks`` (card names) are left out of step 6. They are
+/// fetched on first need by ``loadDeferredPacks(for:advertisement:profile:)`` through the
+/// same policed fetch and checks, and added to a new snapshot all at once.
 ///
 /// Any failure at any step yields a ``LocaleCatalogFailure`` and no snapshot at all. There is
 /// deliberately no path that publishes a partially assembled revision.
@@ -89,7 +93,7 @@ struct LocaleCatalogLoader: Sendable {
         let fetched: FetchedChunks
         do {
             fetched = try await fetchChunks(
-                manifest: manifest, locale: locale,
+                Self.eagerChunkLocations(manifest: manifest, locale: locale),
                 advertisement: advertisement,
                 profile: profile,
                 origin: origin,
@@ -107,8 +111,9 @@ struct LocaleCatalogLoader: Sendable {
             case let .success(refreshed):
                 do {
                     fetched = try await fetchChunks(
-                        manifest: refreshed.manifest,
-                        locale: locale,
+                        Self.eagerChunkLocations(
+                            manifest: refreshed.manifest, locale: locale
+                        ),
                         advertisement: advertisement,
                         profile: profile,
                         origin: origin,
@@ -138,12 +143,22 @@ struct LocaleCatalogLoader: Sendable {
         return .success(snapshot)
     }
 
-    /// Every chunk the selected locale's own resolution chain needs — the locale itself and
-    /// every fallback up to and including the default — so a key absent from a partial locale
-    /// always has somewhere to resolve to without a second network round trip mid-render.
+    /// Every eager chunk the selected locale's own resolution chain needs — the locale itself
+    /// and every fallback up to and including the default — so a key absent from a partial
+    /// locale always has somewhere to resolve to without a second network round trip
+    /// mid-render. Deferred packs are left for ``loadDeferredPacks(for:advertisement:profile:)``.
+    static func eagerChunkLocations(
+        manifest: LocaleCatalogManifest, locale: String
+    ) throws -> [LocaleCatalogChunkLocation] {
+        guard let locations = manifest.chunkLocations(chainFrom: locale) else {
+            throw LocaleCatalogFailure.malformedManifest
+        }
+        return locations.filter { !$0.isDeferred }
+    }
+
     /// The verified chunk set plus the exact bytes each chunk arrived as, so the cache can
     /// persist and later re-hash the same bytes rather than a re-serialization of them.
-    private struct FetchedChunks {
+    struct FetchedChunks {
         var chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk] = [:]
         var bytes: [String: Data] = [:]
     }
@@ -185,64 +200,59 @@ struct LocaleCatalogLoader: Sendable {
         }
     }
 
-    // swiftlint:disable:next function_parameter_count
-    private func fetchChunks(
-        manifest: LocaleCatalogManifest,
-        locale: String,
+    func fetchChunks(
+        _ locations: [LocaleCatalogChunkLocation],
         advertisement: LocaleCatalogAdvertisement,
         profile: ServerProfile,
         origin: LocaleCatalogOrigin,
-        initialBytes: Int
+        initialBytes: Int,
+        initialChunkCount: Int = 0
     ) async throws -> FetchedChunks {
         var fetched = FetchedChunks()
         var totalBytes = initialBytes
-        for chainLocale in manifest.localeChain(from: locale) {
-            guard let record = manifest.record(for: chainLocale) else {
-                throw LocaleCatalogFailure.malformedManifest
+        for location in locations {
+            let descriptor = location.descriptor
+            try Task.checkCancellation()
+            guard initialChunkCount + fetched.chunks.count < LocaleCatalogLimits.maxSnapshotChunks
+            else {
+                throw LocaleCatalogFailure.tooLarge
             }
-            for descriptor in record.chunks {
-                try Task.checkCancellation()
-                guard fetched.chunks.count < LocaleCatalogLimits.maxSnapshotChunks else {
-                    throw LocaleCatalogFailure.tooLarge
-                }
-                totalBytes += descriptor.bytes
-                guard totalBytes <= LocaleCatalogLimits.maxCatalogBytes else {
-                    throw LocaleCatalogFailure.tooLarge
-                }
-                guard let url = advertisement.resolvedChunkURL(
-                    path: descriptor.path, for: profile
-                ) else { throw LocaleCatalogFailure.unresolvableManifestURL }
-                let bytes = try await fetchVerified(
-                    url,
-                    origin: origin,
-                    maxBytes: min(descriptor.bytes, LocaleCatalogLimits.maxChunkBytes),
-                    expectedDigest: descriptor.sha256,
-                    mismatch: .chunkDigestMismatch
-                )
-                // The manifest promised an exact size, so a shorter body that still hashes to
-                // the promised digest is impossible; checking anyway keeps the two independent.
-                guard bytes.count == descriptor.bytes else {
-                    throw LocaleCatalogFailure.chunkDigestMismatch
-                }
-                guard let value = try? LosslessJSONParser.parse(
-                    bytes, maxByteCount: LocaleCatalogLimits.maxChunkBytes
-                ) else { throw LocaleCatalogFailure.malformedJSON }
-                let validated = LocaleCatalogChunk.validate(
-                    value,
-                    expectedLocale: chainLocale,
-                    expectedFallback: record.fallback,
-                    expectedPack: descriptor.pack,
-                    expectedKeys: descriptor.keys,
-                    expectedUnsupportedKeys: descriptor.unsupportedKeys
-                )
-                switch validated {
-                case let .success(chunk):
-                    let key = LocaleCatalogChunkKey(locale: chainLocale, pack: descriptor.pack)
-                    fetched.chunks[key] = chunk
-                    fetched.bytes[descriptor.sha256] = bytes
-                case let .failure(failure):
-                    throw failure
-                }
+            totalBytes += descriptor.bytes
+            guard totalBytes <= LocaleCatalogLimits.maxCatalogBytes else {
+                throw LocaleCatalogFailure.tooLarge
+            }
+            guard let url = advertisement.resolvedChunkURL(
+                path: descriptor.path, for: profile
+            ) else { throw LocaleCatalogFailure.unresolvableManifestURL }
+            let bytes = try await fetchVerified(
+                url,
+                origin: origin,
+                maxBytes: min(descriptor.bytes, LocaleCatalogLimits.maxChunkBytes),
+                expectedDigest: descriptor.sha256,
+                mismatch: .chunkDigestMismatch
+            )
+            // The manifest promised an exact size, so a shorter body that still hashes to
+            // the promised digest is impossible; checking anyway keeps the two independent.
+            guard bytes.count == descriptor.bytes else {
+                throw LocaleCatalogFailure.chunkDigestMismatch
+            }
+            guard let value = try? LosslessJSONParser.parse(
+                bytes, maxByteCount: LocaleCatalogLimits.maxChunkBytes
+            ) else { throw LocaleCatalogFailure.malformedJSON }
+            let validated = LocaleCatalogChunk.validate(
+                value,
+                expectedLocale: location.locale,
+                expectedFallback: location.fallback,
+                expectedPack: descriptor.pack,
+                expectedKeys: descriptor.keys,
+                expectedUnsupportedKeys: descriptor.unsupportedKeys
+            )
+            switch validated {
+            case let .success(chunk):
+                fetched.chunks[location.key] = chunk
+                fetched.bytes[descriptor.sha256] = bytes
+            case let .failure(failure):
+                throw failure
             }
         }
         return fetched
