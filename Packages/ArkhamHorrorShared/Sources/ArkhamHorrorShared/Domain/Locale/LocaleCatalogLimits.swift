@@ -64,6 +64,11 @@ enum LocaleCatalogLimits {
     /// (minus the manifest itself) rather than assuming a two-locale fallback chain.
     static let maxSnapshotChunks = maxCatalogFiles - 1
 
+    /// Packs a snapshot is usable without. Since schema 0.1.60 each locale's `cardNames` pack
+    /// is over a megabyte and only a `__name`/`__iname` label needs it, so it is fetched,
+    /// verified and cached on first lookup rather than with the rest of the catalog.
+    static let deferredPacks: Set<String> = ["cardNames"]
+
     /// The request timeout applied to every catalog fetch.
     static let requestTimeout: TimeInterval = 30
 }

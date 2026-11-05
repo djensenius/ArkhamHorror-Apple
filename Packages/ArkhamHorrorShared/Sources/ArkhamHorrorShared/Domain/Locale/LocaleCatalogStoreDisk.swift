@@ -7,6 +7,8 @@ import Foundation
 extension FileLocaleCatalogStore {
     private static let entryRecordName = "entry.json"
     private static let entryRecordStagingName = "entry-update.json"
+    /// The temporary name a deferred chunk is written under before its atomic rename.
+    private static let chunkStagingName = "chunk-update.json"
 
     struct DiskEntry: Sendable, Equatable {
         let endpoint: String
@@ -60,11 +62,7 @@ extension FileLocaleCatalogStore {
             return nil
         }
         defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
-        guard LocaleCatalogPOSIX.removeIfPresent(
-            parent: directoryFD, name: Self.entryRecordStagingName
-        ) else {
-            return nil
-        }
+        guard removeStagingFiles(directoryFD: directoryFD) else { return nil }
         guard let record = readEntryRecord(rootFD: rootFD, name: Self.directoryName(for: identity)),
               record.identity == identity,
               let manifestBytes = LocaleCatalogPOSIX.readRegular(
@@ -76,25 +74,31 @@ extension FileLocaleCatalogStore {
         else {
             return nil
         }
-        var chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk] = [:]
-        for chainLocale in manifest.localeChain(from: identity.locale) {
-            guard let record = manifest.record(for: chainLocale) else { return nil }
-            for descriptor in record.chunks {
-                guard chunks.count < LocaleCatalogLimits.maxSnapshotChunks,
-                      let chunk = readChunk(
-                          directoryFD: directoryFD,
-                          descriptor: descriptor,
-                          locale: chainLocale,
-                          fallback: record.fallback
-                      )
-                else {
-                    return nil
-                }
-                chunks[LocaleCatalogChunkKey(locale: chainLocale, pack: descriptor.pack)] = chunk
-            }
+        // Only the eager packs are required, so an entry written before deferred packs
+        // existed (which also holds the `cardNames` files) still loads as is; those files are
+        // picked up by `readDeferredFromDisk` on first need.
+        guard let locations = manifest.chunkLocations(chainFrom: identity.locale) else {
+            return nil
         }
+        var chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk] = [:]
+        for location in locations where !location.isDeferred {
+            guard chunks.count < LocaleCatalogLimits.maxSnapshotChunks,
+                  let chunk = readChunk(
+                      directoryFD: directoryFD,
+                      descriptor: location.descriptor,
+                      locale: location.locale,
+                      fallback: location.fallback
+                  )
+            else {
+                return nil
+            }
+            chunks[location.key] = chunk
+        }
+        // The cached manifest is the digest-verified one, so its size is exact; this is how
+        // an entry written before the size was tracked still budgets deferred packs.
         let snapshot = LocaleCatalogSnapshot(
-            identity: identity, manifest: manifest, chunks: chunks
+            identity: identity, manifest: manifest, chunks: chunks,
+            manifestByteCount: manifestBytes.count
         )
         guard snapshot.isComplete else { return nil }
         _ = writeEntryRecord(identity: identity, rootFD: rootFD, entryName: record.name)
@@ -187,8 +191,15 @@ extension FileLocaleCatalogStore {
             return false
         }
         defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
-        return LocaleCatalogPOSIX.removeIfPresent(
+        return removeStagingFiles(directoryFD: directoryFD)
+    }
+
+    /// Removes an interrupted entry-record or deferred-chunk write.
+    private func removeStagingFiles(directoryFD: Int32) -> Bool {
+        LocaleCatalogPOSIX.removeIfPresent(
             parent: directoryFD, name: Self.entryRecordStagingName
+        ) && LocaleCatalogPOSIX.removeIfPresent(
+            parent: directoryFD, name: Self.chunkStagingName
         )
     }
 
@@ -253,16 +264,12 @@ extension FileLocaleCatalogStore {
         ) else {
             return
         }
-        for locale in snapshot.localeChain {
-            guard let record = snapshot.manifest.record(for: locale) else { return }
-            for descriptor in record.chunks {
-                guard let bytes = chunkBytes[descriptor.sha256],
-                      LocaleCatalogPOSIX.writeRegular(
-                          bytes, parent: stagingFD, name: "\(descriptor.sha256).json"
-                      )
-                else {
-                    return
-                }
+        for location in Self.uniqueByDigest(snapshot.heldChunkLocations) {
+            let digest = location.descriptor.sha256
+            guard let bytes = chunkBytes[digest],
+                  LocaleCatalogPOSIX.writeRegular(bytes, parent: stagingFD, name: "\(digest).json")
+            else {
+                return
             }
         }
         guard writeEntryRecord(
@@ -299,25 +306,176 @@ extension FileLocaleCatalogStore {
         _ = LocaleCatalogPOSIX.syncDirectory(rootFD)
     }
 
+    /// `snapshot` plus every pending deferred chunk read from its own entry directory, each
+    /// re-hashed and re-validated, or `nil` when the entry or any chunk is missing or bad.
+    func readDeferredFromDisk(snapshot: LocaleCatalogSnapshot) -> LocaleCatalogSnapshot? {
+        let identity = snapshot.identity
+        let entryName = Self.directoryName(for: identity)
+        guard let rootFD = LocaleCatalogPOSIX.openDirectory(path: root.path()) else {
+            return nil
+        }
+        defer { LocaleCatalogPOSIX.closeDescriptor(rootFD) }
+        guard let record = readEntryRecord(rootFD: rootFD, name: entryName),
+              record.identity == identity,
+              let directoryFD = LocaleCatalogPOSIX.openDirectory(parent: rootFD, name: entryName)
+        else {
+            return nil
+        }
+        defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
+        var chunks: [LocaleCatalogChunkKey: LocaleCatalogChunk] = [:]
+        for location in snapshot.pendingDeferredChunks {
+            guard let chunk = readChunk(
+                directoryFD: directoryFD,
+                descriptor: location.descriptor,
+                locale: location.locale,
+                fallback: location.fallback
+            ) else {
+                return nil
+            }
+            chunks[location.key] = chunk
+        }
+        return snapshot.adding(chunks: chunks)
+    }
+
+    /// Adds `snapshot`'s deferred chunks to its existing entry directory. Each file is written
+    /// under a temporary name and renamed into place, so a reader sees either no file or the
+    /// whole verified one. The bytes count against the same disk budget, evicting other
+    /// entries least-recently-used first; when they cannot fit nothing is written.
+    ///
+    /// Only the entry's net growth is reserved: a corrupt file being repaired is replaced, so
+    /// its current size is subtracted. The planned evictions run *before* any write, so the
+    /// entry's final size already fits and the cache cannot end above budget even if a write
+    /// then fails. On a failed write or directory sync every file this call published is
+    /// removed again, leaving the entry no larger than it was (a replaced corrupt file is
+    /// removed rather than restored, which only shrinks it).
+    func writeDeferredToDisk(snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data]) {
+        let identity = snapshot.identity
+        let entryName = Self.directoryName(for: identity)
+        guard let rootFD = LocaleCatalogPOSIX.openDirectory(path: root.path()) else { return }
+        defer { LocaleCatalogPOSIX.closeDescriptor(rootFD) }
+        guard let scan = scanRoot(rootFD),
+              let existing = scan.entries.first(where: { $0.name == entryName }),
+              existing.identity == identity,
+              let directoryFD = LocaleCatalogPOSIX.openDirectory(parent: rootFD, name: entryName)
+        else {
+            return
+        }
+        defer { LocaleCatalogPOSIX.closeDescriptor(directoryFD) }
+        guard let files = deferredFilesToWrite(
+            snapshot: snapshot, chunkBytes: chunkBytes, directoryFD: directoryFD
+        ), !files.isEmpty,
+        let evictions = plannedEvictions(
+            scan: scan,
+            destination: entryName,
+            reserving: max(
+                existing.byteCount + files.reduce(0) { $0 + $1.bytes.count - $1.replacedBytes },
+                0
+            )
+        ) else {
+            return
+        }
+        for entry in evictions {
+            guard LocaleCatalogPOSIX.remove(parent: rootFD, name: entry.name) else { return }
+        }
+        var published: [String] = []
+        for file in files {
+            guard writeAtomically(file.bytes, directoryFD: directoryFD, name: file.name) else {
+                removePublished(published, directoryFD: directoryFD, rootFD: rootFD)
+                return
+            }
+            published.append(file.name)
+        }
+        guard LocaleCatalogPOSIX.syncDirectory(directoryFD) else {
+            removePublished(published, directoryFD: directoryFD, rootFD: rootFD)
+            return
+        }
+        _ = writeEntryRecord(identity: identity, rootFD: rootFD, entryName: entryName)
+        _ = LocaleCatalogPOSIX.syncDirectory(rootFD)
+    }
+
+    /// Rolls back a failed deferred write: removes the files it published, best effort.
+    private func removePublished(_ names: [String], directoryFD: Int32, rootFD: Int32) {
+        for name in names {
+            _ = LocaleCatalogPOSIX.removeIfPresent(parent: directoryFD, name: name)
+        }
+        _ = LocaleCatalogPOSIX.syncDirectory(directoryFD)
+        _ = LocaleCatalogPOSIX.syncDirectory(rootFD)
+    }
+
+    /// The deferred chunk files `snapshot` holds that the entry lacks or holds corrupted, with
+    /// the on-disk size of the file each replaces (`0` when absent), or `nil` when any supplied
+    /// bytes do not match their descriptor.
+    private func deferredFilesToWrite(
+        snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data], directoryFD: Int32
+    ) -> [DeferredFile]? {
+        var files: [DeferredFile] = []
+        for location in Self.uniqueByDigest(snapshot.heldChunkLocations.filter(\.isDeferred)) {
+            let descriptor = location.descriptor
+            let name = "\(descriptor.sha256).json"
+            guard let bytes = chunkBytes[descriptor.sha256],
+                  bytes.count == descriptor.bytes,
+                  LocaleCatalogLoader.sha256Hex(bytes) == descriptor.sha256
+            else {
+                return nil
+            }
+            let present = LocaleCatalogPOSIX.readRegular(
+                parent: directoryFD, name: name, maxBytes: descriptor.bytes
+            )
+            if let present, LocaleCatalogLoader.sha256Hex(present) == descriptor.sha256 {
+                continue
+            }
+            let replacedBytes = LocaleCatalogPOSIX.regularFileSize(
+                parent: directoryFD, name: name
+            ) ?? 0
+            files.append(DeferredFile(name: name, bytes: bytes, replacedBytes: replacedBytes))
+        }
+        return files
+    }
+
+    /// A deferred chunk file to publish, and the on-disk size of the file it replaces.
+    private struct DeferredFile {
+        let name: String
+        let bytes: Data
+        let replacedBytes: Int
+    }
+
+    private func writeAtomically(_ bytes: Data, directoryFD: Int32, name: String) -> Bool {
+        let written = LocaleCatalogPOSIX.removeIfPresent(
+            parent: directoryFD, name: Self.chunkStagingName
+        ) && LocaleCatalogPOSIX.writeRegular(
+            bytes, parent: directoryFD, name: Self.chunkStagingName
+        ) && LocaleCatalogPOSIX.replace(
+            parent: directoryFD, from: Self.chunkStagingName, to: name
+        )
+        if !written {
+            _ = LocaleCatalogPOSIX.removeIfPresent(parent: directoryFD, name: Self.chunkStagingName)
+        }
+        return written
+    }
+
+    private static func uniqueByDigest(
+        _ locations: [LocaleCatalogChunkLocation]
+    ) -> [LocaleCatalogChunkLocation] {
+        var seen: Set<String> = []
+        return locations.filter { seen.insert($0.descriptor.sha256).inserted }
+    }
+
     private func payloadByteCount(
         snapshot: LocaleCatalogSnapshot,
         manifestBytes: Data,
         chunkBytes: [String: Data]
     ) -> Int? {
         var total = manifestBytes.count
-        var seenDigests: Set<String> = []
-        for locale in snapshot.localeChain {
-            guard let record = snapshot.manifest.record(for: locale) else { return nil }
-            for descriptor in record.chunks where seenDigests.insert(descriptor.sha256).inserted {
-                guard let bytes = chunkBytes[descriptor.sha256],
-                      bytes.count == descriptor.bytes
-                else {
-                    return nil
-                }
-                let next = total.addingReportingOverflow(bytes.count)
-                guard !next.overflow else { return nil }
-                total = next.partialValue
+        guard snapshot.chainChunkLocations != nil else { return nil }
+        for location in Self.uniqueByDigest(snapshot.heldChunkLocations) {
+            guard let bytes = chunkBytes[location.descriptor.sha256],
+                  bytes.count == location.descriptor.bytes
+            else {
+                return nil
             }
+            let next = total.addingReportingOverflow(bytes.count)
+            guard !next.overflow else { return nil }
+            total = next.partialValue
         }
         return total
     }
@@ -778,6 +936,21 @@ final class LocaleCatalogDescriptorTracker: @unchecked Sendable {
 
     var isClean: Bool {
         outstandingCount == 0 && violationCount == 0
+    }
+}
+
+extension LocaleCatalogPOSIX {
+    /// The size of the regular file `name`, or `nil` when it is absent or not a regular file
+    /// (which ``directorySize(parent:name:fileLimit:)`` would not have counted either).
+    static func regularFileSize(parent: Int32, name: String) -> Int? {
+        var metadata = stat()
+        guard fstatat(parent, name, &metadata, AT_SYMLINK_NOFOLLOW) == 0,
+              isRegular(metadata),
+              metadata.st_size >= 0
+        else {
+            return nil
+        }
+        return Int(metadata.st_size)
     }
 }
 

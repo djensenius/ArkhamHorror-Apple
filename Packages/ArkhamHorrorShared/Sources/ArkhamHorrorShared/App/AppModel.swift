@@ -384,6 +384,11 @@ final class AppModel {
     @ObservationIgnored var localeCatalogTask: Task<Void, Never>?
     /// Guards stale catalog completions independently of the authentication flow's generation.
     @ObservationIgnored var localeCatalogGeneration = 0
+    /// The deferred-pack (card names) load for the published snapshot's identity. Separate
+    /// from the catalog task and generation, which a story-asset retry cancels and bumps.
+    @ObservationIgnored var localeCatalogDeferredPacks: LocaleCatalogDeferredPackLoad?
+    /// The in-flight deferred-pack load, cancelled with any catalog restart or invalidation.
+    @ObservationIgnored var localeCatalogDeferredPackTask: Task<Void, Never>?
     @ObservationIgnored let localeCatalogLoader: LocaleCatalogLoader
     @ObservationIgnored let preferredLanguagesProvider: any PreferredLanguagesProviding
 

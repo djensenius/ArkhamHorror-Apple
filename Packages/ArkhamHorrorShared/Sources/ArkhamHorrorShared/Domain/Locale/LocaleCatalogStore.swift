@@ -21,6 +21,12 @@ protocol LocaleCatalogStoring: Sendable {
     func store(
         snapshot: LocaleCatalogSnapshot, manifestBytes: Data, chunkBytes: [String: Data]
     ) async
+    /// Returns `snapshot` plus every deferred-pack chunk its chain lists, read from the same
+    /// cache entry and re-hashed, or `nil` when any of them is not cached.
+    func loadDeferred(snapshot: LocaleCatalogSnapshot) async -> LocaleCatalogSnapshot?
+    /// Adds the deferred-pack chunks `snapshot` now holds to its existing cache entry.
+    /// `chunkBytes` are their exact verified bytes keyed by digest. Never fatal.
+    func storeDeferred(snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data]) async
     /// Drops every cached entry for `endpoint`, used when a profile's endpoint changes.
     func invalidate(endpoint: String) async
 }
@@ -125,6 +131,29 @@ actor FileLocaleCatalogStore: LocaleCatalogStoring {
             writeToDisk(
                 snapshot: snapshot, manifestBytes: manifestBytes, chunkBytes: chunkBytes
             )
+        }
+    }
+
+    func loadDeferred(snapshot: LocaleCatalogSnapshot) async -> LocaleCatalogSnapshot? {
+        let identity = snapshot.identity
+        if let cached = memory[identity], !cached.hasPendingDeferredPacks {
+            touchMemory(identity)
+            return cached
+        }
+        return LocaleCatalogPOSIX.$tracker.withValue(
+            descriptorTracker
+        ) { () -> LocaleCatalogSnapshot? in
+            guard let augmented = readDeferredFromDisk(snapshot: snapshot) else { return nil }
+            insertMemory(identity, augmented)
+            return augmented
+        }
+    }
+
+    func storeDeferred(snapshot: LocaleCatalogSnapshot, chunkBytes: [String: Data]) async {
+        guard !snapshot.hasPendingDeferredPacks else { return }
+        insertMemory(snapshot.identity, snapshot)
+        LocaleCatalogPOSIX.$tracker.withValue(descriptorTracker) {
+            writeDeferredToDisk(snapshot: snapshot, chunkBytes: chunkBytes)
         }
     }
 
