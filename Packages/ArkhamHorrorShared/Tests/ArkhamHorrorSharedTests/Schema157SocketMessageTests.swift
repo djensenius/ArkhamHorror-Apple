@@ -22,7 +22,7 @@ struct Schema157SocketMessageTests {
         ]
         for (name, update) in expected {
             let decoded = try ContractJSON.decode(
-                BoardSnapshotUpdate.self, from: Schema157Fixtures.data(name)
+                BoardSnapshotUpdate.self, from: ContractFixtures.data(name)
             )
             #expect(decoded == update, "\(name)")
         }
@@ -31,8 +31,8 @@ struct Schema157SocketMessageTests {
     @Test("Captured 0.1.57 socket messages leave the live room open and keep reading")
     func capturedMessagesKeepTheSocketOpen() async throws {
         let frames = try ["game-watcher-count", "game-unarchived", "game-unarchive-failed"]
-            .map(Schema157Fixtures.data)
-        let snapshot = try Schema157Fixtures.contractData("game-update")
+            .map(ContractFixtures.data)
+        let snapshot = try ContractFixtures.contractData("game-update")
         let harness = AppModelLiveGameTests()
         let (model, _) = harness.makeSignedInModel()
         await model.flowTask?.value
@@ -133,7 +133,7 @@ struct Schema157SocketMessageTests {
 
     private static func projection() throws -> BoardProjection {
         let envelope = try ContractJSON.decode(
-            GetGameEnvelope.self, from: Schema157Fixtures.contractData("get-game")
+            GetGameEnvelope.self, from: ContractFixtures.contractData("get-game")
         )
         return BoardProjectionBuilder.makeProjection(from: envelope.game)
     }

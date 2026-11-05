@@ -97,7 +97,7 @@ struct Schema146AdditiveFieldsTests {
     func publicGameAdditiveFields() throws {
         let getGame = try ContractJSON.decode(
             GetGameEnvelope.self,
-            from: schema146FixtureData("get-game")
+            from: ContractFixtures.contractData("get-game")
         )
         #expect(getGame.game.retiredInvestigators != nil)
         if case let .scenarioOnly(scenario) = getGame.game.mode {
@@ -299,16 +299,7 @@ private func schema146ApplyingRemove(_ pointer: String, to value: JSONValue) thr
 }
 
 private func schema146FixtureValue(_ name: String) throws -> JSONValue {
-    try ContractJSON.decode(JSONValue.self, from: schema146FixtureData(name))
-}
-
-private func schema146FixtureData(_ name: String) throws -> Data {
-    let url = try #require(Bundle.module.url(
-        forResource: name,
-        withExtension: "json",
-        subdirectory: "Fixtures/Contract"
-    ))
-    return try Data(contentsOf: url)
+    try ContractJSON.decode(JSONValue.self, from: ContractFixtures.contractData(name))
 }
 
 func jsonObjectTag(_ value: JSONValue?) -> String? {

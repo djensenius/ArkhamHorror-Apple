@@ -56,7 +56,7 @@ struct Schema157ContractDriftTests {
     }
 
     private func data(_ name: String) throws -> Data {
-        try Schema157Fixtures.contractData(name)
+        try ContractFixtures.contractData(name)
     }
 
     private func value(_ name: String) throws -> JSONValue {

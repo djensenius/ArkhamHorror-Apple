@@ -35,7 +35,7 @@ struct Schema157QuestionFallbackTests {
         #expect(binding.rawChoices == [.string("c01001"), .string("c01002")])
         #expect(binding.isRenderableInCurrentClient)
 
-        let prompt = Schema157Fixtures.prompt(
+        let prompt = ContractFixtures.prompt(
             rawQuestion: raw, presentation: presentation, binding: binding
         )
         #expect(prompt.isRenderableQuestion)
@@ -50,7 +50,7 @@ struct Schema157QuestionFallbackTests {
     func malformedChooseFromCollectionFailsClosed() throws {
         let presentation = try Self.collectionPresentation()
         guard case let .object(valid) = Self.chooseFromCollection() else {
-            throw Schema157Fixtures.Failure.shape
+            throw ContractFixtures.Failure.shape
         }
         var missingCodes = valid
         missingCodes["cardCodes"] = nil
@@ -184,7 +184,7 @@ struct Schema157QuestionFallbackTests {
         try ContractJSON.decode(
             QuestionPresentation.self,
             from: LosslessJSONSerializer.serialize(
-                Schema157Fixtures.representative(named: "chooseFromCollection")
+                ContractFixtures.representative(named: "chooseFromCollection")
             )
         )
     }
@@ -195,11 +195,11 @@ struct Schema157QuestionFallbackTests {
         presentation: QuestionPresentation
     ) throws -> GetGameEnvelope {
         guard case var .object(root) = try LosslessJSONParser.parse(
-            Schema157Fixtures.contractData("get-game")
+            ContractFixtures.contractData("get-game")
         ),
             case var .object(game)? = root["game"],
             case let .string(playerID)? = root["playerId"]
-        else { throw Schema157Fixtures.Failure.shape }
+        else { throw ContractFixtures.Failure.shape }
         game["question"] = .object([playerID: rawQuestion])
         game["questionPresentation"] = try .object([
             playerID: LosslessJSONParser.parse(ContractJSON.encode(presentation)),
