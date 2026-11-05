@@ -224,5 +224,22 @@ struct LabelCardNameSubstitutionTests {
         ])
         #expect(try Self.entryText(variables, locale: "de")
             == .success("Roland Banks zog Swarm of Rats"))
+        // `cardNames.90001` exists in en, so this fails if a number were taken as a code.
+        #expect(try Self.entryText(.object([
+            "__name": .number(.integer(90001)),
+            "iname": .string("Roland Banks"), "name": .string("Server Name"),
+        ]), locale: "en") == .success("Roland Banks drew Server Name"))
+    }
+
+    @Test("A missing catalog key's readable fallback shows the localized card name")
+    func catalogEntryFallbackUsesLocalizedName() throws {
+        let resolution = try StoryNarrativeLocalization.resolveProductionEntry(
+            .i18n(key: "noSuchEntry", variables: .object([
+                "__name": .string("01159"), "name": .string("Swarm of Rats"),
+            ])),
+            resolver: Self.resolver(locale: "de"),
+            catalogUnavailability: .catalog(.transportFailure)
+        ).get()
+        #expect(resolution.entry == .text("noSuchEntry (__name: 01159, name: Rattenschwarm)"))
     }
 }

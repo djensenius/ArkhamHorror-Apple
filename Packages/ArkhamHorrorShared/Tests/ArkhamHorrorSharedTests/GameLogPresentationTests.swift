@@ -373,5 +373,21 @@ extension GameLogPresentationTests {
         #expect(legacy == [typed])
         #expect(renderer.render(typed).map(\.plainText)
             == ["Roland Banks", " zog ", "Swarm of Rats"])
+        // `cardNames.90001` exists in en, so this fails if a number were taken as a code.
+        let english = try GameLogPartRenderer(
+            resolver: LabelCardNameSubstitutionTests.resolver(locale: "en")
+        )
+        let typedEnglish = GameLogPart.i18n(key: "drew", variables: [
+            "__name": .number(.integer(90001)),
+            "iname": .text("Roland Banks"), "name": .text("Server Name"),
+        ])
+        let legacyEnglish = LegacyGameLogParser.parse(
+            #"$drew __name=i:90001 iname=s:"Roland Banks" name=s:"Server Name""#
+        )
+        #expect(legacyEnglish == [typedEnglish])
+        for parts in [[typedEnglish], legacyEnglish] {
+            #expect(english.render(parts).map(\.plainText)
+                == ["Roland Banks", " drew ", "Server Name"])
+        }
     }
 }
