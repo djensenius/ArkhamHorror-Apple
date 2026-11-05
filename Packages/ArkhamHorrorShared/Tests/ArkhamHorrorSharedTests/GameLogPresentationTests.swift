@@ -324,3 +324,70 @@ private extension GameLogPresentationTests {
         return try await LocaleCatalogResolver(snapshot: documents.loadSnapshot())
     }
 }
+
+/// TASK-1.42: `cardNameVar`/`investigatorNameVar` variables use the same card name swap as
+/// choice labels. `drew` and the names come from `LabelCardNameSubstitutionTests`.
+extension GameLogPresentationTests {
+    @Test("Log i18n parts swap name and iname for the locale's card names")
+    func logCardNamesAreLocalized() throws {
+        let typed = GameLogPart.i18n(key: "drew", variables: [
+            "__iname": .text("01003"), "__name": .text("01159"),
+            "iname": .text("\"Skids\" O'Toole"), "name": .text("Swarm of Rats"),
+        ])
+        let legacy = LegacyGameLogParser.parse(
+            #"$drew __iname=s:"01003" __name=s:"01159" "#
+                + #"iname=s:"\"Skids\" O'Toole" name=s:"Swarm of Rats""#
+        )
+        try #require(legacy.count == 1)
+        for (locale, expected) in [
+            ("en", ["\"Skids\" O'Toole", " drew ", "Swarm of Rats"]),
+            ("de", ["„Skids“ O’Toole", " zog ", "Rattenschwarm"]),
+        ] {
+            let renderer = try GameLogPartRenderer(
+                resolver: LabelCardNameSubstitutionTests.resolver(locale: locale)
+            )
+            #expect(renderer.render(typed).map(\.plainText) == expected)
+            #expect(renderer.render(legacy).map(\.plainText) == expected)
+        }
+        // The en card name differs from the server name, so en is substituted too.
+        let english = try GameLogPartRenderer(
+            resolver: LabelCardNameSubstitutionTests.resolver(locale: "en")
+        )
+        #expect(english.render(LegacyGameLogParser.parse(
+            #"$drew __name=s:"90001" iname=s:"Roland Banks" name=s:"Server Name""#
+        )).map(\.plainText) == ["Roland Banks", " drew ", "Synthetic English Only"])
+    }
+
+    @Test("A number __name in a log part keeps the server name")
+    func logNumberCodeKeepsServerName() throws {
+        let renderer = try GameLogPartRenderer(
+            resolver: LabelCardNameSubstitutionTests.resolver(locale: "de")
+        )
+        let typed = GameLogPart.i18n(key: "drew", variables: [
+            "__name": .number(.integer(1159)),
+            "iname": .text("Roland Banks"), "name": .text("Swarm of Rats"),
+        ])
+        let legacy = LegacyGameLogParser.parse(
+            #"$drew __name=i:1159 iname=s:"Roland Banks" name=s:"Swarm of Rats""#
+        )
+        #expect(legacy == [typed])
+        #expect(renderer.render(typed).map(\.plainText)
+            == ["Roland Banks", " zog ", "Swarm of Rats"])
+        // `cardNames.90001` exists in en, so this fails if a number were taken as a code.
+        let english = try GameLogPartRenderer(
+            resolver: LabelCardNameSubstitutionTests.resolver(locale: "en")
+        )
+        let typedEnglish = GameLogPart.i18n(key: "drew", variables: [
+            "__name": .number(.integer(90001)),
+            "iname": .text("Roland Banks"), "name": .text("Server Name"),
+        ])
+        let legacyEnglish = LegacyGameLogParser.parse(
+            #"$drew __name=i:90001 iname=s:"Roland Banks" name=s:"Server Name""#
+        )
+        #expect(legacyEnglish == [typedEnglish])
+        for parts in [[typedEnglish], legacyEnglish] {
+            #expect(english.render(parts).map(\.plainText)
+                == ["Roland Banks", " drew ", "Server Name"])
+        }
+    }
+}

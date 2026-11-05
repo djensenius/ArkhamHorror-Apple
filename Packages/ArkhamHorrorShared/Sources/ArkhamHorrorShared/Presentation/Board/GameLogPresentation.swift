@@ -170,7 +170,25 @@ struct GameLogPartRenderer {
             // A nonnumeric selector leaves plural selection unset on the web. Its rich
             // value remains available for interpolation, with the implicit singular rule.
         }
-        let resolution = resolver?.render(key: key, variables: .object(json), richVariables: rich)
+        // Card name swap shared with choice labels (`name`/`iname` text with a text
+        // `__name`/`__iname` code). The diagnostic below keeps the server's values.
+        var localizedJSON = json
+        var localizedRich = rich
+        if let resolver {
+            let textValues = variables.compactMapValues { part -> JSONValue? in
+                guard case let .text(text) = part else { return nil }
+                return .string(text)
+            }
+            for (name, cardName) in StoryNarrativeLocalization.localizedCardNames(
+                in: textValues, resolver: resolver
+            ) {
+                localizedJSON[name] = .string(cardName)
+                localizedRich[name] = [.text(cardName)]
+            }
+        }
+        let resolution = resolver?.render(
+            key: key, variables: .object(localizedJSON), richVariables: localizedRich
+        )
         if case let .success(nodes) = resolution {
             return nodes
         }
